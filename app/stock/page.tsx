@@ -6,7 +6,7 @@ import StockAdditionalReports from "../components/Stock/StockAdditionalReports";
 
 export default function StockPage() {
   return (
-    <div className="p-6 max-w-7xl mx-auto min-h-full">
+    <div className="max-w-7xl mx-auto min-h-full">
       <WarehouseStockChart />
       <StockKPIs />
       <StockQuickAccess />

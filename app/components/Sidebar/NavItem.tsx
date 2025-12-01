@@ -44,7 +44,7 @@ export default function NavItemComponent({ item, isActive = false }: NavItemProp
   
   const activeState = isActive || isCurrentlyActive;
 
-  const handleToggle = (e: React.MouseEvent) => {
+  const handleToggle = () => {
     if (hasChildren) {
       // Toggle expansion
       setIsExpanded(!isExpanded);
@@ -122,7 +122,7 @@ export default function NavItemComponent({ item, isActive = false }: NavItemProp
               ? "bg-orange-50 text-orange-600 border-r-2 border-orange-600"
               : "text-gray-700 hover:bg-gray-100"
           }`}
-          onClick={(e) => {
+          onClick={() => {
             if (hasChildren) {
               // Expand/collapse children
               setIsExpanded(!isExpanded);
@@ -147,7 +147,9 @@ export default function NavItemComponent({ item, isActive = false }: NavItemProp
       {hasChildren && isExpanded && !isCollapsed && (
         <div className="ml-4">
           {item.children?.map((child) => {
-            const isChildCurrentlyActive = child.href === pathname || (child.href && pathname.startsWith(child.href + "/"));
+            const isChildCurrentlyActive = Boolean(
+              child.href && (child.href === pathname || pathname.startsWith(child.href + "/"))
+            );
             return (
               <NavItemComponent 
                 key={child.id} 

@@ -25,8 +25,8 @@ export interface NavItem {
 
 export const navigationData: NavItem[] = [
   {
-    id: "public",
-    label: "PUBLIC",
+    id: "store",
+    label: "STORE DASHBOARD",
     children: []
   },
   {
@@ -68,6 +68,14 @@ export const navigationData: NavItem[] = [
     label: "Customer",
     icon: User,
     href: "/customer",
+    children: [
+      {
+        id: "customer-invoices",
+        label: "Customer Invoices",
+        icon: FileText,
+        href: "/customer/invoices",
+      },
+    ],
     isExpanded: false
   },
   {
@@ -75,6 +83,14 @@ export const navigationData: NavItem[] = [
     label: "Buying",
     icon: ShoppingCart,
     href: "/buying",
+    children: [
+      {
+        id: "purchase-invoices",
+        label: "Purchase Invoices",
+        icon: FileText,
+        href: "/buying/purchase-invoices",
+      },
+    ],
     isExpanded: false
   },
   {
@@ -82,6 +98,14 @@ export const navigationData: NavItem[] = [
     label: "Selling",
     icon: Store,
     href: "/selling",
+    children: [
+      {
+        id: "sale-invoices",
+        label: "Sale Invoices",
+        icon: FileText,
+        href: "/selling/sale-invoices",
+      },
+    ],
     isExpanded: false
   },
   {
@@ -96,6 +120,14 @@ export const navigationData: NavItem[] = [
     label: "Staff",
     icon: Users,
     href: "/staff",
+    children: [
+      {
+        id: "staff-invoices",
+        label: "Staff Invoices",
+        icon: FileText,
+        href: "/staff/invoices",
+      },
+    ],
     isExpanded: false
   },
   {
@@ -110,6 +142,14 @@ export const navigationData: NavItem[] = [
     label: "Rental",
     icon: Key,
     href: "/rental",
+    children: [
+      {
+        id: "rental-invoices",
+        label: "Rental Invoices",
+        icon: FileText,
+        href: "/rental/invoices",
+      },
+    ],
     isExpanded: false
   },
   {
@@ -117,6 +157,14 @@ export const navigationData: NavItem[] = [
     label: "Supplier",
     icon: Building2,
     href: "/supplier",
+    children: [
+      {
+        id: "supplier-invoices",
+        label: "Supplier Invoices",
+        icon: FileText,
+        href: "/supplier/invoices",
+      },
+    ],
     isExpanded: false
   }
 ];

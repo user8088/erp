@@ -3,6 +3,7 @@
 import { Bell, ChevronDown } from "lucide-react";
 import SearchBar from "./SearchBar";
 import { useSidebar } from "../Sidebar/SidebarContext";
+import UserMenu from "./UserMenu";
 
 export default function Header() {
   const { sidebarWidth } = useSidebar();
@@ -29,9 +30,7 @@ export default function Header() {
             <ChevronDown className="w-4 h-4 text-gray-600" />
           </button>
         </div>
-        <div className="w-8 h-8 bg-orange-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-orange-700 transition-colors">
-          <span className="text-white text-xs font-medium">AM</span>
-        </div>
+        <UserMenu />
       </div>
     </header>
   );

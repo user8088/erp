@@ -47,7 +47,7 @@ export default function Sidebar() {
         isCollapsed ? "w-16" : "w-64"
       }`}
     >
-      <div className={`flex items-center ${isCollapsed ? "justify-center" : "gap-2"} px-3 py-3 border-b border-gray-200 overflow-x-hidden`}>
+      <div className={`flex items-center ${isCollapsed ? "justify-center" : "gap-2"} px-3 h-14 border-b border-gray-200 overflow-x-hidden`}>
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="p-1 hover:bg-gray-100 rounded transition-colors"
@@ -59,7 +59,7 @@ export default function Sidebar() {
           <span className="text-sm font-medium text-gray-900">Home</span>
         )}
       </div>
-      <nav className="overflow-y-auto overflow-x-hidden h-[calc(100vh-57px)]">
+      <nav className="overflow-y-auto overflow-x-hidden h-[calc(100vh-56px)]">
         {navigationData.map((item) => (
           <NavItemComponent
             key={item.id}

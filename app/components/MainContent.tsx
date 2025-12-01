@@ -16,7 +16,9 @@ export default function MainContent({ children }: { children: React.ReactNode })
         minHeight: '100vh'
       }}
     >
-      {children}
+      <div className="px-8 py-6">
+        {children}
+      </div>
     </main>
   );
 }

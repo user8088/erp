@@ -5,7 +5,7 @@ import SellingAdditionalSections from "../components/Selling/SellingAdditionalSe
 
 export default function SellingPage() {
   return (
-    <div className="p-6 max-w-7xl mx-auto min-h-full">
+    <div className="max-w-7xl mx-auto min-h-full">
       <SalesOrderTrendsChart />
       <SellingQuickAccess />
       <SellingReports />
