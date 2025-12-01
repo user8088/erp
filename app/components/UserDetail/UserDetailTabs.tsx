@@ -11,7 +11,6 @@ export default function UserDetailTabs({ activeTab, setActiveTab }: UserDetailTa
     { id: "roles-permissions", label: "Roles & Permissions" },
     { id: "more-information", label: "More Information" },
     { id: "settings", label: "Settings" },
-    { id: "connections", label: "Connections" },
   ];
 
   return (

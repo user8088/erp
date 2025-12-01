@@ -3,14 +3,31 @@
 import { useState } from "react";
 import UserDetailTabs from "./UserDetailTabs";
 import UserDetailsForm from "./UserDetailsForm";
-import UserComments from "./UserComments";
 import UserActivity from "./UserActivity";
+import MoreInformation from "./MoreInformation";
+import UserSettings from "./UserSettings";
+import UserRolesPermissions from "./UserRolesPermissions";
+import type { User, UserProfile } from "../../lib/types";
 
 interface UserDetailContentProps {
   userId: string;
+  user: User | null;
+  profile: UserProfile | null;
+  onUserChange: (user: User | null) => void;
+  onProfileChange: (profile: UserProfile | null) => void;
+  saveSignal?: number;
+  onSavingChange?: (saving: boolean) => void;
 }
 
-export default function UserDetailContent({ userId }: UserDetailContentProps) {
+export default function UserDetailContent({
+  userId,
+  user,
+  profile,
+  onUserChange,
+  onProfileChange,
+  saveSignal,
+  onSavingChange,
+}: UserDetailContentProps) {
   const [activeTab, setActiveTab] = useState("user-details");
 
   return (
@@ -19,22 +36,32 @@ export default function UserDetailContent({ userId }: UserDetailContentProps) {
       <div className="mt-4">
         {activeTab === "user-details" && (
           <>
-            <UserDetailsForm />
-            <UserComments />
+            <UserDetailsForm
+              userId={userId}
+              user={user}
+              onUserUpdated={onUserChange}
+              externalSaveSignal={saveSignal}
+              onSavingChange={onSavingChange}
+            />
             <UserActivity />
           </>
         )}
-        {activeTab === "roles-permissions" && (
-          <div className="p-4 text-gray-500">Roles & Permissions content coming soon...</div>
-        )}
+        {activeTab === "roles-permissions" && <UserRolesPermissions />}
         {activeTab === "more-information" && (
-          <div className="p-4 text-gray-500">More Information content coming soon...</div>
+          <MoreInformation
+            userId={userId}
+            profile={profile}
+            onProfileUpdated={onProfileChange}
+          />
         )}
         {activeTab === "settings" && (
-          <div className="p-4 text-gray-500">Settings content coming soon...</div>
-        )}
-        {activeTab === "connections" && (
-          <div className="p-4 text-gray-500">Connections content coming soon...</div>
+          <UserSettings
+            userId={userId}
+            status={user?.status}
+            onStatusChange={(status) => {
+              if (user) onUserChange({ ...user, status });
+            }}
+          />
         )}
       </div>
     </div>

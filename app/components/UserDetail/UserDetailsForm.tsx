@@ -1,19 +1,92 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { apiClient } from "../../lib/apiClient";
+import type { User } from "../../lib/types";
+import { useToast } from "../ui/ToastProvider";
 
-export default function UserDetailsForm() {
+interface UserDetailsFormProps {
+  userId: string;
+  user: User | null;
+  onUserUpdated: (user: User | null) => void;
+  onSavingChange?: (saving: boolean) => void;
+  externalSaveSignal?: number;
+}
+
+export default function UserDetailsForm({
+  userId,
+  user,
+  onUserUpdated,
+  onSavingChange,
+  externalSaveSignal,
+}: UserDetailsFormProps) {
+  const { addToast } = useToast();
   const [formData, setFormData] = useState({
     enabled: true,
-    email: "asimmahmood11110@gmail.com",
-    firstName: "Asim",
+    email: "",
+    firstName: "",
     middleName: "",
-    lastName: "Mahmood",
-    fullName: "Asim Mahmood",
-    username: "asim",
-    language: "English",
-    timeZone: "Asia/Karachi",
+    lastName: "",
+    fullName: "",
+    username: "",
+    language: "",
+    timeZone: "",
   });
+
+  useEffect(() => {
+    if (!user) return;
+    setFormData({
+      enabled: user.status === "active",
+      email: user.email ?? "",
+      firstName: user.first_name ?? "",
+      middleName: user.middle_name ?? "",
+      lastName: user.last_name ?? "",
+      fullName: user.full_name ?? "",
+      username: user.username ?? "",
+      language: user.language ?? "English",
+      timeZone: user.time_zone ?? "",
+    });
+  }, [user]);
+
+  // Trigger save when parent increments the externalSaveSignal counter.
+  // Guard with a ref so React Strict Mode doesn't cause duplicate saves.
+  const lastSignalRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (externalSaveSignal == null) return;
+    if (lastSignalRef.current === externalSaveSignal) return;
+    lastSignalRef.current = externalSaveSignal;
+    void handleSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalSaveSignal]);
+
+  const handleSave = async () => {
+    if (!user) return;
+    onSavingChange?.(true);
+    try {
+      const res = await apiClient.put<{ user: User }>(`/users/${userId}`, {
+        email: formData.email,
+        first_name: formData.firstName,
+        middle_name: formData.middleName || null,
+        last_name: formData.lastName || null,
+        full_name: formData.fullName,
+        username: formData.username || null,
+        language: formData.language,
+        time_zone: formData.timeZone || null,
+        status: formData.enabled ? "active" : "inactive",
+      });
+      onUserUpdated(res.user);
+      addToast("User details saved.", "success");
+    } catch (e) {
+      console.error(e);
+      const message =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: unknown }).message)
+          : "Failed to save user.";
+      addToast(message, "error");
+    } finally {
+      onSavingChange?.(false);
+    }
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
@@ -119,6 +192,8 @@ export default function UserDetailsForm() {
           </div>
         </div>
       </div>
+
+      {/* Top header Save button now triggers saving; no separate Save here */}
     </div>
   );
 }

@@ -11,7 +11,8 @@ import {
   Truck,
   Key,
   Building2,
-  User
+  User,
+  Tag,
 } from "lucide-react";
 
 export interface NavItem {
@@ -126,6 +127,12 @@ export const navigationData: NavItem[] = [
         label: "Staff Invoices",
         icon: FileText,
         href: "/staff/invoices",
+      },
+      {
+        id: "tag-manager",
+        label: "Tag Manager",
+        icon: Tag,
+        href: "/staff/tags",
       },
     ],
     isExpanded: false

@@ -1,0 +1,270 @@
+## ERP Backend Integration Guide (Laravel API)
+
+This document describes the backend features and HTTP APIs implemented for integrating the ERP Next.js SPA with this Laravel server.
+
+---
+
+## 1. Auth & Session (Sanctum SPA)
+
+- **Stack**
+  - Laravel Sanctum (`auth:sanctum` guard).
+  - Cookie-based SPA-mode (stateful domains configured in `config/sanctum.php`).
+
+- **Endpoints**
+  - **POST `/api/auth/login`**
+    - Body: `{ "login": string, "password": string }`
+      - `login` can be **email** or **username**.
+    - Success: `200 OK`
+      - Response:
+        ```json
+        {
+          "user": {
+            "id": 1,
+            "full_name": "System Manager",
+            "email": "system@example.com"
+          }
+        }
+        ```
+      - Auth cookie is set by Sanctum for subsequent `/api` calls.
+    - Failure (invalid credentials): `422 Unprocessable Entity`
+      - `{ "message": "Invalid credentials." }`
+  - **POST `/api/auth/logout`**
+    - Auth: `auth:sanctum`.
+    - Clears current session.
+  - **GET `/api/auth/me`**
+    - Auth: `auth:sanctum`.
+    - Response:
+      ```json
+      {
+        "user": {
+          "id": 1,
+          "full_name": "System Manager",
+          "email": "system@example.com"
+        }
+      }
+      ```
+
+---
+
+## 2. Users Module
+
+- **Core Model**
+  - `users` table fields:
+    - `id`, `email` (unique), `username` (unique),
+    - `first_name`, `middle_name`, `last_name`, `full_name`,
+    - `language` (`en` default), `time_zone` (`Asia/Karachi` default),
+    - `status` (`active` / `inactive`),
+    - `password` (hashed),
+    - `assigned_to_user_id` (FK → `users.id`, nullable),
+    - `deleted_at` (soft delete), timestamps.
+  - `user_profiles` table fields:
+    - `user_id` (PK + FK → `users.id`)
+    - `cnic_front_path`, `cnic_back_path` (nullable file paths)
+    - `address` (text, nullable)
+
+- **Auth / Permissions**
+  - All user routes:
+    - `auth:sanctum`
+    - Module middleware: `module:module.users,read` or `module.users,read-write`.
+
+- **Endpoints**
+  - **GET `/api/users`**
+    - Query params:
+      - `page`, `per_page`
+      - Filters: `full_name`, `status` (optional).
+    - Response:
+      ```json
+      {
+        "data": [
+          {
+            "id": 1,
+            "email": "system@example.com",
+            "username": "system_manager",
+            "full_name": "System Manager",
+            "first_name": "System",
+            "middle_name": null,
+            "last_name": "Manager",
+            "language": "en",
+            "time_zone": "Asia/Karachi",
+            "status": "active",
+            "assigned_to_user_id": null
+          }
+        ],
+        "meta": {
+          "current_page": 1,
+          "per_page": 15,
+          "total": 1,
+          "last_page": 1
+        }
+      }
+      ```
+  - **GET `/api/users/{id}`**
+    - Response:
+      ```json
+      {
+        "user": {
+          "id": 1,
+          "email": "system@example.com",
+          "username": "system_manager",
+          "full_name": "System Manager",
+          "first_name": "System",
+          "middle_name": null,
+          "last_name": "Manager",
+          "language": "en",
+          "time_zone": "Asia/Karachi",
+          "status": "active",
+          "assigned_to_user_id": null
+        }
+      }
+      ```
+    - (Hooks exist to attach profile/roles/tags/attachments fields later if the UI needs one composite payload.)
+  - **POST `/api/users`** – create user
+    - Body:
+      ```json
+      {
+        "email": "user@example.com",
+        "username": "user1",
+        "first_name": "First",
+        "middle_name": null,
+        "last_name": "Last",
+        "language": "en",
+        "time_zone": "Asia/Karachi",
+        "status": "active",
+        "password": "password123",
+        "role_ids": [1, 2]
+      }
+      ```
+    - Response `201 Created`:
+      - `{ "user": { ...UserResource } }`
+  - **PUT `/api/users/{id}`** – update core user fields
+    - Partial updates for core user fields (same shape as `POST`, excluding password unless you explicitly send it).
+    - Response: `{ "user": { ... } }`.
+  - **PATCH `/api/users/{id}/status`**
+    - Body: `{ "status": "active" | "inactive" }`
+    - Response: `{ "user": { ... } }`.
+  - **PATCH `/api/users/{id}/assigned-to`**
+    - Body: `{ "assigned_to_user_id": number | null }`
+    - Response: `{ "user": { ... } }`.
+  - **PUT `/api/users/{id}/profile`**
+    - Updates profile‑level fields (currently address).
+    - Body:
+      ```json
+      {
+        "address": "123 Street, City"
+      }
+      ```
+    - Response: `{ "user": { ... } }` including `address`.
+  - **DELETE `/api/users/{id}`**
+    - Soft-deletes the user (CRUD delete).
+    - Response: `{ "message": "User deleted." }`.
+
+---
+
+## 3. Attachments
+
+- **Storage**
+  - Default disk: `local` → `storage/app/private`.
+  - Paths stored in `user_attachments.storage_path` (non-public).
+
+- **Endpoints**
+  - **POST `/api/users/{id}/attachments`**
+    - Auth:
+      - `auth:sanctum`
+      - `module:module.users,read-write`
+      - `UserPolicy@uploadAttachments` must allow.
+    - Multipart body:
+      - `file`: the uploaded file.
+    - Response `201 Created`:
+      ```json
+      {
+        "attachment": {
+          "id": 10,
+          "file_name": "doc.pdf",
+          "mime_type": "application/pdf",
+          "size_bytes": 12345
+        }
+      }
+      ```
+  - **GET `/api/users/{id}/attachments`**
+    - Auth: `auth:sanctum`, `module:module.users,read`.
+    - Response:
+      ```json
+      {
+        "data": [
+          {
+            "id": 10,
+            "file_name": "doc.pdf",
+            "mime_type": "application/pdf",
+            "size_bytes": 12345,
+            "created_at": "2025-01-01T10:00:00Z"
+          }
+        ]
+      }
+      ```
+  - **DELETE `/api/users/{id}/attachments/{attachmentId}`**
+    - Auth: `auth:sanctum`, `module:module.users,read-write`, `uploadAttachments` policy.
+    - Deletes file + DB record.
+    - Response: `{ "message": "Attachment deleted." }`.
+  - **GET `/api/attachments/{attachmentId}/download`**
+    - Auth: `auth:sanctum`.
+    - Policy: user must be authorized to `view` the owner user.
+    - Streams file with original filename; frontend can trigger browser download.
+
+---
+
+## 4. Roles & Permissions (Backend View)
+
+- **Tables**
+  - `roles` – `id`, `name`, `description`, `is_system`.
+  - `permissions` – `id`, `code`, `label`.
+  - `role_permissions` – `role_id`, `permission_id`, `access_level` (`no-access`, `read`, `read-write`).
+  - `user_roles` – `user_id`, `role_id`.
+
+- **Seeded modules & examples**
+  - Module-level:
+    - `module.dashboard`, `module.accounting`, `module.buying`, `module.selling`, `module.stock`, `module.customer`, `module.staff`, `module.transport`, `module.rental`, `module.supplier`, `module.tag_manager`, `module.users`, `module.roles_permissions`.
+  - Pages:
+    - `page.staff.users`, `page.staff.tags`.
+  - Actions:
+    - `action.user.update`, `action.user.delete`, `action.user.reset_password`.
+
+- **Backend Usage**
+  - `PermissionChecker`:
+    - `userHasAtLeast(user, 'module.users', AccessLevel::ReadWrite)`.
+    - `snapshotFor(user)` can be exposed via `/api/auth/me` if the frontend needs a permission map.
+  - Policies & middleware rely on these codes; frontend can mirror them in its own permission model.
+
+---
+
+## 5. Activity Logging
+
+- **Table**: `activity_logs`
+  - `user_id` – the profile user.
+  - `actor_id` – the acting user (nullable).
+  - `action` – short code (`created`, `updated`, `status_changed`, `assigned`, etc.).
+  - `description` – optional text.
+  - Timestamps.
+
+- **When entries are written**
+  - Creating a user.
+  - Updating a user.
+  - Changing `status`.
+  - Changing `assigned_to_user_id`.
+
+- **Frontend integration**
+  - Currently not exposed in a dedicated endpoint; easiest path is to:
+    - Extend `GET /api/users/{id}` to include a small `activity` array for timeline components.
+
+---
+
+## 6. Testing Notes for Integrators
+
+- Automated tests (`php artisan test`) validate:
+  - Auth flows (`tests/Feature/AuthTest.php`).
+  - User index auth + pagination (`tests/Feature/UserApiTest.php`).
+- For local integration:
+  - Ensure DB is migrated and seeded.
+  - Log in via `/api/auth/login` using:
+    - `system@example.com` / `password`.
+  - Attach the `System Manager` role to this user if your environment differs from the default seeding.
+

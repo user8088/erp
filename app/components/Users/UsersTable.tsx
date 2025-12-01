@@ -3,46 +3,30 @@
 import { MessageCircle, Heart, Clock } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { User } from "../../lib/types";
 
-interface User {
-  id: string;
-  fullName: string;
-  status: "Active" | "Inactive";
-  userType: string;
-  phoneNumber: string;
-  address: string;
-  lastUpdated: string;
-  comments: number;
+interface UsersTableProps {
+  users: User[];
+  loading?: boolean;
 }
 
-const mockUsers: User[] = [
-  {
-    id: "asimmahmood11110",
-    fullName: "Asim Mahmood",
-    status: "Active",
-    userType: "System User",
-    phoneNumber: "+92 300 1234567",
-    address: "123 Main Street, Karachi, Pakistan",
-    lastUpdated: "17 h",
-    comments: 0,
-  },
-];
-
-export default function UsersTable() {
+export default function UsersTable({ users, loading }: UsersTableProps) {
   const router = useRouter();
-  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [selectedRows, setSelectedRows] = useState<Set<string | number>>(
+    new Set()
+  );
   const [selectAll, setSelectAll] = useState(false);
 
   const handleSelectAll = () => {
     if (selectAll) {
       setSelectedRows(new Set());
     } else {
-      setSelectedRows(new Set(mockUsers.map((user) => user.id)));
+      setSelectedRows(new Set(users.map((user) => user.id)));
     }
     setSelectAll(!selectAll);
   };
 
-  const handleSelectRow = (id: string) => {
+  const handleSelectRow = (id: string | number) => {
     const newSelected = new Set(selectedRows);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -50,11 +34,14 @@ export default function UsersTable() {
       newSelected.add(id);
     }
     setSelectedRows(newSelected);
-    setSelectAll(newSelected.size === mockUsers.length);
+    setSelectAll(newSelected.size === users.length);
   };
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-x-auto">
+      {loading && users.length === 0 && (
+        <div className="px-4 py-3 text-sm text-gray-500">Loading users...</div>
+      )}
       <table className="w-full min-w-full">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
@@ -81,7 +68,15 @@ export default function UsersTable() {
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {mockUsers.map((user) => (
+          {users.map((user) => {
+            const statusLabel =
+              user.status === "active" ? "Active" : "Inactive";
+            const lastUpdated = (user as any).updated_at ?? "";
+            const phone = user.phone ?? "";
+            const address = user.address ?? "";
+            const idDisplay = user.email || String(user.id);
+
+            return (
             <tr
               key={user.id}
               className="hover:bg-gray-50 transition-colors cursor-pointer"
@@ -102,24 +97,37 @@ export default function UsersTable() {
                   className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
                 />
               </td>
-              <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{user.fullName}</td>
+              <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                {user.full_name}
+              </td>
               <td className="px-4 py-3 whitespace-nowrap">
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  {user.status}
+                  {statusLabel}
                 </span>
               </td>
-              <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{user.userType}</td>
-              <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{user.id}...</td>
-              <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{user.phoneNumber}</td>
-              <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={user.address}>
-                {user.address}
+              <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                {user.user_type ?? ""}
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                {idDisplay}
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                {phone}
+              </td>
+              <td
+                className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate"
+                title={address}
+              >
+                {address}
               </td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-3 whitespace-nowrap">
-                  <span className="text-xs text-gray-500">{user.lastUpdated}</span>
+                  <span className="text-xs text-gray-500">
+                    {lastUpdated || "-"}
+                  </span>
                   <button className="flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors">
                     <MessageCircle className="w-4 h-4" />
-                    <span className="text-xs">{user.comments}</span>
+                    <span className="text-xs">0</span>
                   </button>
                   <button className="text-gray-500 hover:text-red-500 transition-colors">
                     <Heart className="w-4 h-4" />
@@ -127,7 +135,8 @@ export default function UsersTable() {
                 </div>
               </td>
             </tr>
-          ))}
+          );
+          })}
         </tbody>
       </table>
     </div>

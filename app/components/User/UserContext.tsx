@@ -1,66 +1,95 @@
 "use client";
 
-import React, { createContext, useContext, useState, useMemo, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useMemo,
+  useEffect,
+} from "react";
+import { apiClient } from "../../lib/apiClient";
+import type { User as ApiUser } from "../../lib/types";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  initials: string;
-  role?: string;
-  avatar?: string;
-}
+type User = ApiUser;
 
 interface UserContextType {
   user: User | null;
   setUser: (user: User | null) => void;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
+  authLoading: boolean;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  // Initialize user from localStorage on mount
+  // Initialize from backend session
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
+    let isMounted = true;
+
+    const init = async () => {
       try {
-        setUserState(JSON.parse(storedUser));
-      } catch (error) {
-        console.error("Error parsing user from localStorage:", error);
+        const me = await apiClient.get<User>("/auth/me", {
+          authRequired: false,
+        });
+        if (isMounted) {
+          setUserState(me);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("user", JSON.stringify(me));
+          }
+        }
+      } catch {
+        if (isMounted && typeof window !== "undefined") {
+          localStorage.removeItem("user");
+        }
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false);
+        }
       }
-    } else {
-      // Set default user if no user in localStorage
-      const defaultUser: User = {
-        id: "1",
-        name: "Ahmed Mughal",
-        email: "ahmed.mughal@example.com",
-        initials: "AM",
-        role: "Administrator",
-      };
-      setUserState(defaultUser);
-      localStorage.setItem("user", JSON.stringify(defaultUser));
-    }
+    };
+
+    init();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const setUser = (newUser: User | null) => {
     setUserState(newUser);
-    if (newUser) {
-      localStorage.setItem("user", JSON.stringify(newUser));
-    } else {
-      localStorage.removeItem("user");
+    if (typeof window !== "undefined") {
+      if (newUser) {
+        localStorage.setItem("user", JSON.stringify(newUser));
+      } else {
+        localStorage.removeItem("user");
+      }
     }
   };
 
-  const logout = () => {
-    setUserState(null);
-    localStorage.removeItem("user");
-    // Redirect to home page after logout
-    if (typeof window !== "undefined") {
-      window.location.href = "/";
+  const login = async (email: string, password: string) => {
+    // Backend expects `login` field (can be email or username)
+    const result = await apiClient.post<{ user: User }>("/auth/login", {
+      login: email,
+      password,
+    });
+    setUser(result.user);
+  };
+
+  const logout = async () => {
+    try {
+      await apiClient.post("/auth/logout");
+    } catch {
+      // ignore
+    } finally {
+      setUser(null);
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
     }
   };
 
@@ -68,10 +97,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       setUser,
+      login,
       logout,
       isAuthenticated: !!user,
+      authLoading,
     }),
-    [user]
+    [authLoading, user]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
