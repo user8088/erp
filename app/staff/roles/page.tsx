@@ -1,38 +1,77 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  getStoredRoles,
-  saveStoredRoles,
-  type RoleDefinition,
-} from "../../utils/rolesStorage";
 import { useToast } from "../../components/ui/ToastProvider";
+import { apiClient } from "../../lib/apiClient";
+import type { Paginated, Role } from "../../lib/types";
+
+// In-memory cache so we only fetch roles list once per session
+let rolesListCache: Role[] | null = null;
 
 export default function RolesListPage() {
   const router = useRouter();
   const { addToast } = useToast();
-  const [roles, setRoles] = useState<RoleDefinition[]>(() => getStoredRoles());
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [roles, setRoles] = useState<Role[]>(rolesListCache ?? []);
+  const [loading, setLoading] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | number | null>(
+    null
+  );
 
-  const confirmDelete = (id: string) => {
+  useEffect(() => {
+    // If we already have roles cached, don't refetch
+    if (rolesListCache && rolesListCache.length > 0) {
+      return;
+    }
+
+    let mounted = true;
+
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await apiClient.get<Paginated<Role>>("/roles");
+        if (mounted) {
+          rolesListCache = res.data;
+          setRoles(res.data);
+        }
+      } catch (e) {
+        console.error(e);
+        addToast("Failed to load roles.", "error");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
+  }, [addToast]);
+
+  const confirmDelete = (id: string | number) => {
     setPendingDeleteId(id);
   };
 
-  const performDelete = () => {
+  const performDelete = async () => {
     if (!pendingDeleteId) return;
-    const updated = roles.filter((r) => r.id !== pendingDeleteId);
-    setRoles(updated);
-    saveStoredRoles(updated);
-    addToast("Role deleted successfully.", "success");
-    setPendingDeleteId(null);
+    try {
+      await apiClient.delete<{ message: string }>(`/roles/${pendingDeleteId}`);
+      setRoles((prev) => prev.filter((r) => r.id !== pendingDeleteId));
+      addToast("Role deleted successfully.", "success");
+    } catch (e) {
+      console.error(e);
+      addToast("Failed to delete role.", "error");
+    } finally {
+      setPendingDeleteId(null);
+    }
   };
 
   const cancelDelete = () => {
     setPendingDeleteId(null);
   };
 
-  const handleEdit = (id: string) => {
+  const handleEdit = (id: string | number) => {
     router.push(`/staff/roles/new?roleId=${id}`);
   };
 
@@ -113,7 +152,7 @@ export default function RolesListPage() {
                 </td>
               </tr>
             ))}
-            {roles.length === 0 && (
+            {!loading && roles.length === 0 && (
               <tr>
                 <td
                   className="px-4 py-6 text-center text-gray-500"

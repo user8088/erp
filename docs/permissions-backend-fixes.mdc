@@ -1,0 +1,237 @@
+## Frontend Permissions Integration – Backend Fix Guide
+
+This document explains what the Next.js ERP frontend expects from the Laravel backend so that **roles & permissions** behave correctly for users like the *Sales Person* (employee). Use it as a checklist / implementation guide when wiring or debugging permissions.
+
+---
+
+## 1. What the frontend does with permissions
+
+### 1.1 Source of truth
+
+- The SPA never hard‑codes access rules per user; instead it uses a **permission snapshot** from:
+
+```http
+GET /api/auth/me
+```
+
+- Expected response shape (from `docs/laravel-backend.mdc` §4.1):
+
+```json
+{
+  "user": {
+    "id": 2,
+    "full_name": "Employee Boy",
+    "email": "employee@gmail.com"
+  },
+  "permissions": {
+    "module.dashboard": "read",
+    "module.buying": "read",
+    "module.selling": "read-write",
+    "module.staff": "no-access",
+    "module.accounting": "no-access",
+    "...": "..." 
+  }
+}
+```
+
+- The `permissions` map is effectively `PermissionChecker::snapshotFor($user)` – a **flattened view of all role_permissions** for the current user.
+
+### 1.2 Access levels
+
+The SPA uses the same access levels as the backend:
+
+- `"no-access"`
+- `"read"`
+- `"read-write"`
+
+and a helper:
+
+```ts
+hasAtLeast(permissions, code, required)
+```
+
+Internally this is just comparing ranks:
+
+```text
+no-access (0) < read (1) < read-write (2)
+```
+
+### 1.3 Important frontend behavior
+
+- **Only explicit `"no-access"` hides things.**
+  - If a permission code is **missing** from `permissions`, the frontend treats it as **allowed** (for now), so you must explicitly emit `"no-access"` for modules/pages you want hidden.
+- Checks used in the UI:
+  - Sidebar modules:
+    - `module.buying` → Buying
+    - `module.selling` → Selling
+    - `module.stock` → Stock
+    - `module.customer` → Customer
+    - `module.supplier` → Supplier
+    - `module.staff` → Staff
+    - `module.transport` → Transport
+    - `module.rental` → Rental
+    - `module.accounting` → Accounting
+  - Dashboard shortcuts & sections:
+    - `module.dashboard` → Dashboard‑level cards/links.
+    - `module.accounting` → Accounting reports + data import.
+    - `module.stock` → Stock reports.
+    - `module.customer` → CRM column.
+
+**Therefore:** if `/auth/me` does not include `module.dashboard`, `module.buying`, `module.selling`, etc., or marks them `"no-access"`, the frontend will hide those areas.
+
+---
+
+## 2. Ensuring roles produce the right permissions
+
+### 2.1 Tables involved
+
+From `docs/laravel-backend.mdc` §4:
+
+- `roles` – `id`, `name`, `description`, `is_system`
+- `permissions` – `id`, `code`, `label`
+- `role_permissions` – `role_id`, `permission_id`, `access_level` (`no-access`, `read`, `read-write`)
+- `user_roles` – `user_id`, `role_id`
+
+### 2.2 Example: Sales Person (employee) role
+
+To match the **Page Permissions** matrix in the UI for a **Sales Person**:
+
+- When the UI shows:
+
+| Module    | Access     |
+|----------|------------|
+| Dashboard| Read       |
+| Buying   | Read       |
+| Selling  | Read & Write |
+| Others   | No Access  |
+
+you want the DB to contain (conceptually):
+
+```text
+permissions:
+  id | code              | label
+  ---------------------------------------------
+   1 | module.dashboard  | Dashboard Module
+   2 | module.buying     | Buying Module
+   3 | module.selling    | Selling Module
+   4 | module.accounting | Accounting Module
+   5 | module.stock      | Stock Module
+   ... etc.
+
+roles:
+  id | name
+  ------------
+   2 | Sales Person
+
+role_permissions (for Sales Person):
+  role_id | permission_id | access_level
+  --------------------------------------
+     2    | 1             | read         (module.dashboard)
+     2    | 2             | read         (module.buying)
+     2    | 3             | read-write   (module.selling)
+     2    | 4             | no-access    (module.accounting)
+     2    | 5             | no-access    (module.stock)
+     ... all remaining modules set to "no-access"
+```
+
+and in `user_roles`:
+
+```text
+user_roles:
+  user_id | role_id
+  -----------------
+      5   |   2        // employee is a Sales Person
+```
+
+With these rows in place, `PermissionChecker::snapshotFor($user)` must translate them into:
+
+```php
+[
+  'module.dashboard'  => 'read',
+  'module.buying'     => 'read',
+  'module.selling'    => 'read-write',
+  'module.accounting' => 'no-access',
+  'module.stock'      => 'no-access',
+  // ... other modules default to "no-access" or explicit rows
+];
+```
+
+and that snapshot must be included in `/api/auth/me`.
+
+---
+
+## 3. `/api/auth/me` implementation checklist
+
+### 3.1 Controller
+
+```php
+// app/Http/Controllers/AuthController.php
+
+use Illuminate\Http\Request;
+use App\Models\User;
+use App\Services\PermissionChecker;
+
+class AuthController extends Controller
+{
+    public function me(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user()->loadMissing('roles');
+
+        return response()->json([
+            'user' => [
+                'id'          => $user->id,
+                'email'       => $user->email,
+                'username'    => $user->username,
+                'full_name'   => $user->full_name,
+                'first_name'  => $user->first_name,
+                'middle_name' => $user->middle_name,
+                'last_name'   => $user->last_name,
+                'language'    => $user->language,
+                'time_zone'   => $user->time_zone,
+                'status'      => $user->status,
+
+                'roles' => $user->roles->map(fn ($role) => [
+                    'id'   => $role->id,
+                    'name' => $role->name,
+                ])->values(),
+            ],
+
+            // This is what the frontend drives its gating from:
+            'permissions' => PermissionChecker::snapshotFor($user),
+        ]);
+    }
+}
+```
+
+### 3.2 Debugging steps for a specific user
+
+When the frontend says “Sales Person can’t see Buying/Selling/Dashboard”:
+
+1. **Log in as that user** via `POST /api/auth/login` in Postman or the SPA.
+2. Call `GET /api/auth/me` and inspect the JSON:
+   - Check the `user.roles` array – does it contain the expected role (e.g. `Sales Person`)?
+   - Check `permissions`:
+     - `module.dashboard` should be `"read"` (or `"read-write"`).
+     - `module.buying` should be `"read"` (or `"read-write"`).
+     - `module.selling` should be `"read-write"`.
+3. If any of those are missing or `"no-access"`:
+   - Verify `role_permissions` rows for that role.
+   - Verify that `snapshotFor($user)` includes module‑level codes and combines multiple roles correctly.
+
+Once `/auth/me` is returning the corrected `permissions` map, the Next.js frontend will:
+
+- Show **Home/Dashboard**, Buying, and Selling for that user.
+- Hide only modules/pages whose code is explicitly `"no-access"` in the snapshot.
+
+---
+
+## 4. Summary for backend implementer
+
+- **Expose a complete permission snapshot** in `/api/auth/me` using `PermissionChecker::snapshotFor($user)`.
+- **Ensure role_permissions include all relevant `module.*` codes** with the correct `access_level` for each role (e.g. Sales Person).
+- **Assign the correct role(s) to each user** via `user_roles`.
+- The frontend will automatically respect these permissions:
+  - Sidebar modules and dashboard sections are shown when `hasAtLeast(code, 'read')` is true.
+  - Anything with `access_level: 'no-access'` for that code will be hidden.
+

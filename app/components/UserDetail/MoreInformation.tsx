@@ -1,21 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Upload, X, FileImage } from "lucide-react";
-import type { Attachment, UserProfile } from "../../lib/types";
+import type { Attachment, User, UserProfile } from "../../lib/types";
 import { apiClient, API_BASE_URL } from "../../lib/apiClient";
+import { cachedGet, invalidateCachedGet } from "../../lib/apiCache";
 import { useToast } from "../ui/ToastProvider";
 
 interface MoreInformationProps {
   userId: string;
   profile: UserProfile | null;
   onProfileUpdated: (profile: UserProfile | null) => void;
+  user?: User | null;
+  externalSaveSignal?: number;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 export default function MoreInformation({
   userId,
   profile,
   onProfileUpdated,
+  user,
+  externalSaveSignal,
+  onSavingChange,
 }: MoreInformationProps) {
   const { addToast } = useToast();
   const [cnicFront, setCnicFront] = useState<File | null>(null);
@@ -30,8 +37,8 @@ export default function MoreInformation({
   const [deletingId, setDeletingId] = useState<string | number | null>(null);
 
   useEffect(() => {
-    setAddress(profile?.address ?? "");
-  }, [profile]);
+    setAddress(profile?.address ?? user?.address ?? "");
+  }, [profile, user]);
 
   // Load existing attachments from backend
   useEffect(() => {
@@ -39,8 +46,9 @@ export default function MoreInformation({
     const load = async () => {
       setLoadingAttachments(true);
       try {
-        const res = await apiClient.get<{ data: Attachment[] }>(
-          `/users/${userId}/attachments`
+        const res = await cachedGet<{ data: Attachment[] }>(
+          `/users/${userId}/attachments`,
+          () => apiClient.get<{ data: Attachment[] }>(`/users/${userId}/attachments`)
         );
         if (!cancelled) {
           setAttachments(res.data ?? []);
@@ -94,6 +102,8 @@ export default function MoreInformation({
           if (attachment) {
             setAttachments((prev: Attachment[]) => [...prev, attachment]);
           }
+          // Underlying data changed; clear cached list for future visits.
+          invalidateCachedGet(`/users/${userId}/attachments`);
           addToast("CNIC uploaded.", "success");
         } catch (err) {
           console.error("Failed to upload CNIC", err);
@@ -153,6 +163,56 @@ export default function MoreInformation({
       setDeletingId(null);
     }
   };
+
+  // Helper to save address when global Save button is used
+  const saveAddress = async () => {
+    if (!address && !profile?.address) {
+      // Nothing to save; skip noisy calls.
+      return;
+    }
+    setSavingAddress(true);
+    onSavingChange?.(true);
+    try {
+      const res = await apiClient.put<{ user: User }>(`/users/${userId}/profile`, {
+        address,
+      });
+
+      const updatedProfile: UserProfile = {
+        user_id: profile?.user_id ?? res.user.id,
+        ...(profile ?? {}),
+        address: res.user.address ?? address,
+      };
+
+      onProfileUpdated(updatedProfile);
+      addToast("Profile address saved.", "success");
+    } catch (e) {
+      console.error(e);
+      const message =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: unknown }).message)
+          : "Failed to save address.";
+      addToast(message, "error");
+    } finally {
+      setSavingAddress(false);
+      onSavingChange?.(false);
+    }
+  };
+
+  // React to top Save button
+  const lastSignalRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (externalSaveSignal == null) return;
+
+    if (lastSignalRef.current === null) {
+      lastSignalRef.current = externalSaveSignal;
+      return;
+    }
+
+    if (lastSignalRef.current === externalSaveSignal) return;
+    lastSignalRef.current = externalSaveSignal;
+    void saveAddress();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalSaveSignal]);
 
   return (
     <div className="space-y-6">
@@ -250,36 +310,10 @@ export default function MoreInformation({
           rows={4}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
         />
-        <div className="mt-3 flex justify-end">
-          <button
-            type="button"
-            disabled={savingAddress}
-            onClick={async () => {
-              setSavingAddress(true);
-              try {
-                const updated: UserProfile = {
-                  user_id: profile?.user_id ?? userId,
-                  ...(profile ?? {}),
-                  address,
-                };
-                onProfileUpdated(updated);
-                addToast("Profile address saved (local only).", "success");
-              } catch (e) {
-                console.error(e);
-                const message =
-                  e && typeof e === "object" && "message" in e
-                    ? String((e as { message: unknown }).message)
-                    : "Failed to save address.";
-                addToast(message, "error");
-              } finally {
-                setSavingAddress(false);
-              }
-            }}
-            className="px-4 py-2 text-xs font-medium rounded-md bg-black text-white hover:bg-gray-800 disabled:opacity-60"
-          >
-            {savingAddress ? "Saving..." : "Save"}
-          </button>
-        </div>
+        {/* Address is saved via the global Save button in the header */}
+        {savingAddress && (
+          <p className="mt-2 text-xs text-gray-500">Saving address...</p>
+        )}
       </div>
 
       {/* Attached Documents Table */}

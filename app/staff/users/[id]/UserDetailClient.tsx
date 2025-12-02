@@ -88,6 +88,7 @@ export default function UserDetailClient({ id }: UserDetailClientProps) {
     <div className="max-w-full mx-auto min-h-full">
       <UserDetailHeader
         userId={id}
+        user={user}
         saving={saving}
         onSave={() => setSaveVersion((v) => v + 1)}
         onToggleSidebar={() => setShowSidebar((prev) => !prev)}

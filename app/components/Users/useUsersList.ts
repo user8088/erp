@@ -8,6 +8,10 @@ import type { User, Paginated } from "../../lib/types";
 // Key: `${page}-${perPage}`
 const usersCache = new Map<string, { users: User[]; total: number }>();
 
+export function invalidateUsersCache() {
+  usersCache.clear();
+}
+
 export function useUsersList() {
   const [users, setUsers] = useState<User[]>([]);
   const [page, setPage] = useState(1);

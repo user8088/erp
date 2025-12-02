@@ -1,15 +1,22 @@
 "use client";
- 
-import { Plus, List, RefreshCw, MoreVertical, ChevronDown, Image as ImageIcon } from "lucide-react";
+
+import { Plus, List, RefreshCw, ChevronDown, Image as ImageIcon } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface UsersActionBarProps {
   viewMode: "list" | "image";
   onChangeView: (mode: "list" | "image") => void;
+  onRefresh?: () => void;
 }
 
-export default function UsersActionBar({ viewMode, onChangeView }: UsersActionBarProps) {
+export default function UsersActionBar({
+  viewMode,
+  onChangeView,
+  onRefresh,
+}: UsersActionBarProps) {
   const [showViewMenu, setShowViewMenu] = useState(false);
+  const router = useRouter();
 
   const label = viewMode === "list" ? "List View" : "Image View";
   const Icon = viewMode === "list" ? List : ImageIcon;
@@ -54,19 +61,19 @@ export default function UsersActionBar({ viewMode, onChangeView }: UsersActionBa
           )}
         </div>
         <button
+          type="button"
+          onClick={onRefresh}
           className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
           aria-label="Refresh"
         >
           <RefreshCw className="w-4 h-4 text-gray-600" />
         </button>
-        <button
-          className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-          aria-label="More options"
-        >
-          <MoreVertical className="w-4 h-4 text-gray-600" />
-        </button>
       </div>
-      <button className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors">
+      <button
+        type="button"
+        onClick={() => router.push("/staff/users/new")}
+        className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors"
+      >
         <Plus className="w-4 h-4" />
         <span>Add User</span>
       </button>

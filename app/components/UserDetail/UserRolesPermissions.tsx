@@ -1,57 +1,143 @@
-/* Roles & Permissions tab – ERPNext-style UI (local-only for now) */
+/* Roles & Permissions tab – now backed by Laravel Roles API */
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  getStoredRoles,
-  saveStoredRoles,
-  type RoleDefinition,
-} from "../../utils/rolesStorage";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useToast } from "../ui/ToastProvider";
+import { apiClient } from "../../lib/apiClient";
+import type { Paginated, Role, RoleSummary, User } from "../../lib/types";
 
-type Role = RoleDefinition;
+interface UserRolesPermissionsProps {
+  userId: string;
+  externalSaveSignal?: number;
+  onSavingChange?: (saving: boolean) => void;
+}
 
-export default function UserRolesPermissions() {
+// In-memory caches to avoid refetching on navigation
+let allRolesCache: RoleSummary[] | null = null;
+const userRoleIdsCache: Record<string, (string | number)[]> = {};
+
+export default function UserRolesPermissions({
+  userId,
+  externalSaveSignal,
+  onSavingChange,
+}: UserRolesPermissionsProps) {
+  const { addToast } = useToast();
   const [roleProfile, setRoleProfile] = useState("");
-  const [roles, setRoles] = useState<Role[]>(() => getStoredRoles());
+  const [roles, setRoles] = useState<RoleSummary[]>([]);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string | number>>(
+    new Set()
+  );
+  // Track last save signal so top Save button can trigger role saving
+  // without causing an immediate save on first mount.
+  const lastSignalRef = useRef<number | null>(null);
 
-  const handleToggleRole = (id: string) => {
-    setRoles((prev) =>
-      prev.map((role) =>
-        role.id === id ? { ...role, checked: !role.checked } : role
-      )
-    );
+  // Load all roles and the user's current roles with caching
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        let rolesData: RoleSummary[];
+
+        if (allRolesCache) {
+          rolesData = allRolesCache;
+        } else {
+          const rolesRes = await apiClient.get<Paginated<Role>>("/roles");
+          rolesData = rolesRes.data;
+          allRolesCache = rolesData;
+        }
+
+        let roleIds: (string | number)[];
+        if (userRoleIdsCache[userId]) {
+          roleIds = userRoleIdsCache[userId];
+        } else {
+          const userRes = await apiClient.get<{ user: User }>(`/users/${userId}`);
+          const currentRoles = userRes.user.roles ?? [];
+          roleIds = currentRoles.map((r) => r.id);
+          userRoleIdsCache[userId] = roleIds;
+        }
+
+        if (!mounted) return;
+
+        setRoles(rolesData);
+        setSelectedRoleIds(new Set(roleIds));
+      } catch (e) {
+        console.error(e);
+        addToast("Failed to load roles for this user.", "error");
+      } finally {
+        // no-op
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
+  }, [addToast, userId]);
+
+  const handleToggleRole = (id: string | number) => {
+    setSelectedRoleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
   const handleSelectAll = () => {
-    setRoles((prev) =>
-      prev.map((role) => ({
-        ...role,
-        checked: true,
-      }))
-    );
+    setSelectedRoleIds(new Set(roles.map((r) => r.id)));
   };
 
   const handleUnselectAll = () => {
-    setRoles((prev) =>
-      prev.map((role) => ({
-        ...role,
-        checked: false,
-      }))
-    );
+    setSelectedRoleIds(new Set());
   };
 
-  // Persist roles so new ones and edits are shared with the create-role page
-  useEffect(() => {
-    if (roles.length) {
-      saveStoredRoles(roles);
+  const handleSaveAssignments = async () => {
+    onSavingChange?.(true);
+    try {
+      const role_ids = Array.from(selectedRoleIds);
+      await apiClient.put(`/users/${userId}`, {
+        role_ids,
+      });
+      userRoleIdsCache[userId] = role_ids;
+      addToast("User roles updated.", "success");
+    } catch (e) {
+      console.error(e);
+      addToast("Failed to update roles.", "error");
+    } finally {
+      onSavingChange?.(false);
     }
-  }, [roles]);
+  };
 
-  const columns = [roles.slice(0, 15), roles.slice(15, 30), roles.slice(30)];
+  // Trigger save from the global header Save button
+  useEffect(() => {
+    if (externalSaveSignal == null) return;
+
+    if (lastSignalRef.current === null) {
+      lastSignalRef.current = externalSaveSignal;
+      return;
+    }
+
+    if (lastSignalRef.current === externalSaveSignal) return;
+    lastSignalRef.current = externalSaveSignal;
+    void handleSaveAssignments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalSaveSignal]);
+
+  const columns = useMemo(
+    () => [roles.slice(0, 15), roles.slice(15, 30), roles.slice(30)],
+    [roles]
+  );
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6">
-      <h3 className="text-base font-semibold text-gray-900 mb-4">Roles</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-semibold text-gray-900">Roles</h3>
+      </div>
 
       {/* Role Profile */}
       <div className="mb-4">
@@ -95,7 +181,7 @@ export default function UserRolesPermissions() {
               >
                 <input
                   type="checkbox"
-                  checked={role.checked}
+                  checked={selectedRoleIds.has(role.id)}
                   onChange={() => handleToggleRole(role.id)}
                   className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
                 />

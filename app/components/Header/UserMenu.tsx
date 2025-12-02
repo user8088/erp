@@ -39,6 +39,24 @@ export default function UserMenu() {
 
   if (!user) return null;
 
+  const displayName =
+    user.full_name ||
+    [user.first_name, user.last_name].filter(Boolean).join(" ") ||
+    user.email;
+
+  const primaryRole =
+    user.roles && user.roles.length > 0 ? user.roles[0].name : null;
+
+  const initials =
+    user.initials ||
+    (displayName || "")
+      .split(" ")
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -46,7 +64,7 @@ export default function UserMenu() {
         className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 rounded transition-colors"
       >
         <div className="w-8 h-8 bg-orange-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-orange-700 transition-colors">
-          <span className="text-white text-xs font-medium">{user.initials}</span>
+          <span className="text-white text-xs font-medium">{initials}</span>
         </div>
         <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${isOpen ? "rotate-180" : ""}`} />
       </button>
@@ -54,10 +72,10 @@ export default function UserMenu() {
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
           <div className="p-4 border-b border-gray-200">
-            <p className="text-sm font-semibold text-gray-900">{user.name}</p>
+            <p className="text-sm font-semibold text-gray-900">{displayName}</p>
             <p className="text-xs text-gray-500 mt-1">{user.email}</p>
-            {user.role && (
-              <p className="text-xs text-gray-400 mt-1">{user.role}</p>
+            {primaryRole && (
+              <p className="text-xs text-gray-400 mt-1">{primaryRole}</p>
             )}
           </div>
           <div className="py-1">

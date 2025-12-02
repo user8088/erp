@@ -6,7 +6,7 @@ import UsersFilterBar from "../../components/Users/UsersFilterBar";
 import UsersTable from "../../components/Users/UsersTable";
 import UsersPagination from "../../components/Users/UsersPagination";
 import UsersImageView from "../../components/Users/UsersImageView";
-import { useUsersList } from "../../components/Users/useUsersList";
+import { useUsersList, invalidateUsersCache } from "../../components/Users/useUsersList";
 
 export default function UsersPage() {
   const [viewMode, setViewMode] = useState<"list" | "image">("list");
@@ -23,7 +23,15 @@ export default function UsersPage() {
 
   return (
     <div className="max-w-full mx-auto min-h-full">
-      <UsersActionBar viewMode={viewMode} onChangeView={setViewMode} />
+      <UsersActionBar
+        viewMode={viewMode}
+        onChangeView={setViewMode}
+        onRefresh={() => {
+          invalidateUsersCache();
+          // Reset to first page to ensure we refetch a fresh list
+          setPage(1);
+        }}
+      />
       <UsersFilterBar />
       {error && (
         <div className="mb-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">

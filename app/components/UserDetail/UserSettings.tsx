@@ -5,6 +5,7 @@ import { Trash2, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useToast } from "../ui/ToastProvider";
 import { apiClient } from "../../lib/apiClient";
+import { useUser } from "../User/UserContext";
 
 interface UserSettingsProps {
   userId: string;
@@ -19,6 +20,7 @@ export default function UserSettings({
 }: UserSettingsProps) {
   const router = useRouter();
   const { addToast } = useToast();
+  const { hasAtLeast } = useUser();
   const [isInactive, setIsInactive] = useState(status === "inactive");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -38,6 +40,10 @@ export default function UserSettings({
   };
 
   const handleMarkInactive = async (checked: boolean) => {
+    if (!hasAtLeast("action.user.update", "read-write")) {
+      addToast("You do not have permission to update this user.", "error");
+      return;
+    }
     const newStatus: "active" | "inactive" = checked ? "inactive" : "active";
     setIsInactive(checked);
     try {
@@ -88,7 +94,7 @@ export default function UserSettings({
             <p className="text-xs text-gray-500 mb-4">
               Once you delete a profile, there is no going back. Please be certain.
             </p>
-            {!showDeleteConfirm ? (
+            {hasAtLeast("action.user.delete", "read-write") && !showDeleteConfirm ? (
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
@@ -96,7 +102,7 @@ export default function UserSettings({
                 <Trash2 className="w-4 h-4" />
                 <span>Delete Profile</span>
               </button>
-            ) : (
+            ) : hasAtLeast("action.user.delete", "read-write") ? (
               <div className="space-y-3">
                 <p className="text-sm text-gray-700 font-medium">
                   Are you sure you want to delete this profile? This action cannot be undone.
@@ -117,6 +123,10 @@ export default function UserSettings({
                   </button>
                 </div>
               </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                You do not have permission to delete this user.
+              </p>
             )}
           </div>
         </div>

@@ -1,19 +1,12 @@
 "use client";
 
-import { User, Mail, Briefcase, LogOut, Save, X } from "lucide-react";
+import { User, Mail, Briefcase, LogOut } from "lucide-react";
 import { useUser } from "../components/User/UserContext";
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function ProfilePage() {
-  const { user, setUser, logout } = useUser();
+  const { user, logout } = useUser();
   const router = useRouter();
-  const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    name: user?.name || "",
-    email: user?.email || "",
-    role: user?.role || "",
-  });
 
   if (!user) {
     return (
@@ -23,33 +16,17 @@ export default function ProfilePage() {
     );
   }
 
-  const handleSave = () => {
-    if (formData.name && formData.email) {
-      const updatedUser = {
-        ...user,
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        initials: formData.name
-          .split(" ")
-          .map((n) => n[0])
-          .join("")
-          .toUpperCase()
-          .slice(0, 2),
-      };
-      setUser(updatedUser);
-      setIsEditing(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setFormData({
-      name: user.name,
-      email: user.email,
-      role: user.role || "",
-    });
-    setIsEditing(false);
-  };
+  const displayName = user.full_name || user.first_name || user.email;
+  const primaryRole = user.roles && user.roles.length > 0 ? user.roles[0].name : "Not specified";
+  const initials =
+    user.initials ||
+    (displayName || "")
+      .split(" ")
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
 
   const handleLogout = () => {
     logout();
@@ -67,22 +44,20 @@ export default function ProfilePage() {
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 bg-orange-600 rounded-full flex items-center justify-center">
-              <span className="text-white text-2xl font-semibold">{user.initials}</span>
+              <span className="text-white text-2xl font-semibold">{initials}</span>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">{user.name}</h2>
+              <h2 className="text-lg font-semibold text-gray-900">{displayName}</h2>
               <p className="text-sm text-gray-500">{user.email}</p>
-              {user.role && <p className="text-xs text-gray-400 mt-1">{user.role}</p>}
+              <p className="text-xs text-gray-400 mt-1">{primaryRole}</p>
             </div>
           </div>
-          {!isEditing && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="px-4 py-2 text-sm font-medium text-orange-600 hover:bg-orange-50 rounded transition-colors"
-            >
-              Edit Profile
-            </button>
-          )}
+          <button
+            onClick={() => router.push(`/staff/users/${user.id}`)}
+            className="px-4 py-2 text-sm font-medium text-orange-600 hover:bg-orange-50 rounded transition-colors"
+          >
+            Edit Profile
+          </button>
         </div>
 
         {/* Profile Form */}
@@ -92,17 +67,9 @@ export default function ProfilePage() {
               <User className="w-4 h-4" />
               Full Name
             </label>
-            {isEditing ? (
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="Enter your full name"
-              />
-            ) : (
-              <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">{user.name}</p>
-            )}
+            <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
+              {displayName}
+            </p>
           </div>
 
           <div>
@@ -110,17 +77,9 @@ export default function ProfilePage() {
               <Mail className="w-4 h-4" />
               Email Address
             </label>
-            {isEditing ? (
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="Enter your email"
-              />
-            ) : (
-              <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">{user.email}</p>
-            )}
+            <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
+              {user.email}
+            </p>
           </div>
 
           <div>
@@ -128,39 +87,12 @@ export default function ProfilePage() {
               <Briefcase className="w-4 h-4" />
               Role
             </label>
-            {isEditing ? (
-              <input
-                type="text"
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="Enter your role"
-              />
-            ) : (
-              <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
-                {user.role || "Not specified"}
-              </p>
-            )}
+            <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
+              {primaryRole}
+            </p>
           </div>
 
-          {isEditing && (
-            <div className="flex items-center gap-3 pt-4">
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
-              >
-                <Save className="w-4 h-4" />
-                Save Changes
-              </button>
-              <button
-                onClick={handleCancel}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                <X className="w-4 h-4" />
-                Cancel
-              </button>
-            </div>
-          )}
+          {/* Editing is done on the Staff → User detail page; this view is read-only */}
         </div>
       </div>
 

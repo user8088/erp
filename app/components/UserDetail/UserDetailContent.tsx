@@ -46,12 +46,21 @@ export default function UserDetailContent({
             <UserActivity />
           </>
         )}
-        {activeTab === "roles-permissions" && <UserRolesPermissions />}
+        {activeTab === "roles-permissions" && (
+          <UserRolesPermissions
+            userId={userId}
+            externalSaveSignal={saveSignal}
+            onSavingChange={onSavingChange}
+          />
+        )}
         {activeTab === "more-information" && (
           <MoreInformation
             userId={userId}
+            user={user}
             profile={profile}
             onProfileUpdated={onProfileChange}
+            externalSaveSignal={saveSignal}
+            onSavingChange={onSavingChange}
           />
         )}
         {activeTab === "settings" && (

@@ -113,7 +113,16 @@ This document describes the backend features and HTTP APIs implemented for integ
           "language": "en",
           "time_zone": "Asia/Karachi",
           "status": "active",
-          "assigned_to_user_id": null
+          "assigned_to_user_id": null,
+          "address": "123 Street, City",
+          "roles": [
+            {
+              "id": 1,
+              "name": "System Manager",
+              "description": "Full system access",
+              "is_system": true
+            }
+          ]
         }
       }
       ```
@@ -138,6 +147,7 @@ This document describes the backend features and HTTP APIs implemented for integ
       - `{ "user": { ...UserResource } }`
   - **PUT `/api/users/{id}`** – update core user fields
     - Partial updates for core user fields (same shape as `POST`, excluding password unless you explicitly send it).
+    - Also accepts `role_ids: number[]` to replace the user’s roles.
     - Response: `{ "user": { ... } }`.
   - **PATCH `/api/users/{id}/status`**
     - Body: `{ "status": "active" | "inactive" }`
@@ -233,6 +243,259 @@ This document describes the backend features and HTTP APIs implemented for integ
     - `userHasAtLeast(user, 'module.users', AccessLevel::ReadWrite)`.
     - `snapshotFor(user)` can be exposed via `/api/auth/me` if the frontend needs a permission map.
   - Policies & middleware rely on these codes; frontend can mirror them in its own permission model.
+
+---
+
+## 4.1 How Frontend Should Use Roles & Permissions
+
+### Concepts
+
+- Users get **roles**, not raw permissions.
+- Roles bundle many **permissions** identified by a `code` and an **access level**:
+  - `no-access`
+  - `read`
+  - `read-write`
+- Types of permission codes:
+  - `module.*` – high-level access to functional areas (Users, Tag Manager, etc.).
+  - `page.*` – visibility of specific screens / tabs.
+  - `action.*` – granular actions (update/delete/reset password).
+
+### Recommended `/api/auth/me` Shape
+
+The backend can (and is structured to) expose a permission snapshot like:
+
+```json
+{
+  "user": {
+    "id": 1,
+    "full_name": "System Manager",
+    "email": "system@example.com"
+  },
+  "permissions": {
+    "module.users": "read-write",
+    "page.staff.users": "read-write",
+    "module.tag_manager": "read-write",
+    "action.user.update": "read-write",
+    "action.user.delete": "read-write"
+  }
+}
+```
+
+The `permissions` map is effectively `PermissionChecker::snapshotFor($user)`.
+
+### Suggested Frontend Helper
+
+```ts
+type Access = 'no-access' | 'read' | 'read-write';
+
+const rank: Record<Access, number> = {
+  'no-access': 0,
+  read: 1,
+  'read-write': 2,
+};
+
+export function hasAtLeast(
+  permissions: Record<string, Access>,
+  code: string,
+  required: Access,
+) {
+  const current = permissions[code] ?? 'no-access';
+  return rank[current] >= rank[required];
+}
+```
+
+### Example Frontend Usage
+
+- **Show Users menu / route:**
+
+```ts
+if (hasAtLeast(perms, 'module.users', 'read')) {
+  // render Users nav item and allow navigation to /staff/users
+}
+```
+
+- **Enable create/edit user UI:**
+
+```ts
+const canEditUser = hasAtLeast(perms, 'module.users', 'read-write')
+  && hasAtLeast(perms, 'action.user.update', 'read-write');
+```
+
+- **Show Delete User button:**
+
+```ts
+const canDeleteUser = hasAtLeast(perms, 'action.user.delete', 'read-write');
+```
+
+- **Show Roles & Permissions admin screen:**
+
+```ts
+if (hasAtLeast(perms, 'module.roles_permissions', 'read')) {
+  // show roles/permissions module
+}
+```
+
+### System Manager Behavior
+
+- The `System Manager` role is seeded with `read-write` on **all** permissions.
+- The seeded `system@example.com` user is always assigned the `System Manager` role.
+- Frontend can treat `System Manager` as **super-admin**:
+  - All permission checks above will evaluate to `true`.
+  - Good for initial setup and debugging permission-gated UI.
+
+---
+
+## 4.2 Roles CRUD API
+
+### Endpoints
+
+All endpoints are under `/api` and use `auth:sanctum` plus module middleware:
+
+- Read:
+  - `GET /api/roles` – list roles.
+  - `GET /api/roles/{id}` – single role with permissions.
+  - Middleware: `module:module.roles_permissions,read`.
+- Write:
+  - `POST /api/roles`
+  - `PUT /api/roles/{id}`
+  - `DELETE /api/roles/{id}`
+  - Middleware: `module:module.roles_permissions,read-write`.
+
+Policies (`RolePolicy`) are also enforced for `view/create/update/delete`.
+
+### Response Shape
+
+- **Role object** (`RoleResource`):
+
+```json
+{
+  "id": 1,
+  "name": "Manager",
+  "description": "Manager role",
+  "is_system": false,
+  "permissions": [
+    {
+      "id": 10,
+      "code": "module.users",
+      "label": "Users Module",
+      "access_level": "read-write"
+    },
+    {
+      "id": 11,
+      "code": "page.staff.users",
+      "label": "Users Page",
+      "access_level": "read"
+    }
+  ]
+}
+```
+
+### GET `/api/roles`
+
+- Query params:
+  - `page`, `per_page` (optional).
+- Response:
+
+```json
+{
+  "data": [ { /* RoleResource */ }, ... ],
+  "meta": {
+    "current_page": 1,
+    "per_page": 15,
+    "total": 3,
+    "last_page": 1
+  }
+}
+```
+
+### GET `/api/roles/{id}`
+
+- Response:
+
+```json
+{
+  "role": { /* RoleResource */ }
+}
+```
+
+### POST `/api/roles`
+
+- Creates a new role **and** its permissions matrix.
+- Body:
+
+```json
+{
+  "name": "Custom Role",
+  "description": "Optional description",
+  "is_system": false,
+  "permissions": [
+    { "code": "module.users", "access_level": "read-write" },
+    { "code": "page.staff.users", "access_level": "read" },
+    { "code": "action.user.update", "access_level": "read-write" }
+  ]
+}
+```
+
+- Notes:
+  - `name` must be unique.
+  - `permissions` is optional; if omitted, role is created with no explicit permissions (all `no-access` until assigned).
+  - Any `code` not yet in `permissions` table will be **created on the fly** with its `label` set equal to the code.
+- Response `201 Created`:
+
+```json
+{
+  "role": { /* RoleResource */ }
+}
+```
+
+### PUT `/api/roles/{id}`
+
+- Updates role metadata and/or permissions matrix.
+- Body (all fields optional):
+
+```json
+{
+  "name": "Renamed Role",
+  "description": "New description",
+  "permissions": [
+    { "code": "module.users", "access_level": "read" },
+    { "code": "page.staff.users", "access_level": "read-write" }
+  ]
+}
+```
+
+- Behavior:
+  - If `permissions` is provided, it **replaces** the existing matrix for that role.
+  - If `permissions` is omitted, existing permissions are left unchanged.
+  - `is_system` can be toggled via API if provided, but typically should remain `true` for built-in roles.
+- Response:
+
+```json
+{
+  "role": { /* updated RoleResource */ }
+}
+```
+
+### DELETE `/api/roles/{id}`
+
+- Deletes a role **unless** `is_system` is true.
+- Policy ensures system roles (e.g. `System Manager`) cannot be deleted.
+- Response:
+
+```json
+{ "message": "Role deleted." }
+```
+
+### Frontend Integration Notes
+
+- Use `GET /api/roles` to power:
+  - Roles listing screen.
+  - 3-column “roles” selector on user profile Roles & Permissions tab.
+- Use `GET /api/roles/{id}` + `PUT /api/roles/{id}` for the **role editor** UI:
+  - Show a matrix of modules/pages/actions with radio buttons (`no-access/read/read-write`).
+  - Persist entire matrix as `permissions` array on save.
+- Use `POST /api/roles` for “New Role” flow.
+- Use `DELETE /api/roles/{id}` for “Delete Role”; backend prevents deleting system roles.
 
 ---
 

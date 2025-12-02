@@ -21,6 +21,11 @@ export default function UserDetailsForm({
   externalSaveSignal,
 }: UserDetailsFormProps) {
   const { addToast } = useToast();
+
+  const computeFullName = (first: string, middle: string, last: string) => {
+    return [first, middle, last].filter(Boolean).join(" ");
+  };
+
   const [formData, setFormData] = useState({
     enabled: true,
     email: "",
@@ -35,13 +40,18 @@ export default function UserDetailsForm({
 
   useEffect(() => {
     if (!user) return;
+    const first = user.first_name ?? "";
+    const middle = user.middle_name ?? "";
+    const last = user.last_name ?? "";
     setFormData({
       enabled: user.status === "active",
       email: user.email ?? "",
-      firstName: user.first_name ?? "",
-      middleName: user.middle_name ?? "",
-      lastName: user.last_name ?? "",
-      fullName: user.full_name ?? "",
+      firstName: first,
+      middleName: middle,
+      lastName: last,
+      // Always derive full name from parts so we don't depend on backend's
+      // denormalized full_name field.
+      fullName: computeFullName(first, middle, last),
       username: user.username ?? "",
       language: user.language ?? "English",
       timeZone: user.time_zone ?? "",
@@ -53,6 +63,14 @@ export default function UserDetailsForm({
   const lastSignalRef = useRef<number | null>(null);
   useEffect(() => {
     if (externalSaveSignal == null) return;
+
+    // On first mount, just record the initial signal value so we don't
+    // immediately auto-save when the detail page loads.
+    if (lastSignalRef.current === null) {
+      lastSignalRef.current = externalSaveSignal;
+      return;
+    }
+
     if (lastSignalRef.current === externalSaveSignal) return;
     lastSignalRef.current = externalSaveSignal;
     void handleSave();
@@ -68,7 +86,6 @@ export default function UserDetailsForm({
         first_name: formData.firstName,
         middle_name: formData.middleName || null,
         last_name: formData.lastName || null,
-        full_name: formData.fullName,
         username: formData.username || null,
         language: formData.language,
         time_zone: formData.timeZone || null,
@@ -127,7 +144,14 @@ export default function UserDetailsForm({
               <input
                 type="text"
                 value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                onChange={(e) => {
+                  const firstName = e.target.value;
+                  setFormData((prev) => ({
+                    ...prev,
+                    firstName,
+                    fullName: computeFullName(firstName, prev.middleName, prev.lastName),
+                  }));
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               />
             </div>
@@ -136,7 +160,14 @@ export default function UserDetailsForm({
               <input
                 type="text"
                 value={formData.middleName}
-                onChange={(e) => setFormData({ ...formData, middleName: e.target.value })}
+                onChange={(e) => {
+                  const middleName = e.target.value;
+                  setFormData((prev) => ({
+                    ...prev,
+                    middleName,
+                    fullName: computeFullName(prev.firstName, middleName, prev.lastName),
+                  }));
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               />
             </div>
@@ -145,7 +176,14 @@ export default function UserDetailsForm({
               <input
                 type="text"
                 value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                onChange={(e) => {
+                  const lastName = e.target.value;
+                  setFormData((prev) => ({
+                    ...prev,
+                    lastName,
+                    fullName: computeFullName(prev.firstName, prev.middleName, lastName),
+                  }));
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               />
             </div>
@@ -154,12 +192,14 @@ export default function UserDetailsForm({
           {/* Right Column */}
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Full Name (auto)
+              </label>
               <input
                 type="text"
                 value={formData.fullName}
-                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
               />
             </div>
             <div>

@@ -1,17 +1,11 @@
 export type AccessLevel = "no-access" | "read" | "read-write";
 
+export type PermissionsMap = Record<string, AccessLevel>;
+
 export interface RoleSummary {
   id: string | number;
   name: string;
   description?: string | null;
-}
-
-export interface Role extends RoleSummary {
-  /**
-   * Map of permission code → access level.
-   * Example keys: "dashboard", "accounting", "selling", etc.
-   */
-  permissions?: Record<string, AccessLevel>;
 }
 
 export interface PermissionSummary {
@@ -19,6 +13,11 @@ export interface PermissionSummary {
   code: string;
   label: string;
   access_level: AccessLevel;
+}
+
+export interface Role extends RoleSummary {
+  is_system?: boolean;
+  permissions?: PermissionSummary[];
 }
 
 export interface User {

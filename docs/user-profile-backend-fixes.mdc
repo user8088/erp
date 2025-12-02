@@ -1,0 +1,193 @@
+## User Profile Backend Fixes (Laravel)
+
+This document describes the backend changes required so that the ERP frontend’s **Profile & Settings** and **User Detail** screens display correct name and role information, and stay in sync after edits.
+
+---
+
+## 1. `full_name` should be derived, not edited
+
+### Intended behavior
+
+- `full_name` on the `users` table is a **denormalized, derived field**.
+- It should **not** be edited directly from the API.
+- Instead, it should always be computed as:
+
+```text
+full_name = first_name + ' ' + middle_name? + ' ' + last_name?
+```
+
+### Current bug
+
+- `PUT /api/users/{id}`:
+  - `UpdateUserRequest` does not include `full_name`, so that key is dropped during validation.
+  - `UserService::update` (or equivalent) fills the model with validated data and saves.
+  - `full_name` is **never recomputed** after changing `first_name` / `last_name`.
+- Result: `full_name` stays whatever it was originally (e.g. `"System Manager"`) even when name parts change.
+
+### Required change
+
+1. **Do not accept `full_name` from the client** in `UpdateUserRequest` (this is already the case; keep it that way).
+2. **After applying validated data**, recompute `full_name` server‑side before saving.
+
+#### Example: recompute in service/controller
+
+```php
+// In UserService::update or the controller handling PUT /api/users/{id}
+
+public function update(User $user, array $data): User
+{
+    // Fill normal fields from the validated data
+    $user->fill([
+        'email'       => $data['email']       ?? $user->email,
+        'first_name'  => $data['first_name']  ?? $user->first_name,
+        'middle_name' => $data['middle_name'] ?? $user->middle_name,
+        'last_name'   => $data['last_name']   ?? $user->last_name,
+        'language'    => $data['language']    ?? $user->language,
+        'time_zone'   => $data['time_zone']   ?? $user->time_zone,
+        'status'      => $data['status']      ?? $user->status,
+    ]);
+
+    // Recompute denormalized full_name
+    $user->full_name = collect([
+        $user->first_name,
+        $user->middle_name,
+        $user->last_name,
+    ])->filter()->implode(' ');
+
+    $user->save();
+
+    return $user;
+}
+```
+
+#### Optional: helper on the `User` model
+
+```php
+// app/Models/User.php
+
+public function recomputeFullName(): void
+{
+    $this->full_name = collect([
+        $this->first_name,
+        $this->middle_name,
+        $this->last_name,
+    ])->filter()->implode(' ');
+}
+```
+
+Then call:
+
+```php
+$user->recomputeFullName();
+$user->save();
+```
+
+The frontend already treats **Full Name as read‑only** and derives it visually from the parts; this change ensures the backend’s `full_name` stays consistent and that APIs like `/api/auth/me` return the correct value.
+
+---
+
+## 2. Ensure `/api/auth/me` returns up‑to‑date user + roles
+
+The ERP frontend uses **`GET /api/auth/me`** during startup to populate the global `UserContext`. This data drives:
+
+- The header avatar and name.
+- The Profile page (`/profile`).
+- Permission gating (via the `permissions` map when enabled).
+
+If `/api/auth/me` returns stale data (e.g. seeded `"System Manager"` name) or no roles, the UI will show:
+
+- Old full name (`"System Manager"` instead of updated name).
+- **“Not specified”** role, even if the user has roles in `user_roles`.
+
+### Required behavior for `/api/auth/me`
+
+1. **Return the latest user record**, including updated `full_name`, `first_name`, `last_name`, etc.
+2. **Eager‑load the user’s roles** (`user_roles → roles`) and expose them as a simple array of `{ id, name }` for the SPA.
+3. Optionally, include the `permissions` snapshot as described in `docs/laravel-backend.mdc` §4.1.
+
+### Example implementation
+
+```php
+// app/Http/Controllers/AuthController.php
+
+use Illuminate\Http\Request;
+use App\Models\User;
+
+class AuthController extends Controller
+{
+    public function me(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user()->loadMissing('roles');
+
+        return response()->json([
+            'user' => [
+                'id'          => $user->id,
+                'email'       => $user->email,
+                'username'    => $user->username,
+                'full_name'   => $user->full_name,
+                'first_name'  => $user->first_name,
+                'middle_name' => $user->middle_name,
+                'last_name'   => $user->last_name,
+                'language'    => $user->language,
+                'time_zone'   => $user->time_zone,
+                'status'      => $user->status,
+
+                // Minimal role info for the SPA (used on Profile page and header)
+                'roles' => $user->roles->map(fn ($role) => [
+                    'id'   => $role->id,
+                    'name' => $role->name,
+                ])->values(),
+            ],
+
+            // Optional: permission snapshot for frontend gating
+            // 'permissions' => PermissionChecker::snapshotFor($user),
+        ]);
+    }
+}
+```
+
+With this shape, the frontend:
+
+- Shows the correct **Full Name** off `user.full_name` (now recomputed correctly).
+- Shows the primary role (first role’s `name`) instead of “Not specified”.
+
+---
+
+## 3. Attach roles to users
+
+The profile UI shows the user’s primary role based on `user.roles`. If a user has **no entries in `user_roles`**, the role will be displayed as “Not specified” even if the roles/permissions system is configured.
+
+### Seeding / manual attachment
+
+Ensure that you attach at least one role to your admin user (e.g. `System Manager`):
+
+```php
+// Example: in a seeder or tinker session
+
+use App\Models\User;
+use App\Models\Role;
+
+$user = User::where('email', 'admin@erp.com')->firstOrFail();
+$systemManagerRole = Role::where('name', 'System Manager')->firstOrFail();
+
+// Attach or sync roles as appropriate
+$user->roles()->syncWithoutDetaching([$systemManagerRole->id]);
+```
+
+After this:
+
+- `/api/auth/me` will return `user.roles` with at least one role.
+- The Profile page and header dropdown will display that role name.
+
+---
+
+## 4. Summary
+
+- **Problem:** `full_name` remained `"System Manager"` and the Profile page showed **“Not specified”** for Role.
+- **Fixes:**
+  - Recompute `full_name` from `first_name` / `middle_name` / `last_name` in the update path; never accept `full_name` directly from the client.
+  - Make `/api/auth/me` load the authenticated user with `roles` and return them in the JSON payload.
+  - Ensure admin / primary users actually have roles assigned in `user_roles`.
+- **Result:** The SPA’s Profile page and header now show correct, up‑to‑date **Full Name** and **Role** that match backend state.
+

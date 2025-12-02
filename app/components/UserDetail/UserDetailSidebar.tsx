@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { User, Paperclip, Tag } from "lucide-react";
 import { Plus } from "lucide-react";
+import type { Attachment, User as BackendUser } from "../../lib/types";
+import { apiClient } from "../../lib/apiClient";
+import { cachedGet, invalidateCachedGet } from "../../lib/apiCache";
+import { useToast } from "../ui/ToastProvider";
+import { useUser } from "../User/UserContext";
 
 interface UserDetailSidebarProps {
   userId: string;
@@ -17,14 +22,26 @@ interface SavedTag {
 const TAG_STORAGE_KEY = "erp_tags";
 
 export default function UserDetailSidebar({ userId }: UserDetailSidebarProps) {
-  const [assignedTo, setAssignedTo] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<File[]>([]);
+  const { addToast } = useToast();
+  const { user: currentUser } = useUser();
+
+  const [assignedToId, setAssignedToId] = useState<string | number | null>(null);
+  const [assignedToName, setAssignedToName] = useState<string | null>(null);
+  const [possibleAssignees, setPossibleAssignees] = useState<BackendUser[]>([]);
+  const [loadingAssignees, setLoadingAssignees] = useState(false);
+  const [updatingAssignee, setUpdatingAssignee] = useState(false);
+
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+
   const [availableTags, setAvailableTags] = useState<SavedTag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [showTagMenu, setShowTagMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Load tags from local storage (still purely frontend until tag API exists)
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -47,10 +64,195 @@ export default function UserDetailSidebar({ userId }: UserDetailSidebarProps) {
     }
   }, []);
 
-  const handleAttachmentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Load current user + assignment + attachments from backend
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadUserAndAssignees = async () => {
+      setLoadingAssignees(true);
+      try {
+        // Load current user to get assigned_to_user_id
+        const res = await cachedGet<{
+          user: BackendUser & { assigned_to_user_id?: number | null };
+        }>(`/users/${userId}`, () =>
+          apiClient.get<{ user: BackendUser & { assigned_to_user_id?: number | null } }>(
+            `/users/${userId}`
+          )
+        );
+
+        if (cancelled) return;
+
+        const currentAssignedId = (res.user as any).assigned_to_user_id ?? null;
+        setAssignedToId(currentAssignedId);
+
+        // Load potential assignees (first page of active users)
+        const list = await cachedGet<{
+          data: (BackendUser & { assigned_to_user_id?: number | null })[];
+        }>(`/users?status=active&per_page=50`, () =>
+          apiClient.get<{
+            data: (BackendUser & { assigned_to_user_id?: number | null })[];
+          }>(`/users?status=active&per_page=50`)
+        );
+
+        if (cancelled) return;
+
+        setPossibleAssignees(list.data ?? []);
+
+        if (currentAssignedId) {
+          const match = list.data.find((u) => String(u.id) === String(currentAssignedId));
+          if (match) {
+            setAssignedToName(match.full_name);
+          } else {
+            // Fallback: fetch that one user
+            try {
+            const assignedUserRes = await cachedGet<{ user: BackendUser }>(
+              `/users/${currentAssignedId}`,
+              () => apiClient.get<{ user: BackendUser }>(`/users/${currentAssignedId}`)
+            );
+              if (!cancelled) {
+                setAssignedToName(assignedUserRes.user.full_name);
+              }
+            } catch {
+              // ignore, leave as null
+            }
+          }
+        } else {
+          setAssignedToName(null);
+        }
+      } catch (e) {
+        console.error("Failed to load user / assignees", e);
+        if (!cancelled) {
+          addToast("Failed to load assignment options.", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingAssignees(false);
+        }
+      }
+    };
+
+    const loadAttachments = async () => {
+      setLoadingAttachments(true);
+      try {
+        const res = await cachedGet<{ data: Attachment[] }>(
+          `/users/${userId}/attachments`,
+          () => apiClient.get<{ data: Attachment[] }>(`/users/${userId}/attachments`)
+        );
+        if (!cancelled) {
+          setAttachments(res.data ?? []);
+        }
+      } catch (e) {
+        console.error("Failed to load attachments", e);
+        if (!cancelled) {
+          addToast("Failed to load attachments.", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingAttachments(false);
+        }
+      }
+    };
+
+    void loadUserAndAssignees();
+    void loadAttachments();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, addToast]);
+
+  const handleChangeAssignee = async (newId: string | number | null) => {
+    // Forbid assigning a user to themselves on the frontend
+    if (newId && currentUser && String(newId) === String(currentUser.id)) {
+      addToast("You cannot assign a user to themselves.", "error");
+      return;
+    }
+
+    setUpdatingAssignee(true);
+    try {
+      const body = { assigned_to_user_id: newId === null ? null : Number(newId) };
+      const res = await apiClient.patch<{
+        user: BackendUser & { assigned_to_user_id?: number | null };
+      }>(
+        `/users/${userId}/assigned-to`,
+        body
+      );
+
+      const updatedAssignedId = (res.user as any).assigned_to_user_id ?? null;
+      setAssignedToId(updatedAssignedId);
+
+      if (updatedAssignedId) {
+        const match = possibleAssignees.find(
+          (u) => String(u.id) === String(updatedAssignedId)
+        );
+        if (match) {
+          setAssignedToName(match.full_name);
+        } else {
+          // Best-effort fetch
+          try {
+            const assignedUserRes = await apiClient.get<{ user: BackendUser }>(
+              `/users/${updatedAssignedId}`
+            );
+            setAssignedToName(assignedUserRes.user.full_name);
+          } catch {
+            setAssignedToName(null);
+          }
+        }
+      } else {
+        setAssignedToName(null);
+      }
+
+      addToast("Assignment updated.", "success");
+
+      // Close dropdown only after a successful assignment/unassignment
+      setShowAssignDropdown(false);
+    } catch (e) {
+      console.error("Failed to update assignment", e);
+      addToast("Failed to update assignment.", "error");
+    } finally {
+      setUpdatingAssignee(false);
+    }
+  };
+
+  const handleAttachmentsChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const files = e.target.files;
-    if (!files) return;
-    setAttachments((prev) => [...prev, ...Array.from(files)]);
+    if (!files || files.length === 0) return;
+
+    setUploadingAttachments(true);
+    try {
+      const uploads: Promise<void>[] = [];
+
+      Array.from(files).forEach((file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const uploadPromise = apiClient
+          .post<{ attachment: Attachment }>(`/users/${userId}/attachments`, formData)
+          .then((res) => {
+            const attachment = (res as any).attachment as Attachment | undefined;
+            if (attachment) {
+              setAttachments((prev) => [...prev, attachment]);
+            }
+          })
+          .catch((err) => {
+            console.error("Failed to upload attachment", err);
+            addToast("Failed to upload one of the attachments.", "error");
+          });
+
+        uploads.push(uploadPromise);
+      });
+
+      await Promise.all(uploads);
+      addToast("Attachment(s) uploaded.", "success");
+    } finally {
+      setUploadingAttachments(false);
+      // clear value so same file can be re-selected
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   };
 
   const toggleTag = (id: string) => {
@@ -70,7 +272,7 @@ export default function UserDetailSidebar({ userId }: UserDetailSidebarProps) {
 
       {/* Sections */}
       <div className="space-y-2">
-        {/* Assigned To */}
+        {/* Assigned To (backed by PATCH /api/users/{id}/assigned-to) */}
         <div
           className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer"
           onClick={() => setShowAssignDropdown((open) => !open)}
@@ -91,24 +293,43 @@ export default function UserDetailSidebar({ userId }: UserDetailSidebarProps) {
               <Plus className="w-4 h-4 text-gray-600" />
             </button>
           </div>
-          {assignedTo && (
-            <p className="mt-1 ml-6 text-xs text-gray-500">Assigned to {assignedTo}</p>
+          {assignedToName && (
+            <p className="mt-1 ml-6 text-xs text-gray-500">
+              Assigned to {assignedToName}
+            </p>
           )}
           {showAssignDropdown && (
             <div className="mt-2 ml-6 border border-gray-200 rounded-md bg-white shadow-sm">
-              {["Unassigned", "Manager A", "Manager B"].map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => {
-                    setAssignedTo(name === "Unassigned" ? null : name);
-                    setShowAssignDropdown(false);
-                  }}
-                  className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  {name}
-                </button>
-              ))}
+              <button
+                type="button"
+                disabled={updatingAssignee}
+                onClick={() => {
+                  void handleChangeAssignee(null);
+                }}
+                className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                Unassigned
+              </button>
+              <div className="border-t border-gray-100" />
+              {loadingAssignees && (
+                <div className="px-3 py-2 text-xs text-gray-500">
+                  Loading users...
+                </div>
+              )}
+              {!loadingAssignees &&
+                possibleAssignees.map((u) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    disabled={updatingAssignee}
+                    onClick={() => {
+                      void handleChangeAssignee(u.id);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    {u.full_name}
+                  </button>
+                ))}
             </div>
           )}
         </div>
@@ -134,10 +355,17 @@ export default function UserDetailSidebar({ userId }: UserDetailSidebarProps) {
               <Plus className="w-4 h-4 text-gray-600" />
             </button>
           </div>
-          {attachments.length > 0 && (
+          {loadingAttachments ? (
+            <p className="mt-1 ml-6 text-xs text-gray-500">Loading attachments...</p>
+          ) : attachments.length > 0 ? (
             <p className="mt-1 ml-6 text-xs text-gray-500">
               {attachments.length} document{attachments.length > 1 ? "s" : ""} attached
             </p>
+          ) : (
+            <p className="mt-1 ml-6 text-xs text-gray-400">No documents attached yet.</p>
+          )}
+          {uploadingAttachments && (
+            <p className="mt-1 ml-6 text-[11px] text-gray-500">Uploading...</p>
           )}
           <input
             ref={fileInputRef}

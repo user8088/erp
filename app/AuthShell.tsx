@@ -10,7 +10,7 @@ import { useUser } from "./components/User/UserContext";
 export default function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated } = useUser();
+  const { isAuthenticated, authLoading } = useUser();
 
   // Persist last visited non-login route so we can resume after refresh/login
   useEffect(() => {
@@ -20,16 +20,12 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
+    // Don't redirect anywhere until we've finished checking auth
+    if (authLoading) return;
+
     if (pathname === "/login") {
       if (isAuthenticated) {
-        // After login, prefer last visited path if available
-        if (typeof window !== "undefined") {
-          const last = window.localStorage.getItem("lastPath");
-          if (last && last !== "/login") {
-            router.replace(last);
-            return;
-          }
-        }
+        // After login, always go to Home
         router.replace("/");
       }
     } else if (!isAuthenticated) {
@@ -38,7 +34,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
     // We intentionally only depend on isAuthenticated to avoid
     // React warnings about dynamic dependency arrays.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [authLoading, isAuthenticated, pathname, router]);
 
   // For login route, render only login page (no ERP chrome)
   if (pathname === "/login") {
@@ -48,7 +44,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
   }
 
   // For protected routes, wait until authenticated
-  if (!isAuthenticated) return null;
+  if (authLoading || !isAuthenticated) return null;
 
   return (
     <>
