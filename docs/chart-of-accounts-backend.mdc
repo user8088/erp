@@ -1,0 +1,305 @@
+## Chart of Accounts – Backend Specification (Laravel)
+
+This document describes what the Next.js ERP frontend expects from the **Accounting / Chart of Accounts** backend so we can wire a complete, future‑proof accounting core used by **all money‑related modules** (Selling, Buying, Stock, etc.).
+
+Use this as an implementation checklist for the Laravel backend.
+
+---
+
+## 1. Core concepts
+
+- **Company**
+  - We assume multi‑company support in the future, but the current UI is effectively single‑company.
+  - All accounts belong to a company.
+
+- **Account**
+  - One row per node in the chart of accounts tree.
+  - Can be either:
+    - **Group account**: purely structural; can have child accounts; **no direct postings**.
+    - **Ledger account**: leaf node; **can be posted to** from all modules; cannot have children.
+
+- **Normal balance side**
+  - For ledger accounts only:
+    - `"debit"` or `"credit"` depending on nature (Assets/Expenses vs Liabilities/Equity/Income).
+  - For group accounts: **must be `null`** and never used.
+
+- **Root type / account type**
+  - High‑level classification used for reporting and validation:
+    - `"asset"`, `"liability"`, `"equity"`, `"income"`, `"expense"`.
+  - This is required for both groups and ledgers.
+
+- **Posting**
+  - All financial effects (from **sales invoices**, **purchase invoices**, **stock movements**, **payment entries**, etc.) must eventually be represented as **journal entries**:
+    - `journal_entries` (header: date, company, voucher type, reference).
+    - `journal_entry_lines` (debit/credit amounts per ledger account).
+  - Only **ledger accounts** can be used in `journal_entry_lines.account_id`.
+
+---
+
+## 2. Database schema
+
+### 2.1 `accounts` table
+
+**Required fields (minimum to support current UI + reporting):**
+
+- `id` (PK, bigint)
+- `company_id` (FK → `companies.id`)
+- `name` (string, e.g. `"Cash In Hand"`)
+- `number` (string, nullable, e.g. `"1110"`)
+- `parent_id` (FK self‑reference, nullable – `null` for top‑level roots)
+- `is_group` (boolean)
+- `root_type` (enum: `asset`, `liability`, `equity`, `income`, `expense`)
+- `normal_balance` (enum: `debit`, `credit`, nullable)
+  - **Constraint**: `normal_balance IS NULL` when `is_group = 1`.
+- `tax_rate` (decimal(5,2), nullable)
+- `is_disabled` (boolean, default `0`)
+- `currency` (string, nullable – default company currency for now)
+- `created_at`, `updated_at`, `deleted_at` (soft deletes recommended)
+
+**Important constraints / rules:**
+
+- **Tree structure**
+  - If `parent_id` is not null:
+    - `parent.is_group` **must** be `true`.
+  - Prevent cycles (`parent_id` must not create loops).
+
+- **Group vs ledger**
+  - `is_group = 1` → **cannot** be used in any posting line.
+  - `is_group = 0` → **cannot** have children (`NOT EXISTS` child rows with `parent_id = this.id`).
+  - Application layer should enforce the “no children for ledger” rule on update.
+
+- **Root type inheritance**
+  - All descendants of a parent must share the **same `root_type`**:
+    - If `parent_id` is set, then `child.root_type = parent.root_type`.
+
+- **Uniqueness**
+  - Per company:
+    - `UNIQUE(company_id, number)` (optional but recommended).
+    - `UNIQUE(company_id, name, parent_id)` to avoid duplicate siblings.
+
+### 2.2 `journal_entries` & `journal_entry_lines`
+
+Even if you already have something similar, the frontend will depend on:
+
+- `journal_entries`
+  - `id`, `company_id`, `date`, `posting_time`, `voucher_type` (e.g. `"Sales Invoice"`), `reference_id`, `reference_type`, `remarks`, `created_by`, timestamps.
+
+- `journal_entry_lines`
+  - `id`, `journal_entry_id` (FK), `account_id` (FK → `accounts.id`), `debit` (decimal), `credit` (decimal), `party_type`/`party_id` (nullable for AR/AP), `cost_center_id` (optional).
+  - **Constraint**: `account.is_group = 0` (only ledgers).
+  - Per journal entry: `SUM(debit) = SUM(credit)` (enforce in service layer).
+
+These tables are used by Buying, Selling, Stock, etc. by generating postings:
+
+- Sales invoice → revenue, tax, receivable accounts.
+- Purchase invoice → expense/asset, tax, payable.
+- Stock movement → stock in hand, stock adjustment, COGS, etc.
+
+---
+
+## 3. API contract for Accounts
+
+The Next.js frontend will eventually replace its dummy data with real APIs. Plan for these endpoints (paths are suggestions; adapt to your Laravel routing style).
+
+### 3.1 List / tree view
+
+```http
+GET /api/accounts/tree?company_id={id}
+```
+
+**Response (simplified):**
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Application of Funds (Assets)",
+    "number": "1000",
+    "root_type": "asset",
+    "is_group": true,
+    "is_disabled": false,
+    "normal_balance": null,
+    "tax_rate": null,
+    "children": [
+      {
+        "id": 2,
+        "name": "Current Assets",
+        "number": "1100-1600",
+        "root_type": "asset",
+        "is_group": true,
+        "is_disabled": false,
+        "normal_balance": null,
+        "tax_rate": null,
+        "children": [
+          {
+            "id": 5,
+            "name": "Cash In Hand",
+            "number": "1110",
+            "root_type": "asset",
+            "is_group": false,
+            "normal_balance": "debit",
+            "is_disabled": false,
+            "tax_rate": null
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+For the list view:
+
+```http
+GET /api/accounts?company_id={id}&search=&root_type=&is_group=
+```
+
+returns a **flat, paginated** list with the same fields plus `parent_name`, `has_children`, etc.
+
+### 3.2 Create account
+
+```http
+POST /api/accounts
+```
+
+**Request JSON (matches New Account form):**
+
+```json
+{
+  "company_id": 1,
+  "name": "Cash In Hand",
+  "number": "1110",
+  "parent_id": 2,
+  "root_type": "asset",
+  "is_group": false,
+  "normal_balance": "debit",
+  "tax_rate": null,
+  "is_disabled": false,
+  "currency": "PKR"
+}
+```
+
+**Validation rules:**
+
+- `name`: required, max length, unique under same parent.
+- `root_type`: required, one of allowed enums.
+- `is_group`: boolean.
+- `normal_balance`:
+  - required when `is_group = false`.
+  - must be `null` when `is_group = true`.
+- `parent_id`:
+  - optional; if present:
+    - parent must exist and belong to same company.
+    - `parent.is_group` must be true.
+    - `root_type` must equal `parent.root_type`.
+
+### 3.3 Update account
+
+```http
+PUT /api/accounts/{id}
+```
+
+Same payload rules as create, with extra protections:
+
+- If `is_group` is changed from `true` → `false`:
+  - **Only allow** when there are **no child accounts**.
+- If `is_group` is `false` and the account is used in postings:
+  - You should probably **forbid changing `root_type` or normal balance**.
+
+### 3.4 Soft delete / disable
+
+The UI currently has **Disable**; we can back that with:
+
+```http
+PATCH /api/accounts/{id}/state
+```
+
+Body:
+
+```json
+{ "is_disabled": true }
+```
+
+Rules:
+
+- Disabled accounts cannot be used for new postings.
+- You may allow disabling only when:
+  - Either the account has no postings, **or**
+  - You are comfortable having historical postings but preventing future ones.
+
+(Additionally, you can support hard delete for only accounts with no children and no postings.)
+
+---
+
+## 4. How other modules should use Accounts
+
+Every money‑related module should **never hard‑code GL accounts** in the frontend. Instead, the backend should:
+
+- Provide **Accounting Settings** (separate doc) that map business events to **ledger account IDs**:
+  - Example settings:
+    - `sales_income_account_id`
+    - `sales_tax_account_id`
+    - `accounts_receivable_account_id`
+    - `accounts_payable_account_id`
+    - `stock_in_hand_account_id`
+    - `cogs_account_id` (Cost of Goods Sold)
+    - `rounding_difference_account_id`
+
+- When a domain event occurs:
+  - **Selling**
+    - Sales Invoice posting:
+      - Debit: Accounts Receivable (customer).
+      - Credit: Income, Tax, etc.
+  - **Buying**
+    - Purchase Invoice posting:
+      - Debit: Expense or Asset accounts.
+      - Credit: Accounts Payable (supplier).
+  - **Stock**
+    - Goods Receipt / Delivery:
+      - Debit/Credit: Stock In Hand vs COGS/Stock Adjustment.
+
+In all cases:
+
+- Only `accounts.is_group = 0` are allowed in `journal_entry_lines`.
+- `root_type` and `normal_balance` are for validation and reporting; do **not** block postings purely because the “normal side” differs (temporary negative balances are possible).
+
+---
+
+## 5. Permissions & security
+
+Hook Accounts into the existing permissions system (`module.accounting`):
+
+- Only users with at least `"read"` on `module.accounting` can:
+  - Call `GET /api/accounts` / `GET /api/accounts/tree`.
+- Only users with `"read-write"` can:
+  - Create / update / disable / delete accounts.
+
+You may also add finer‑grained permissions later, e.g. `account.create`, `account.edit`, `account.delete`.
+
+---
+
+## 6. Implementation checklist
+
+1. **DB**
+   - Create `accounts` table with fields and constraints above.
+   - Ensure `journal_entries` & `journal_entry_lines` exist and enforce `account.is_group = 0`.
+2. **Models**
+   - `Account` model with:
+     - Relationships: `company`, `parent`, `children`, `journalLines`.
+     - Scopes: `forCompany($id)`, `onlyGroups()`, `onlyLedgers()`.
+3. **Services**
+   - `AccountService` for create/update/delete with all business rules.
+   - `ChartOfAccountsService` for tree retrieval.
+4. **Controllers/API**
+   - `GET /api/accounts`, `GET /api/accounts/tree`.
+   - `POST /api/accounts`, `PUT /api/accounts/{id}`, `PATCH /api/accounts/{id}/state`.
+5. **Integration**
+   - Selling/Buying/Stock services only refer to accounts by **ID**, not by name/number.
+   - Account settings table to store default accounts for each module.
+
+Once this backend is in place, the Next.js frontend can:
+
+- Render the Chart of Accounts using real data.
+- Let users create/edit group and ledger accounts safely.
+- Use ledger accounts across Selling, Buying, Stock, and other modules without needing any accounting logic in the frontend.
+
