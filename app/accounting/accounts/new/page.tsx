@@ -26,6 +26,18 @@ export default function NewAccountPage() {
         e.target.type === "checkbox"
           ? (e.target as HTMLInputElement).checked
           : e.target.value;
+
+      // If switching to group account, clear balance side since it doesn't apply
+      if (field === "isGroup") {
+        const isGroup = value as boolean;
+        setFormData((prev) => ({
+          ...prev,
+          isGroup,
+          balanceMustBe: isGroup ? "" : prev.balanceMustBe,
+        }));
+        return;
+      }
+
       setFormData((prev) => ({ ...prev, [field]: value }));
     };
 
@@ -140,7 +152,7 @@ export default function NewAccountPage() {
             </select>
           </div>
 
-          {/* Row 4: Tax Rate / Balance must be */}
+          {/* Row 4: Tax Rate / Balance must be (for ledgers only) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Tax Rate
@@ -159,12 +171,16 @@ export default function NewAccountPage() {
             <select
               value={formData.balanceMustBe}
               onChange={handleChange("balanceMustBe")}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm disabled:bg-gray-100 disabled:text-gray-400"
+              disabled={formData.isGroup}
             >
               <option value="">Select</option>
               <option value="Debit">Debit</option>
               <option value="Credit">Credit</option>
             </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Only ledger accounts (Is Group unchecked) should have a debit or credit balance.
+            </p>
           </div>
         </div>
 
