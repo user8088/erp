@@ -48,11 +48,11 @@ export default function NewAccountPage() {
       <form
         id="new-account-form"
         onSubmit={handleSubmit}
-        className="bg-white border border-gray-200 rounded-lg p-6 space-y-4"
+        className="bg-white border border-gray-200 rounded-lg p-6 space-y-6"
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Row 1: checkboxes (compact) */}
-          <div className="flex items-center gap-6 md:col-span-2">
+          {/* Row 1: checkboxes aligned in grid */}
+          <div className="flex items-center h-full">
             <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
@@ -62,6 +62,8 @@ export default function NewAccountPage() {
               />
               <span>Disable</span>
             </label>
+          </div>
+          <div className="flex items-center h-full">
             <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
@@ -90,12 +92,22 @@ export default function NewAccountPage() {
               Parent Account <span className="text-red-500">*</span>
             </label>
             <input
-              type="text"
+              type="search"
               value={formData.parentAccount}
               onChange={handleChange("parentAccount")}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder="Select parent account"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+              placeholder="Search parent account"
+              list="parent-account-options"
             />
+            <datalist id="parent-account-options">
+              <option value="1000 - Application of Funds (Assets)" />
+              <option value="1100-1600 - Current Assets" />
+              <option value="1700 - Fixed Assets" />
+              <option value="2000 - Source of Funds (Liabilities)" />
+              <option value="3000 - Equity" />
+              <option value="4000 - Income" />
+              <option value="5000 - Expenses" />
+            </datalist>
           </div>
 
           {/* Row 3: Account Number / Account Type */}
@@ -144,16 +156,19 @@ export default function NewAccountPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Balance must be
             </label>
-            <input
-              type="text"
+            <select
               value={formData.balanceMustBe}
               onChange={handleChange("balanceMustBe")}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+            >
+              <option value="">Select</option>
+              <option value="Debit">Debit</option>
+              <option value="Credit">Credit</option>
+            </select>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 pt-1">
+        <div className="flex items-center gap-3 pt-2">
           <button
             type="submit"
             disabled={saving}
