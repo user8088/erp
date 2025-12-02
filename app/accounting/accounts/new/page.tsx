@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { accountsApi } from "../../../lib/apiClient";
+import type { Account } from "../../../lib/types";
+import { useToast } from "../../../components/ui/ToastProvider";
 
 export default function NewAccountPage() {
   const router = useRouter();
+  const { addToast } = useToast();
 
   const [formData, setFormData] = useState({
     disabled: false,
@@ -16,8 +20,38 @@ export default function NewAccountPage() {
     taxRate: "",
     balanceMustBe: "",
   });
-
+  const [parentOptions, setParentOptions] = useState<Account[]>([]);
+  const [parentId, setParentId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadParents = async () => {
+      try {
+        const res = await accountsApi.getAccounts({
+          company_id: 1,
+          is_group: true,
+          per_page: 1000,
+        });
+        if (!cancelled) {
+          setParentOptions(res.data);
+        }
+      } catch (e) {
+        console.error("Failed to load parent accounts", e);
+      }
+    };
+    loadParents();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const parentAccountLabel = useMemo(() => {
+    if (!parentId) return formData.parentAccount;
+    const found = parentOptions.find((p) => p.id === parentId);
+    return found ? `${found.number ?? ""} ${found.name}`.trim() : formData.parentAccount;
+  }, [parentId, parentOptions, formData.parentAccount]);
 
   const handleChange =
     (field: keyof typeof formData) =>
@@ -41,14 +75,63 @@ export default function NewAccountPage() {
       setFormData((prev) => ({ ...prev, [field]: value }));
     };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
+
+    const missingParentForLedger = !formData.isGroup && !parentId;
+
+    if (!formData.accountName || !formData.accountType || missingParentForLedger) {
+      const localErrors: Record<string, string[]> = {};
+      if (!formData.accountName) localErrors.name = ["Account name is required."];
+      if (!formData.accountType) localErrors.root_type = ["Account type is required."];
+      if (missingParentForLedger) {
+        localErrors.parent_id = ["Parent account is required for ledger accounts."];
+      }
+      setErrors(localErrors);
+      return;
+    }
+    if (!formData.isGroup && !formData.balanceMustBe) {
+      setErrors((prev) => ({
+        ...prev,
+        normal_balance: ["Balance side is required for ledger accounts."],
+      }));
+      return;
+    }
+
     setSaving(true);
-    // Placeholder: wire up API later
-    setTimeout(() => {
+    try {
+      const payload: Parameters<typeof accountsApi.createAccount>[0] = {
+        company_id: 1, // TODO: wire actual company
+        name: formData.accountName,
+        number: formData.accountNumber || null,
+        parent_id: formData.isGroup ? parentId ?? null : parentId,
+        root_type: formData.accountType.toLowerCase(),
+        is_group: formData.isGroup,
+        normal_balance: formData.isGroup
+          ? null
+          : (formData.balanceMustBe.toLowerCase() as "debit" | "credit"),
+        tax_rate: formData.taxRate ? Number(formData.taxRate) : null,
+        is_disabled: formData.disabled,
+        currency: null,
+      };
+
+      await accountsApi.createAccount(payload);
+      addToast("Account created successfully.", "success");
+      router.push("/chart-of-accounts");
+    } catch (e) {
+      console.error(e);
+      if (e && typeof e === "object" && "status" in e && (e as { status?: number }).status === 422) {
+        const data = (e as { data?: { errors?: Record<string, string[]> } }).data;
+        if (data?.errors) {
+          setErrors(data.errors);
+        }
+      } else {
+        addToast("Failed to create account.", "error");
+      }
+    } finally {
       setSaving(false);
-      router.back();
-    }, 600);
+    }
   };
 
   return (
@@ -105,21 +188,41 @@ export default function NewAccountPage() {
             </label>
             <input
               type="search"
-              value={formData.parentAccount}
-              onChange={handleChange("parentAccount")}
+              value={parentAccountLabel}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFormData((prev) => ({ ...prev, parentAccount: value }));
+                const match = parentOptions.find((p) => {
+                  const label = `${p.number ?? ""} ${p.name}`.trim();
+                  return label.toLowerCase() === value.toLowerCase();
+                });
+                setParentId(match ? match.id : null);
+                if (match) {
+                  // Ensure root type always matches selected parent
+                  const parentRootType = match.root_type;
+                  const capitalized =
+                    parentRootType.charAt(0).toUpperCase() + parentRootType.slice(1);
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountType: capitalized,
+                  }));
+                }
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
               placeholder="Search parent account"
               list="parent-account-options"
             />
             <datalist id="parent-account-options">
-              <option value="1000 - Application of Funds (Assets)" />
-              <option value="1100-1600 - Current Assets" />
-              <option value="1700 - Fixed Assets" />
-              <option value="2000 - Source of Funds (Liabilities)" />
-              <option value="3000 - Equity" />
-              <option value="4000 - Income" />
-              <option value="5000 - Expenses" />
+              {parentOptions.map((opt) => (
+                <option
+                  key={opt.id}
+                  value={`${opt.number ?? ""} ${opt.name}`.trim()}
+                />
+              ))}
             </datalist>
+            {errors.parent_id && (
+              <p className="mt-1 text-xs text-red-600">{errors.parent_id[0]}</p>
+            )}
           </div>
 
           {/* Row 3: Account Number / Account Type */}
@@ -133,6 +236,9 @@ export default function NewAccountPage() {
               onChange={handleChange("accountNumber")}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
+            {errors.number && (
+              <p className="mt-1 text-xs text-red-600">{errors.number[0]}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -150,6 +256,14 @@ export default function NewAccountPage() {
               <option value="Income">Income</option>
               <option value="Expense">Expense</option>
             </select>
+            {errors.root_type && (
+              <p className="mt-1 text-xs text-red-600">{errors.root_type[0]}</p>
+            )}
+            {parentId && (
+              <p className="mt-1 text-xs text-gray-500">
+                Type is derived from the parent account and must match it.
+              </p>
+            )}
           </div>
 
           {/* Row 4: Tax Rate / Balance must be (for ledgers only) */}
@@ -163,6 +277,9 @@ export default function NewAccountPage() {
               onChange={handleChange("taxRate")}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
+            {errors.tax_rate && (
+              <p className="mt-1 text-xs text-red-600">{errors.tax_rate[0]}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -181,6 +298,11 @@ export default function NewAccountPage() {
             <p className="mt-1 text-xs text-gray-500">
               Only ledger accounts (Is Group unchecked) should have a debit or credit balance.
             </p>
+            {errors.normal_balance && !formData.isGroup && (
+              <p className="mt-1 text-xs text-red-600">
+                {errors.normal_balance[0]}
+              </p>
+            )}
           </div>
         </div>
 

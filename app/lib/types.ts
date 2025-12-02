@@ -71,4 +71,31 @@ export interface Paginated<T> {
   };
 }
 
+// Accounting / Accounts
+export type RootAccountType = "asset" | "liability" | "equity" | "income" | "expense";
+
+export type NormalBalance = "debit" | "credit";
+
+export interface Account {
+  id: number;
+  company_id: number;
+  name: string;
+  number: string | null;
+  root_type: RootAccountType;
+  is_group: boolean;
+  normal_balance: NormalBalance | null;
+  tax_rate: number | null;
+  is_disabled: boolean;
+  currency: string | null;
+  parent_id: number | null;
+  parent_name: string | null;
+  has_children: boolean;
+  // For tree responses, children is an array; for flat responses it may be null.
+  children: Account[] | null;
+}
+
+export type AccountTreeNode = Omit<Account, "children"> & {
+  children: AccountTreeNode[];
+};
+
 

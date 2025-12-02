@@ -531,3 +531,253 @@ Policies (`RolePolicy`) are also enforced for `view/create/update/delete`.
     - `system@example.com` / `password`.
   - Attach the `System Manager` role to this user if your environment differs from the default seeding.
 
+---
+
+## 7. Accounting / Accounts API
+
+### 7.1 Overview
+
+- All endpoints are under `/api`, use `auth:sanctum`, and are protected by `module.accounting` permissions:
+  - Read: `module:module.accounting,read`.
+  - Write: `module:module.accounting,read-write`.
+- Core fields exposed:
+  - `id`, `company_id`, `name`, `number`, `root_type` (`asset|liability|equity|income|expense`),
+  - `is_group` (boolean), `normal_balance` (`debit|credit|null`),
+  - `tax_rate` (decimal or null), `is_disabled` (boolean), `currency` (nullable string),
+  - `parent_id`, `parent_name`, `has_children`, `children` (for tree views).
+
+### 7.2 GET `/api/accounts` – flat list
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read`.
+- **Query params**:
+  - `company_id` (number, required in practice).
+  - `search` (string, optional; matches `name` or `number`).
+  - `root_type` (`asset|liability|equity|income|expense`, optional).
+  - `is_group` (`0|1` or `false|true`, optional).
+  - `page` (number, optional).
+  - `per_page` (number, optional; default `15`).
+- **Response**:
+
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "company_id": 1,
+      "name": "Cash In Hand",
+      "number": "1110",
+      "root_type": "asset",
+      "is_group": false,
+      "normal_balance": "debit",
+      "tax_rate": null,
+      "is_disabled": false,
+      "currency": "PKR",
+      "parent_id": 2,
+      "parent_name": "Current Assets",
+      "has_children": false,
+      "children": null
+    }
+  ],
+  "meta": {
+    "current_page": 1,
+    "per_page": 15,
+    "total": 1,
+    "last_page": 1
+  }
+}
+```
+
+### 7.3 GET `/api/accounts/tree` – chart of accounts tree
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read`.
+- **Query params**:
+  - `company_id` (number, required).
+- **Response**: array of root nodes with nested `children` arrays:
+
+```json
+[
+  {
+    "id": 1,
+    "company_id": 1,
+    "name": "Application of Funds (Assets)",
+    "number": "1000",
+    "root_type": "asset",
+    "is_group": true,
+    "normal_balance": null,
+    "tax_rate": null,
+    "is_disabled": false,
+    "currency": "PKR",
+    "parent_id": null,
+    "parent_name": null,
+    "has_children": true,
+    "children": [
+      {
+        "id": 2,
+        "company_id": 1,
+        "name": "Current Assets",
+        "number": "1100-1600",
+        "root_type": "asset",
+        "is_group": true,
+        "normal_balance": null,
+        "tax_rate": null,
+        "is_disabled": false,
+        "currency": "PKR",
+        "parent_id": 1,
+        "parent_name": "Application of Funds (Assets)",
+        "has_children": true,
+        "children": [
+          {
+            "id": 5,
+            "company_id": 1,
+            "name": "Cash In Hand",
+            "number": "1110",
+            "root_type": "asset",
+            "is_group": false,
+            "normal_balance": "debit",
+            "tax_rate": null,
+            "is_disabled": false,
+            "currency": "PKR",
+            "parent_id": 2,
+            "parent_name": "Current Assets",
+            "has_children": false,
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+### 7.4 POST `/api/accounts` – create account
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read-write`.
+- **Body**:
+
+```json
+{
+  "company_id": 1,
+  "name": "Cash In Hand",
+  "number": "1110",
+  "parent_id": 2,
+  "root_type": "asset",
+  "is_group": false,
+  "normal_balance": "debit",
+  "tax_rate": null,
+  "is_disabled": false,
+  "currency": "PKR"
+}
+```
+
+- **Key rules**:
+  - `name`: required, max 255, unique under same `(company_id, parent_id)`.
+  - `number`: optional, unique per `company_id` if set.
+  - `root_type`: required, one of `asset|liability|equity|income|expense`.
+  - `is_group`: required boolean.
+  - `normal_balance`:
+    - Required and non‑null when `is_group = false`.
+    - Forced to `null` when `is_group = true`.
+    - If set, must be `debit` or `credit`.
+  - `parent_id` (if present):
+    - Parent must exist and have `is_group = true`.
+    - Parent `company_id` must match `company_id` when both are set.
+    - `root_type` must match parent.
+    - Cycles are rejected.
+- **Response `201`**:
+
+```json
+{
+  "account": {
+    "id": 5,
+    "company_id": 1,
+    "name": "Cash In Hand",
+    "number": "1110",
+    "root_type": "asset",
+    "is_group": false,
+    "normal_balance": "debit",
+    "tax_rate": null,
+    "is_disabled": false,
+    "currency": "PKR",
+    "parent_id": 2,
+    "parent_name": "Current Assets",
+    "has_children": false,
+    "children": null
+  }
+}
+```
+
+### 7.5 GET `/api/accounts/{id}` – show single account
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read`.
+- **Path params**:
+  - `id` (number) – account ID.
+- **Response `200`**:
+
+```json
+{
+  "account": {
+    "id": 5,
+    "company_id": 1,
+    "name": "Cash In Hand",
+    "number": "1110",
+    "root_type": "asset",
+    "is_group": false,
+    "normal_balance": "debit",
+    "tax_rate": null,
+    "is_disabled": false,
+    "currency": "PKR",
+    "parent_id": 2,
+    "parent_name": "Current Assets",
+    "has_children": false,
+    "children": null
+  }
+}
+```
+
+- **Errors**:
+  - `404` if account not found.
+
+### 7.6 PUT `/api/accounts/{id}` – update account
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read-write`.
+- **Body**: partial update; all fields optional, same keys as POST.
+- **Additional rules**:
+  - Changing `is_group` from `true` → `false` is **forbidden** if the account has children.
+  - Parent/root_type/normal_balance/name uniqueness validations are re‑applied when relevant fields change.
+  - Parent cycles are rejected.
+- **Responses**:
+  - `200`:
+
+```json
+{
+  "account": { /* same shape as in POST response */ }
+}
+```
+
+  - `404` if account not found.
+
+### 7.7 PATCH `/api/accounts/{id}/state` – disable / enable account
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read-write`.
+- **Body**:
+
+```json
+{ "is_disabled": true }
+```
+
+- **Behavior**:
+  - Toggles `is_disabled` flag.
+  - Intended to prevent future postings to that account while preserving history.
+- **Response `200`**:
+
+```json
+{
+  "account": {
+    "id": 5,
+    "is_disabled": true
+    /* other fields as in AccountResource */
+  }
+}
+```
+
+

@@ -125,4 +125,70 @@ export const apiClient = {
     request<T>(path, { ...options, method: "DELETE" }),
 };
 
+// Domain-specific helpers
+
+import type { Account, Paginated } from "./types";
+
+export interface GetAccountsParams {
+  company_id: number;
+  search?: string;
+  root_type?: string;
+  is_group?: boolean;
+  page?: number;
+  per_page?: number;
+}
+
+export interface CreateOrUpdateAccountPayload {
+  company_id: number;
+  name: string;
+  number?: string | null;
+  parent_id?: number | null;
+  root_type: string;
+  is_group: boolean;
+  normal_balance?: "debit" | "credit" | null;
+  tax_rate?: number | null;
+  is_disabled?: boolean;
+  currency?: string | null;
+}
+
+export const accountsApi = {
+  getAccounts(params: GetAccountsParams) {
+    const query = new URLSearchParams();
+    query.set("company_id", String(params.company_id));
+    if (params.search) query.set("search", params.search);
+    if (params.root_type) query.set("root_type", params.root_type);
+    if (typeof params.is_group === "boolean") {
+      query.set("is_group", params.is_group ? "1" : "0");
+    }
+    if (params.page) query.set("page", String(params.page));
+    if (params.per_page) query.set("per_page", String(params.per_page));
+
+    return apiClient.get<Paginated<Account>>(`/accounts?${query.toString()}`);
+  },
+
+  getAccountsTree(company_id: number) {
+    const query = new URLSearchParams();
+    query.set("company_id", String(company_id));
+    return apiClient.get<Account[]>(`/accounts/tree?${query.toString()}`);
+  },
+
+  createAccount(payload: CreateOrUpdateAccountPayload) {
+    return apiClient.post<{ account: Account }>("/accounts", payload);
+  },
+
+  getAccount(id: number) {
+    return apiClient.get<{ account: Account }>(`/accounts/${id}`);
+  },
+
+  updateAccount(id: number, payload: Partial<CreateOrUpdateAccountPayload>) {
+    return apiClient.put<{ account: Account }>(`/accounts/${id}`, payload);
+  },
+
+  updateAccountState(id: number, is_disabled: boolean) {
+    return apiClient.patch<{ account: Account }>(`/accounts/${id}/state`, {
+      is_disabled,
+    });
+  },
+};
+
 
