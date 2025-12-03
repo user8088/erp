@@ -98,4 +98,33 @@ export type AccountTreeNode = Omit<Account, "children"> & {
   children: AccountTreeNode[];
 };
 
+export interface Transaction {
+  id: number;
+  date: string;
+  voucher_type: string;
+  reference_number: string | null;
+  description: string | null;
+  debit: number;
+  credit: number;
+  balance?: number;
+  related_account_name?: string; // For group accounts
+  related_account_number?: string;
+}
+
+export interface JournalEntryLine {
+  account_id: number;
+  debit: number;
+  credit: number;
+  description?: string | null;
+}
+
+export interface JournalEntry {
+  id?: number;
+  date: string;
+  voucher_type: string;
+  reference_number?: string | null;
+  description?: string | null;
+  lines: JournalEntryLine[];
+}
+
 

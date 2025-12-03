@@ -1,0 +1,223 @@
+# Journal Features Implementation Summary
+
+## Overview
+Successfully implemented journal entry features for the ERP system, building upon the existing account features. This implementation follows the specifications outlined in `TODO.mdc`.
+
+## Database Schema
+
+### Tables Created
+1. **`journal_entries`** - Stores financial transaction headers
+   - `id`, `company_id`, `date`, `voucher_type`, `reference_number`
+   - `description`, `is_posted`, `created_by`, `timestamps`
+
+2. **`journal_entry_lines`** - Stores debit/credit transaction lines
+   - `id`, `journal_entry_id`, `account_id`, `debit`, `credit`
+   - `description`, `party_type`, `party_id`, `timestamps`
+   - **Constraint**: Enforces double-entry bookkeeping (debit = credit)
+
+## Models Created
+
+### JournalEntry Model
+- Location: `app/Models/JournalEntry.php`
+- Relationships: `hasMany` journal_entry_lines
+- Casts: date, is_posted (boolean)
+
+### JournalEntryLine Model
+- Location: `app/Models/JournalEntryLine.php`
+- Relationships: 
+  - `belongsTo` JournalEntry
+  - `belongsTo` Account
+  - `morphTo` Party (for customer/supplier linking)
+- Casts: debit, credit (decimal:2)
+
+### Account Model Updates
+- Added `journalEntryLines()` relationship
+
+## Services
+
+### JournalEntryService
+**Location**: `app/Accounting/Services/JournalEntryService.php`
+
+**Methods**:
+- `create(array $data)`: Creates journal entries with validation
+  - Validates debit = credit
+  - Ensures accounts are ledger accounts (not groups)
+  - Wraps in database transaction
+
+### AccountService Updates
+**Location**: `app/Accounting/Services/AccountService.php`
+
+**New Methods**:
+- `getTransactions(Account $account, array $filters)`: Retrieves paginated transactions
+  - Supports date filtering (`start_date`, `end_date`)
+  - Supports sort direction
+  - Works for both ledger and group accounts (recursive)
+
+- `getBalance(Account $account)`: Calculates current account balance
+  - Respects normal balance direction (debit/credit)
+  - Aggregates child accounts for groups
+
+- `getOpeningBalance(Account $account, string $beforeDate)`: Calculates opening balance
+  - Used for running balance calculations
+
+- `getTransactionQuery()`: Helper for building transaction queries
+- `getAllDescendantLedgerIds()`: Recursively finds all ledger accounts under a group
+- `flattenLedgerIds()`: Helper for recursive ID collection
+
+## Controllers
+
+### JournalEntryController
+**Location**: `app/Accounting/Http/Controllers/JournalEntryController.php`
+
+**Endpoints**:
+- `POST /api/journal-entries`: Create new journal entry
+  - Validates all fields including lines array
+  - Returns 201 on success with created entry
+
+### AccountController Updates
+**Location**: `app/Accounting/Http/Controllers/AccountController.php`
+
+**New Endpoints**:
+- `GET /api/accounts/{id}/transactions`: Get account transactions
+  - Query params: `page`, `per_page`, `start_date`, `end_date`, `sort_direction`
+  - Returns paginated transaction list
+
+- `GET /api/accounts/{id}/balance`: Get current account balance
+  - Returns calculated balance respecting normal balance direction
+
+## Resources
+
+### TransactionResource
+**Location**: `app/Accounting/Http/Resources/TransactionResource.php`
+
+**Fields**:
+- `id`, `date`, `voucher_type`, `reference_number`, `description`
+- `debit`, `credit`
+- `related_account_name`, `related_account_number` (for group account queries)
+- `balance` (optional, for running balance)
+
+## API Routes
+
+### New Routes in `routes/api.php`
+```php
+// Read operations (requires module.accounting,read)
+GET /api/accounts/{id}/transactions
+GET /api/accounts/{id}/balance
+
+// Write operations (requires module.accounting,read-write)
+POST /api/journal-entries
+```
+
+## Key Features Implemented
+
+### 1. Double-Entry Bookkeeping
+- Enforces debit = credit validation
+- Prevents posting to group accounts
+- Only ledger accounts can have transactions
+
+### 2. Hierarchical Account Support
+- Transactions query works for both ledger and group accounts
+- Group accounts show aggregated transactions from all children
+- Balance calculation recursively sums child accounts
+
+### 3. Flexible Transaction Queries
+- Date range filtering
+- Pagination support
+- Configurable sort direction (asc/desc)
+- Related account information for group queries
+
+### 4. Balance Calculations
+- Current balance (all-time)
+- Opening balance (before specific date)
+- Respects account normal balance direction:
+  - **Debit normal** (Assets, Expenses): Debit - Credit
+  - **Credit normal** (Liabilities, Equity, Income): Credit - Debit
+
+### 5. Manual Entry Support
+The backend now supports frontend flows for:
+- **Add Money/Transfer**: Two-line entries (debit one account, credit another)
+- **Manual Expense**: Expense account (debit) + Payment account (credit)
+- **General Journal Entries**: Multi-line entries with any valid combination
+
+## Business Rules Enforced
+
+1. **Group Accounts**:
+   - Cannot receive direct postings (validation error)
+   - Balance is read-only, derived from children
+   - Transactions show which child account was affected
+
+2. **Ledger Accounts**:
+   - Can receive both debits and credits
+   - Must have a normal_balance defined
+   - Support corrections, refunds, and transfers
+
+3. **Journal Entry Validation**:
+   - Total debit must equal total credit
+   - All accounts must exist and be ledger accounts
+   - Date must be valid
+
+## Testing
+
+Test file created at: `tests/Feature/Accounting/JournalEntriesApiTest.php`
+
+## Migration Status
+
+✅ Migration executed successfully:
+- `2025_12_03_065308_create_journal_entries_tables.php`
+
+## Next Steps (Optional Enhancements)
+
+1. **Running Balance**: Implement in-query running balance calculation for transaction lists
+2. **Immutability**: Add lock date functionality to prevent editing posted entries
+3. **Voucher Types**: Create enum or constants for voucher types
+4. **Audit Trail**: Track who created/modified entries
+5. **Reversal Entries**: Add functionality to reverse posted entries
+6. **Reports**: Trial Balance, Ledger Reports, etc.
+
+## Example API Usage
+
+### Create Journal Entry
+```json
+POST /api/journal-entries
+{
+  "date": "2025-12-03",
+  "voucher_type": "Journal Entry",
+  "description": "Initial Capital",
+  "lines": [
+    { "account_id": 5, "debit": 10000, "credit": 0, "description": "Cash deposit" },
+    { "account_id": 12, "debit": 0, "credit": 10000, "description": "Owner equity" }
+  ]
+}
+```
+
+### Get Account Transactions
+```
+GET /api/accounts/5/transactions?start_date=2025-01-01&end_date=2025-12-31&per_page=20
+```
+
+### Get Account Balance
+```
+GET /api/accounts/5/balance
+```
+
+## Files Modified/Created
+
+### Created:
+- `database/migrations/2025_12_03_065308_create_journal_entries_tables.php`
+- `app/Models/JournalEntry.php`
+- `app/Models/JournalEntryLine.php`
+- `app/Accounting/Services/JournalEntryService.php`
+- `app/Accounting/Http/Controllers/JournalEntryController.php`
+- `app/Accounting/Http/Resources/TransactionResource.php`
+- `tests/Feature/Accounting/JournalEntriesApiTest.php`
+
+### Modified:
+- `app/Models/Account.php` (added relationship)
+- `app/Accounting/Services/AccountService.php` (added transaction/balance methods)
+- `app/Accounting/Http/Controllers/AccountController.php` (added endpoints)
+- `routes/api.php` (registered new routes)
+
+---
+
+**Implementation Date**: 2025-12-03  
+**Status**: ✅ Complete and Ready for Testing

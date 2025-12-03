@@ -127,7 +127,8 @@ export const apiClient = {
 
 // Domain-specific helpers
 
-import type { Account, Paginated } from "./types";
+import type { Account, Paginated, Transaction, JournalEntry } from "./types";
+import { cachedGet, invalidateCachedGet } from "./apiCache";
 
 export interface GetAccountsParams {
   company_id: number;
@@ -163,31 +164,68 @@ export const accountsApi = {
     if (params.page) query.set("page", String(params.page));
     if (params.per_page) query.set("per_page", String(params.per_page));
 
-    return apiClient.get<Paginated<Account>>(`/accounts?${query.toString()}`);
+    const path = `/accounts?${query.toString()}`;
+    return cachedGet(path, () => apiClient.get<Paginated<Account>>(path));
   },
 
   getAccountsTree(company_id: number) {
     const query = new URLSearchParams();
     query.set("company_id", String(company_id));
-    return apiClient.get<Account[]>(`/accounts/tree?${query.toString()}`);
+    const path = `/accounts/tree?${query.toString()}`;
+    return cachedGet(path, () => apiClient.get<Account[]>(path));
   },
 
   createAccount(payload: CreateOrUpdateAccountPayload) {
-    return apiClient.post<{ account: Account }>("/accounts", payload);
+    return apiClient.post<{ account: Account }>("/accounts", payload).then((result) => {
+      // Invalidate accounts cache when creating a new account
+      invalidateCachedGet("/accounts");
+      return result;
+    });
   },
 
   getAccount(id: number) {
-    return apiClient.get<{ account: Account }>(`/accounts/${id}`);
+    const path = `/accounts/${id}`;
+    return cachedGet(path, () => apiClient.get<{ account: Account }>(path));
   },
 
   updateAccount(id: number, payload: Partial<CreateOrUpdateAccountPayload>) {
-    return apiClient.put<{ account: Account }>(`/accounts/${id}`, payload);
+    return apiClient.put<{ account: Account }>(`/accounts/${id}`, payload).then((result) => {
+      // Invalidate accounts cache when updating an account
+      invalidateCachedGet("/accounts");
+      return result;
+    });
   },
 
   updateAccountState(id: number, is_disabled: boolean) {
     return apiClient.patch<{ account: Account }>(`/accounts/${id}/state`, {
       is_disabled,
+    }).then((result) => {
+      // Invalidate accounts cache when updating account state
+      invalidateCachedGet("/accounts");
+      return result;
     });
+  },
+
+  getAccountTransactions(id: number, params?: { page?: number; per_page?: number; start_date?: string; end_date?: string; sort_direction?: 'asc' | 'desc' }) {
+    const query = new URLSearchParams();
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.per_page) query.set("per_page", String(params.per_page));
+    if (params?.start_date) query.set("start_date", params.start_date);
+    if (params?.end_date) query.set("end_date", params.end_date);
+    if (params?.sort_direction) query.set("sort_direction", params.sort_direction);
+
+    const path = `/accounts/${id}/transactions?${query.toString()}`;
+    return apiClient.get<Paginated<Transaction>>(path);
+  },
+
+  getAccountBalance(id: number) {
+    return apiClient.get<{ balance: number }>(`/accounts/${id}/balance`);
+  },
+};
+
+export const journalApi = {
+  createJournalEntry(payload: JournalEntry) {
+    return apiClient.post<{ journal_entry: JournalEntry }>("/journal-entries", payload);
   },
 };
 
