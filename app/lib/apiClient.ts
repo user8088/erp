@@ -31,10 +31,13 @@ async function request<T>(
     if (typeof window !== "undefined") {
       const token = localStorage.getItem("access_token");
       if (token) {
+        // console.log("Attaching token to request:", token.substring(0, 10) + "...");
         headers = {
           ...headers,
           Authorization: `Bearer ${token}`,
         };
+      } else {
+        console.warn("No token found in localStorage for auth request");
       }
     }
   }

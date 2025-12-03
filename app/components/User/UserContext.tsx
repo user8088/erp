@@ -118,8 +118,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       password,
     });
     
+    console.log("Login response:", result);
     if (result.access_token && typeof window !== "undefined") {
+        console.log("Saving access token:", result.access_token);
         localStorage.setItem("access_token", result.access_token);
+    } else {
+        console.warn("No access_token found in login response!");
     }
 
     setUser(result.user);
