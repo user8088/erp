@@ -72,6 +72,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setPermissions({});
           if (typeof window !== "undefined") {
             localStorage.removeItem("user");
+            localStorage.removeItem("access_token");
           }
         }
       } finally {
@@ -99,6 +100,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem("user", JSON.stringify(newUser));
         } else {
           localStorage.removeItem("user");
+          localStorage.removeItem("access_token");
         }
       }
     },
@@ -110,10 +112,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const result = await apiClient.post<{
       user: User;
       permissions?: PermissionsMap;
+      access_token: string;
     }>("/auth/login", {
       login: email,
       password,
     });
+    
+    if (result.access_token && typeof window !== "undefined") {
+        localStorage.setItem("access_token", result.access_token);
+    }
+
     setUser(result.user);
     setPermissions(result.permissions ?? {});
 
@@ -145,6 +153,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setPermissions({});
       if (typeof window !== "undefined") {
+        localStorage.removeItem("access_token");
         window.localStorage.removeItem("lastPath");
         window.location.href = "/login";
       }

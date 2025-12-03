@@ -1,8 +1,6 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
-const CSRF_COOKIE_URL = API_BASE_URL.replace(/\/api\/?$/, "") + "/sanctum/csrf-cookie";
-
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -14,34 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-let csrfFetched = false;
 
-async function ensureCsrfCookie() {
-  if (csrfFetched) return;
-  try {
-    await fetch(CSRF_COOKIE_URL, {
-      method: "GET",
-      credentials: "include",
-    });
-    csrfFetched = true;
-  } catch (e) {
-    console.error("Failed to fetch Sanctum CSRF cookie", e);
-  }
-}
-
-function getXsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("XSRF-TOKEN="));
-  if (!match) return null;
-  const value = match.split("=")[1];
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -56,14 +27,15 @@ async function request<T>(
   path: string,
   { method = "GET", body, headers, authRequired = true }: RequestOptions = {}
 ): Promise<T> {
-  if (authRequired && method !== "GET") {
-    await ensureCsrfCookie();
-    const xsrf = getXsrfToken();
-    if (xsrf) {
-      headers = {
-        ...headers,
-        "X-XSRF-TOKEN": xsrf,
-      };
+  if (authRequired) {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("access_token");
+      if (token) {
+        headers = {
+          ...headers,
+          Authorization: `Bearer ${token}`,
+        };
+      }
     }
   }
 
