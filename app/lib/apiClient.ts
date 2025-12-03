@@ -31,13 +31,13 @@ async function request<T>(
     if (typeof window !== "undefined") {
       const token = localStorage.getItem("access_token");
       if (token) {
-        // console.log("Attaching token to request:", token.substring(0, 10) + "...");
+        console.log(`[API] Attaching token to ${method} ${path}`);
         headers = {
           ...headers,
           Authorization: `Bearer ${token}`,
         };
       } else {
-        console.warn("No token found in localStorage for auth request");
+        console.warn(`[API] No token found for authenticated request: ${method} ${path}`);
       }
     }
   }

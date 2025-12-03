@@ -119,22 +119,28 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
     
     console.log("Login response:", result);
+    
+    // CRITICAL: Save token FIRST before any state updates or API calls
+    // This ensures the token is available for any requests triggered by state changes
     if (result.access_token && typeof window !== "undefined") {
         console.log("Saving access token:", result.access_token);
         localStorage.setItem("access_token", result.access_token);
     } else {
         console.warn("No access_token found in login response!");
+        throw new Error("No access token received from server");
     }
 
+    // Now update state - this may trigger re-renders and API calls
     setUser(result.user);
     setPermissions(result.permissions ?? {});
 
     // Immediately refresh from /auth/me so we pick up roles and
     // any additional fields that login might not include.
+    // The token is now guaranteed to be in localStorage for this request
     try {
       type MeResponse = { user: User; permissions?: PermissionsMap } | User;
       const me = await apiClient.get<MeResponse>("/auth/me", {
-        authRequired: false,
+        authRequired: true, // Changed to true since we now have the token
       });
       if ("user" in (me as MeResponse)) {
         const payload = me as { user: User; permissions?: PermissionsMap };
@@ -143,8 +149,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUser(me as User);
       }
-    } catch {
+    } catch (error) {
       // If /auth/me fails, we still have the login response user
+      console.warn("Failed to fetch /auth/me after login:", error);
     }
   }, [setUser, setPermissions]);
 
