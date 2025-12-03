@@ -1,5 +1,5 @@
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://erp-server-main-xegmvt.laravel.cloud/api";
 
 const CSRF_COOKIE_URL = API_BASE_URL.replace(/\/api\/?$/, "") + "/sanctum/csrf-cookie";
 
