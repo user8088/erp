@@ -40,7 +40,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       try {
         type MeResponse = { user: User; permissions?: PermissionsMap } | User;
         const me = await apiClient.get<MeResponse>("/auth/me", {
-          authRequired: false,
+          authRequired: true, // Changed to true to send token if available
         });
         if (isMounted) {
           if ("user" in (me as MeResponse)) {
