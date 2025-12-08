@@ -10,10 +10,13 @@ import {
   Folder,
   FolderOpen,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { accountsApi } from "../lib/apiClient";
 import type { Account, AccountTreeNode } from "../lib/types";
 import { useUser } from "../components/User/UserContext";
+import { useToast } from "../components/ui/ToastProvider";
+import DeleteAccountModal from "../components/Accounting/DeleteAccountModal";
 
 type ViewMode = "tree" | "list";
 
@@ -56,9 +59,11 @@ type TreeRowProps = {
   level?: number;
   selected: boolean;
   onToggle: (id: number) => void;
+  onDelete?: (account: AccountTreeNode) => void;
+  canDelete: boolean;
 };
 
-function TreeRow({ node, level = 0, selected, onToggle }: TreeRowProps) {
+function TreeRow({ node, level = 0, selected, onToggle, onDelete, canDelete }: TreeRowProps) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
 
@@ -122,11 +127,36 @@ function TreeRow({ node, level = 0, selected, onToggle }: TreeRowProps) {
             </div>
           </div>
         </td>
+        <td className="px-4 py-3 align-top text-sm text-right font-medium text-gray-900 whitespace-nowrap">
+          {node.balance !== undefined && node.balance !== null ? (
+            <span>
+              {node.is_group && <span className="text-xs text-gray-500 mr-1">Total:</span>}
+              {node.currency || "PKR"} {node.balance.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </span>
+          ) : "—"}
+        </td>
         <td className="px-4 py-3 align-top w-32">
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
             {node.is_disabled ? "Disabled" : "Enabled"}
           </span>
         </td>
+        {canDelete && (
+          <td className="px-4 py-3 align-top w-12">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete?.(node);
+              }}
+              className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+              title="Delete account"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </td>
+        )}
       </tr>
       {hasChildren &&
         expanded &&
@@ -137,6 +167,8 @@ function TreeRow({ node, level = 0, selected, onToggle }: TreeRowProps) {
             level={level + 1}
             selected={selected}
             onToggle={onToggle}
+            onDelete={onDelete}
+            canDelete={canDelete}
           />
         ))}
     </>
@@ -146,11 +178,16 @@ function TreeRow({ node, level = 0, selected, onToggle }: TreeRowProps) {
 function TreeView({
   accounts,
   loading,
+  onAccountDeleted,
+  canDelete,
 }: {
   accounts: AccountTreeNode[];
   loading: boolean;
+  onAccountDeleted: () => void;
+  canDelete: boolean;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [deleteModalAccount, setDeleteModalAccount] = useState<AccountTreeNode | null>(null);
   const allIds = useMemo(() => getAllAccountIds(accounts), [accounts]);
   const selectAll = selectedIds.size === allIds.length && allIds.length > 0;
 
@@ -200,9 +237,17 @@ function TreeView({
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">
               Account
             </th>
+            <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 whitespace-nowrap">
+              Balance
+            </th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap w-32">
               Status
             </th>
+            {canDelete && (
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap w-12">
+                Actions
+              </th>
+            )}
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
@@ -212,10 +257,23 @@ function TreeView({
               node={root}
               selected={selectedIds.has(root.id)}
               onToggle={handleToggleRow}
+              onDelete={setDeleteModalAccount}
+              canDelete={canDelete}
             />
           ))}
         </tbody>
       </table>
+      {deleteModalAccount && (
+        <DeleteAccountModal
+          account={deleteModalAccount}
+          balance={deleteModalAccount.balance ?? null}
+          onClose={() => setDeleteModalAccount(null)}
+          onDeleted={() => {
+            setDeleteModalAccount(null);
+            onAccountDeleted();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -223,12 +281,17 @@ function TreeView({
 function ListView({
   accounts,
   loading,
+  onAccountDeleted,
+  canDelete,
 }: {
   accounts: AccountTreeNode[];
   loading: boolean;
+  onAccountDeleted: () => void;
+  canDelete: boolean;
 }) {
   const rows = useMemo(() => flattenAccounts(accounts), [accounts]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [deleteModalAccount, setDeleteModalAccount] = useState<AccountTreeNode | null>(null);
   const allIds = rows.map((r) => r.id);
   const selectAll = selectedIds.size === allIds.length && allIds.length > 0;
 
@@ -287,9 +350,14 @@ function ListView({
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap w-32">
               Status
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">
+            <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 whitespace-nowrap">
               Balance
             </th>
+            {canDelete && (
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap w-12">
+                Actions
+              </th>
+            )}
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
@@ -330,13 +398,46 @@ function ListView({
                   {row.is_disabled ? "Disabled" : "Enabled"}
                 </span>
               </td>
-              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                {row.normal_balance ?? "—"}
+              <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 whitespace-nowrap">
+                {row.balance !== undefined && row.balance !== null ? (
+                  <span>
+                    {row.is_group && <span className="text-xs text-gray-500 mr-1">Total:</span>}
+                    {row.currency || "PKR"} {row.balance.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                ) : "—"}
               </td>
+              {canDelete && (
+                <td className="px-4 py-3 w-12">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteModalAccount(row);
+                    }}
+                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                    title="Delete account"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
+      {deleteModalAccount && (
+        <DeleteAccountModal
+          account={deleteModalAccount}
+          balance={deleteModalAccount.balance ?? null}
+          onClose={() => setDeleteModalAccount(null)}
+          onDeleted={() => {
+            setDeleteModalAccount(null);
+            onAccountDeleted();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -345,6 +446,7 @@ export default function ChartOfAccountsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
   const router = useRouter();
   const { hasAtLeast } = useUser();
+  const { addToast } = useToast();
 
   const [accounts, setAccounts] = useState<AccountTreeNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -353,40 +455,33 @@ export default function ChartOfAccountsPage() {
   const canReadAccounting = hasAtLeast("module.accounting", "read");
   const canWriteAccounting = hasAtLeast("module.accounting", "read-write");
 
+  const loadAccounts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // TODO: wire real company_id from user/company selection when available
+      const tree = await accountsApi.getAccountsTree(1, true); // Include balances
+      setAccounts(mapToTreeNodes(tree));
+    } catch (e) {
+      console.error(e);
+      setError(
+        e instanceof Error ? e.message : "Failed to load chart of accounts."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!canReadAccounting) return;
 
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // TODO: wire real company_id from user/company selection when available
-        const tree = await accountsApi.getAccountsTree(1);
-        if (!cancelled) {
-          setAccounts(mapToTreeNodes(tree));
-        }
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) {
-          setError(
-            e instanceof Error ? e.message : "Failed to load chart of accounts."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    load();
-
-    return () => {
-      cancelled = true;
-    };
+    loadAccounts();
   }, [canReadAccounting]);
+
+  const handleAccountDeleted = () => {
+    addToast("Account deleted successfully.", "success");
+    loadAccounts();
+  };
 
   if (!canReadAccounting) {
     return (
@@ -458,9 +553,19 @@ export default function ChartOfAccountsPage() {
       )}
 
       {viewMode === "tree" ? (
-        <TreeView accounts={accounts} loading={loading} />
+        <TreeView 
+          accounts={accounts} 
+          loading={loading}
+          onAccountDeleted={handleAccountDeleted}
+          canDelete={canWriteAccounting}
+        />
       ) : (
-        <ListView accounts={accounts} loading={loading} />
+        <ListView 
+          accounts={accounts} 
+          loading={loading}
+          onAccountDeleted={handleAccountDeleted}
+          canDelete={canWriteAccounting}
+        />
       )}
     </div>
   );

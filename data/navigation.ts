@@ -10,9 +10,10 @@ import {
   Users,
   Truck,
   Key,
-  Building2,
   User,
   Tag,
+  Box,
+  FolderOpen,
 } from "lucide-react";
 
 export interface NavItem {
@@ -117,6 +118,42 @@ export const navigationData: NavItem[] = [
     isExpanded: false
   },
   {
+    id: "items",
+    label: "Items",
+    icon: Box,
+    href: "/items",
+    children: [
+      {
+        id: "categories",
+        label: "Categories",
+        icon: FolderOpen,
+        href: "/categories",
+      },
+      {
+        id: "item-tags",
+        label: "Tag Manager",
+        icon: Tag,
+        href: "/items/tags",
+      },
+    ],
+    isExpanded: false
+  },
+  {
+    id: "suppliers",
+    label: "Suppliers",
+    icon: Truck,
+    href: "/suppliers",
+    children: [
+      {
+        id: "supplier-invoices",
+        label: "Supplier Invoices",
+        icon: FileText,
+        href: "/supplier/invoices",
+      },
+    ],
+    isExpanded: false
+  },
+  {
     id: "staff",
     label: "Staff",
     icon: Users,
@@ -155,21 +192,6 @@ export const navigationData: NavItem[] = [
         label: "Rental Invoices",
         icon: FileText,
         href: "/rental/invoices",
-      },
-    ],
-    isExpanded: false
-  },
-  {
-    id: "supplier",
-    label: "Supplier",
-    icon: Building2,
-    href: "/supplier",
-    children: [
-      {
-        id: "supplier-invoices",
-        label: "Supplier Invoices",
-        icon: FileText,
-        href: "/supplier/invoices",
       },
     ],
     isExpanded: false

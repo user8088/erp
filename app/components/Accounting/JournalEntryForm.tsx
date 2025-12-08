@@ -30,6 +30,32 @@ export default function JournalEntryForm({ accounts, onSuccess, onCancel }: Jour
   // Filter to only ledger accounts
   const ledgerAccounts = accounts.filter(acc => !acc.is_group && !acc.is_disabled);
 
+  // Helper to format balance with Dr/Cr indicator
+  const formatBalance = (account: Account) => {
+    if (account.balance === undefined || account.balance === null) {
+      return '';
+    }
+    
+    const currency = account.currency || 'PKR';
+    const absBalance = Math.abs(account.balance);
+    const formattedAmount = absBalance.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    
+    // Determine Dr/Cr based on normal balance and actual balance
+    let indicator = '';
+    if (account.balance === 0) {
+      indicator = '';
+    } else if (account.normal_balance === 'debit') {
+      indicator = account.balance > 0 ? 'Dr' : 'Cr';
+    } else {
+      indicator = account.balance > 0 ? 'Cr' : 'Dr';
+    }
+    
+    return ` (${currency} ${formattedAmount}${indicator ? ' ' + indicator : ''})`;
+  };
+
   const addLine = () => {
     setLines([...lines, { account_id: 0, debit: 0, credit: 0, description: "" }]);
   };
@@ -185,7 +211,7 @@ export default function JournalEntryForm({ accounts, onSuccess, onCancel }: Jour
                       <option value={0}>Select Account</option>
                       {ledgerAccounts.map(acc => (
                         <option key={acc.id} value={acc.id}>
-                          {acc.number ? `${acc.number} - ` : ''}{acc.name}
+                          {acc.number ? `${acc.number} - ` : ''}{acc.name}{formatBalance(acc)}
                         </option>
                       ))}
                     </select>

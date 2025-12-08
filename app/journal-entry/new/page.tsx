@@ -24,9 +24,22 @@ export default function NewJournalEntryPage() {
     const loadAccounts = async () => {
       setLoading(true);
       try {
-        // Load all accounts for the company (assuming company_id = 1)
-        const res = await accountsApi.getAccounts({ company_id: 1, per_page: 1000 });
-        setAccounts(res.data);
+        // Load accounts tree with balances and flatten it
+        const tree = await accountsApi.getAccountsTree(1, true); // Include balances
+        
+        // Flatten the tree to get all accounts
+        const flattenAccounts = (nodes: Account[]): Account[] => {
+          const result: Account[] = [];
+          for (const node of nodes) {
+            result.push(node);
+            if (node.children && node.children.length > 0) {
+              result.push(...flattenAccounts(node.children));
+            }
+          }
+          return result;
+        };
+        
+        setAccounts(flattenAccounts(tree));
       } catch (e) {
         console.error("Failed to load accounts", e);
       } finally {

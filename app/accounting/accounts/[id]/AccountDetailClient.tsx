@@ -2,14 +2,67 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { accountsApi } from "../../../lib/apiClient";
 import type { Account, Transaction, Paginated } from "../../../lib/types";
 import { useToast } from "../../../components/ui/ToastProvider";
 import { useUser } from "../../../components/User/UserContext";
+import DeleteAccountModal from "../../../components/Accounting/DeleteAccountModal";
 
 interface AccountDetailClientProps {
   id: string;
 }
+
+// Helper to format transaction date (YYYY-MM-DD format) to readable format
+const formatTransactionDate = (dateString: string | undefined): string => {
+  if (!dateString) return '—';
+  
+  try {
+    // Parse YYYY-MM-DD format
+    const date = new Date(dateString + 'T00:00:00'); // Add time to avoid timezone issues
+    
+    const day = date.getDate();
+    const suffix = ['th', 'st', 'nd', 'rd'][day % 10 > 3 ? 0 : (day % 100 - day % 10 != 10) * day % 10];
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+    const month = monthNames[date.getMonth()];
+    const year = date.getFullYear();
+    
+    return `${day}${suffix} ${month} ${year}`;
+  } catch {
+    return dateString; // Fallback to original if parsing fails
+  }
+};
+
+// Helper to format date in readable format (with time)
+const formatReadableDate = (isoString: string | undefined): { date: string; time: string } | null => {
+  if (!isoString) return null;
+  
+  try {
+    const date = new Date(isoString);
+    
+    // Format date: "27th October 2025"
+    const day = date.getDate();
+    const suffix = ['th', 'st', 'nd', 'rd'][day % 10 > 3 ? 0 : (day % 100 - day % 10 != 10) * day % 10];
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+    const month = monthNames[date.getMonth()];
+    const year = date.getFullYear();
+    
+    // Format time: "at 2:30 pm"
+    const hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    const displayHours = hours % 12 || 12;
+    
+    return {
+      date: `${day}${suffix} ${month} ${year}`,
+      time: `at ${displayHours}:${minutes} ${ampm}`
+    };
+  } catch {
+    return null;
+  }
+};
 
 export default function AccountDetailClient({ id }: AccountDetailClientProps) {
   const router = useRouter();
@@ -40,6 +93,9 @@ export default function AccountDetailClient({ id }: AccountDetailClientProps) {
   // Balance State
   const [balance, setBalance] = useState<number | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
+
+  // Delete State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const canWriteAccounting = hasAtLeast("module.accounting", "read-write");
 
@@ -139,6 +195,11 @@ export default function AccountDetailClient({ id }: AccountDetailClientProps) {
     setIsEditing(false);
   };
 
+  const handleAccountDeleted = () => {
+    addToast("Account deleted successfully.", "success");
+    router.push("/chart-of-accounts");
+  };
+
   if (loadingAccount && !account) {
     return <div className="p-8 text-center text-gray-500">Loading account details...</div>;
   }
@@ -177,12 +238,21 @@ export default function AccountDetailClient({ id }: AccountDetailClientProps) {
         </div>
         <div className="flex items-center gap-3">
           {canWriteAccounting && (
-            <button
-              onClick={() => router.push("/journal-entry/new")}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-all shadow-sm"
-            >
-              + New Entry
-            </button>
+            <>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="px-4 py-2 bg-white border border-red-300 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-all shadow-sm flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+              <button
+                onClick={() => router.push("/journal-entry/new")}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-all shadow-sm"
+              >
+                + New Entry
+              </button>
+            </>
           )}
           <button
             onClick={() => router.push("/chart-of-accounts")}
@@ -371,6 +441,7 @@ export default function AccountDetailClient({ id }: AccountDetailClientProps) {
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
                   )}
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
                   <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit</th>
                   <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit</th>
                   {!account.is_group && (
@@ -381,20 +452,20 @@ export default function AccountDetailClient({ id }: AccountDetailClientProps) {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loadingTransactions ? (
                   <tr>
-                    <td colSpan={account.is_group ? 7 : 6} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <td colSpan={account.is_group ? 8 : 7} className="px-6 py-12 text-center text-sm text-gray-500">
                       Loading transactions...
                     </td>
                   </tr>
                 ) : transactions.length === 0 ? (
                   <tr>
-                    <td colSpan={account.is_group ? 7 : 6} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <td colSpan={account.is_group ? 8 : 7} className="px-6 py-12 text-center text-sm text-gray-500">
                       No transactions found for this period.
                     </td>
                   </tr>
                 ) : (
                   transactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{tx.date}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatTransactionDate(tx.date)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 hover:underline cursor-pointer">
                         {tx.voucher_type} {tx.reference_number ? `#${tx.reference_number}` : ''}
                       </td>
@@ -406,15 +477,48 @@ export default function AccountDetailClient({ id }: AccountDetailClientProps) {
                       <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title={tx.description || ""}>
                         {tx.description || "—"}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                        {tx.debit > 0 ? tx.debit.toLocaleString() : "—"}
+                      <td className="px-6 py-4 text-sm text-gray-600" title={tx.created_at}>
+                        {(() => {
+                          const formatted = formatReadableDate(tx.created_at);
+                          if (!formatted) return '—';
+                          return (
+                            <div className="flex flex-col">
+                              <span>{formatted.date}</span>
+                              <span className="text-xs text-gray-500">{formatted.time}</span>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                        {tx.credit > 0 ? tx.credit.toLocaleString() : "—"}
+                        {tx.debit !== undefined && tx.debit !== null ? (
+                          <span>
+                            {account.currency || "PKR"} {tx.debit.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
+                        {tx.credit !== undefined && tx.credit !== null ? (
+                          <span>
+                            {account.currency || "PKR"} {tx.credit.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        ) : "—"}
                       </td>
                       {!account.is_group && (
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                          {tx.balance?.toLocaleString() ?? "—"}
+                          {tx.balance !== undefined && tx.balance !== null ? (
+                            <span>
+                              {account.currency || "PKR"} {tx.balance.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </span>
+                          ) : "—"}
                         </td>
                       )}
                     </tr>
@@ -450,6 +554,16 @@ export default function AccountDetailClient({ id }: AccountDetailClientProps) {
           )}
         </div>
       </div>
+
+      {/* Delete Account Modal */}
+      {showDeleteModal && account && (
+        <DeleteAccountModal
+          account={account}
+          balance={balance}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={handleAccountDeleted}
+        />
+      )}
     </div>
   );
 }

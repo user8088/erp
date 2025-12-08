@@ -592,6 +592,7 @@ Policies (`RolePolicy`) are also enforced for `view/create/update/delete`.
 - **Auth**: `auth:sanctum`, `module:module.accounting,read`.
 - **Query params**:
   - `company_id` (number, required).
+  - `include_balances` (boolean, optional; default `false`) – when `1` or `true`, includes calculated balances for each account.
 - **Response**: array of root nodes with nested `children` arrays:
 
 ```json
@@ -779,5 +780,574 @@ Policies (`RolePolicy`) are also enforced for `view/create/update/delete`.
   }
 }
 ```
+
+### 7.8 GET `/api/accounts/{id}/balance` – get account balance
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read`.
+- **Path params**:
+  - `id` (number) – account ID.
+- **Behavior**:
+  - Calculates current balance from journal entry lines.
+  - For **ledger accounts** (`is_group = false`): sums debit/credit directly.
+  - For **group accounts** (`is_group = true`): recursively sums all descendant ledger balances.
+  - Balance calculation respects `normal_balance` direction:
+    - **Debit accounts**: `balance = total_debit - total_credit`
+    - **Credit accounts**: `balance = total_credit - total_debit`
+- **Response `200`**:
+
+```json
+{
+  "balance": 15000.50
+}
+```
+
+### 7.9 GET `/api/accounts/tree?include_balances=1` – tree with balances
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read`.
+- **Query params**:
+  - `company_id` (number, required).
+  - `include_balances` (boolean, `1` or `true`) – **NEW**: includes balance field for all accounts.
+- **Response**: same tree structure as section 7.3, but each account includes a `balance` field:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Application of Funds (Assets)",
+    "is_group": true,
+    "balance": 125000.50,
+    "children": [
+      {
+        "id": 2,
+        "name": "Current Assets",
+        "is_group": true,
+        "balance": 75000.50,
+        "children": [
+          {
+            "id": 5,
+            "name": "Cash In Hand",
+            "is_group": false,
+            "normal_balance": "debit",
+            "balance": 15000.50,
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+- **Notes**:
+  - **Ledger accounts** show individual balance from their journal entries.
+  - **Group accounts** show cumulative balance of all descendant ledgers.
+  - Omit `include_balances` or set to `0`/`false` for original behavior (no balance field).
+
+### 7.10 DELETE `/api/accounts/{id}` – delete account with balance reallocation
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read-write`.
+- **Path params**:
+  - `id` (number) – account ID to delete.
+- **Body** (optional, required only if account has balance):
+
+```json
+{
+  "reallocate_to_account_id": 10
+}
+```
+
+- **Behavior**:
+  1. **Validation checks**:
+     - ❌ Cannot delete if account has children (must delete or move children first).
+     - ⚠️ If account has balance (> 0.01), must provide `reallocate_to_account_id`.
+     - Target account must:
+       - ✅ Exist and belong to same company.
+       - ✅ Be a ledger account (not a group).
+       - ✅ Have same `root_type`.
+       - ❌ Not be the same account being deleted.
+  2. **Balance reallocation** (if balance exists):
+     - Creates automatic journal entry:
+       - Voucher type: `"Account Deletion Transfer"`
+       - Reference: `"ADT-{timestamp}"`
+       - Automatically posted (`is_posted = true`).
+       - Zero out the deleted account and transfer balance to target.
+       - Follows double-entry bookkeeping rules.
+  3. **Deletion**:
+     - Soft-deletes the account (`deleted_at` is set).
+
+- **Responses**:
+
+  - **Success (200)**:
+  ```json
+  {
+    "message": "Account deleted successfully."
+  }
+  ```
+
+  - **Validation error – has children (422)**:
+  ```json
+  {
+    "message": "Validation failed.",
+    "errors": {
+      "account": ["Cannot delete account with child accounts. Please delete or move child accounts first."]
+    }
+  }
+  ```
+
+  - **Validation error – has balance but no reallocation (422)**:
+  ```json
+  {
+    "message": "Validation failed.",
+    "errors": {
+      "reallocate_to_account_id": ["Account has a balance. Please specify a target account for balance reallocation."]
+    }
+  }
+  ```
+
+  - **Validation error – invalid target (422)**:
+  ```json
+  {
+    "message": "Validation failed.",
+    "errors": {
+      "reallocate_to_account_id": ["Target account must be a ledger account (not a group)."]
+    }
+  }
+  ```
+
+  - **Not found (404)**:
+  ```json
+  {
+    "message": "Account not found."
+  }
+  ```
+
+- **Example usage**:
+
+  **Delete account without balance**:
+  ```bash
+  DELETE /api/accounts/15
+  ```
+
+  **Delete account with balance (requires reallocation)**:
+  ```bash
+  DELETE /api/accounts/5
+  Content-Type: application/json
+
+  {
+    "reallocate_to_account_id": 10
+  }
+  ```
+
+### 7.11 GET `/api/accounts/{id}/transactions` – account transaction history
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read`.
+- **Path params**:
+  - `id` (number) – account ID.
+- **Query params**:
+  - `page` (number, optional).
+  - `per_page` (number, optional; default `15`).
+  - `start_date` (date, optional; format `YYYY-MM-DD`).
+  - `end_date` (date, optional; format `YYYY-MM-DD`).
+  - `sort_direction` (`asc` or `desc`, optional; default `desc`).
+- **Behavior**:
+  - Returns journal entry lines for this account (or all descendant ledgers if group account).
+  - Sorted by `journal_entries.date` and `journal_entries.id`.
+- **Response `200`**:
+
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "journal_entry_id": 1,
+      "account_id": 5,
+      "debit": 1000.00,
+      "credit": 0.00,
+      "description": "Opening balance",
+      "date": "2025-01-01",
+      "voucher_type": "Opening Balance",
+      "reference_number": "OB-001"
+    }
+  ],
+  "meta": {
+    "current_page": 1,
+    "per_page": 15,
+    "total": 1,
+    "last_page": 1
+  }
+}
+```
+
+---
+
+## 8. Journal Entries API
+
+### 8.1 Overview
+
+- **Tables**:
+  - `journal_entries` – transaction headers with date, voucher type, reference, description.
+  - `journal_entry_lines` – individual debit/credit lines referencing accounts.
+- **Double-entry enforcement**: total debits must equal total credits.
+- **Entry date/time tracking**:
+  - `created_at` / `updated_at` timestamps automatically tracked.
+  - Additional computed fields: `entry_date`, `entry_time`, `entry_datetime`.
+
+### 8.2 POST `/api/journal-entries` – create journal entry
+
+- **Auth**: `auth:sanctum`, `module:module.accounting,read-write`.
+- **Body**:
+
+```json
+{
+  "company_id": 1,
+  "date": "2025-12-07",
+  "voucher_type": "Journal Voucher",
+  "reference_number": "JV-001",
+  "description": "Sample transaction",
+  "lines": [
+    {
+      "account_id": 5,
+      "debit": 1000.00,
+      "credit": 0.00,
+      "description": "Cash received"
+    },
+    {
+      "account_id": 10,
+      "debit": 0.00,
+      "credit": 1000.00,
+      "description": "Revenue"
+    }
+  ]
+}
+```
+
+- **Validation rules**:
+  - `date`: required, valid date.
+  - `voucher_type`: required string.
+  - `reference_number`: optional string.
+  - `description`: optional string.
+  - `lines`: required array, minimum 2 lines.
+  - `lines.*.account_id`: required, must exist and be a **ledger account** (not a group).
+  - `lines.*.debit` / `lines.*.credit`: required numeric values (≥ 0).
+  - **Total debits must equal total credits** (enforced).
+  - `lines.*.description`: optional string.
+  - `lines.*.party_type` / `lines.*.party_id`: optional (for polymorphic relations to customers/suppliers).
+
+- **Behavior**:
+  - Creates journal entry header and all lines in a single transaction.
+  - Sets `created_by` to authenticated user ID.
+  - Automatically sets `is_posted = true` (posted immediately).
+  - Records entry timestamp in `created_at` field.
+
+- **Response `201 Created`**:
+
+```json
+{
+  "data": {
+    "id": 1,
+    "company_id": 1,
+    "date": "2025-12-07",
+    "voucher_type": "Journal Voucher",
+    "reference_number": "JV-001",
+    "description": "Sample transaction",
+    "is_posted": true,
+    "created_by": 1,
+    "created_at": "2025-12-07T14:30:45.000000Z",
+    "updated_at": "2025-12-07T14:30:45.000000Z",
+    "entry_date": "2025-12-07",
+    "entry_time": "14:30:45",
+    "entry_datetime": "2025-12-07 14:30:45",
+    "lines": [
+      {
+        "id": 1,
+        "journal_entry_id": 1,
+        "account_id": 5,
+        "debit": "1000.00",
+        "credit": "0.00",
+        "description": "Cash received"
+      },
+      {
+        "id": 2,
+        "journal_entry_id": 1,
+        "account_id": 10,
+        "debit": "0.00",
+        "credit": "1000.00",
+        "description": "Revenue"
+      }
+    ]
+  }
+}
+```
+
+- **Validation errors (422)**:
+
+```json
+{
+  "errors": {
+    "lines": ["Total Debit (1500.00) must equal Total Credit (1000.00)."]
+  }
+}
+```
+
+```json
+{
+  "errors": {
+    "lines": ["Account 'Current Assets' is a group account and cannot be used in transactions."]
+  }
+}
+```
+
+### 8.3 Journal Entry Date/Time Fields
+
+Every journal entry includes:
+
+- **`date`**: Transaction date (when the financial event occurred).
+- **`created_at`**: Standard Laravel timestamp (ISO 8601 format).
+- **`updated_at`**: Standard Laravel timestamp (ISO 8601 format).
+- **`entry_date`**: Formatted entry creation date (`Y-m-d`). *Computed from `created_at`*.
+- **`entry_time`**: Formatted entry creation time (`H:i:s`). *Computed from `created_at`*.
+- **`entry_datetime`**: Combined entry date and time (`Y-m-d H:i:s`). *Computed from `created_at`*.
+- **`created_by`**: User ID who created the entry (nullable).
+
+**Example**:
+```json
+{
+  "date": "2025-12-07",           // Transaction date
+  "created_at": "2025-12-07T14:30:45.000000Z",  // System timestamp (ISO)
+  "entry_date": "2025-12-07",     // Entry date (formatted)
+  "entry_time": "14:30:45",       // Entry time (formatted)
+  "entry_datetime": "2025-12-07 14:30:45",  // Combined (formatted)
+  "created_by": 1
+}
+```
+
+**Use cases**:
+- `date`: Display in financial reports and ledgers (when transaction occurred).
+- `entry_date` / `entry_time`: Display when entry was recorded (audit trail).
+- `created_at`: Use for sorting/filtering by creation timestamp.
+
+---
+
+## 9. Backend Configuration & Security
+
+### 9.1 CSRF Protection for API Routes
+
+- **Configuration**: `bootstrap/app.php`
+- **Behavior**:
+  - All routes under `/api/*` are **excluded from CSRF verification**.
+  - API routes use **Bearer token authentication** (`auth:sanctum`) which doesn't require CSRF tokens.
+  - CSRF protection remains active for web routes (session-based authentication).
+
+- **Middleware configuration**:
+
+```php
+->withMiddleware(function (Middleware $middleware): void {
+    $middleware->statefulApi();
+
+    // Exclude API routes from CSRF verification
+    $middleware->validateCsrfTokens(except: [
+        'api/*',
+        'auth/login',
+    ]);
+
+    $middleware->alias([
+        'module' => \App\Http\Middleware\EnsureUserHasModuleAccess::class,
+    ]);
+})
+```
+
+- **Why this is secure**:
+  - API routes require Bearer tokens which are validated on every request.
+  - CSRF is only needed for cookie-based (session) authentication.
+  - This is the standard approach for JSON APIs.
+
+### 9.2 CORS Configuration
+
+- **Configuration**: `config/cors.php`
+- **Allowed origins**:
+
+```php
+'allowed_origins' => [
+    'https://erp-six-dun.vercel.app',  // Production frontend
+    'http://localhost:3000',           // Local development
+    'http://127.0.0.1:3000',          // Local development (alternative)
+],
+```
+
+- **Allowed methods**: All (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`)
+- **Allowed headers**: All
+- **Credentials**: Supported (`supports_credentials: true`)
+
+- **Production deployment**:
+  - Update `allowed_origins` in `config/cors.php` to include your production frontend URL.
+  - Or use environment variables:
+    ```php
+    'allowed_origins' => [
+        env('FRONTEND_URL', 'https://erp-six-dun.vercel.app'),
+        env('FRONTEND_URL_LOCAL', 'http://localhost:3000'),
+    ],
+    ```
+  - Set `FRONTEND_URL` in Laravel Cloud environment variables.
+
+---
+
+## 10. Artisan Commands
+
+### 10.1 `php artisan accounting:wipe` – wipe accounting data
+
+- **Purpose**: Completely wipe chart of accounts and all transactions (for testing/reset).
+- **Options**:
+  - `--company={id}`: Wipe data for specific company only (optional).
+  - `--force`: Skip confirmation prompts.
+  - `--reseed`: Re-seed default accounts after wiping.
+
+- **Usage examples**:
+
+```bash
+# Wipe all accounting data (with confirmation)
+php artisan accounting:wipe
+
+# Wipe for specific company only
+php artisan accounting:wipe --company=1
+
+# Wipe without confirmation
+php artisan accounting:wipe --force
+
+# Wipe and re-seed default accounts
+php artisan accounting:wipe --force --reseed
+```
+
+- **What it deletes**:
+  1. All journal entry lines
+  2. All journal entries
+  3. All accounts (including soft-deleted ones)
+
+- **Behavior**:
+  - Prompts for confirmation unless `--force` is used.
+  - Double confirmation for wiping all companies.
+  - Handles parent-child account relationships (sets `parent_id` to null before deletion).
+  - Wrapped in database transaction for safety.
+  - Rolls back if any error occurs.
+
+- **Output example**:
+
+```
+⚠️  WARNING: THIS WILL PERMANENTLY DELETE ACCOUNTING DATA
+
+Target: ALL COMPANIES
+This will delete:
+  - All journal entry lines
+  - All journal entries
+  - All accounts (chart of accounts)
+
+Starting deletion process...
+
+Deleting journal entry lines...
+  ✓ Deleted 4 journal entry lines
+Deleting journal entries...
+  ✓ Deleted 2 journal entries
+Deleting accounts...
+  Breaking parent-child relationships...
+  ✓ Deleted 15 accounts
+
+✅ All accounting data has been wiped successfully!
+```
+
+- **⚠️ Warning**: This command permanently deletes data. Use with caution, especially in production.
+
+---
+
+## 11. Testing & Integration Notes
+
+### 11.1 Authentication Flow
+
+1. **Login**: `POST /api/auth/login` with credentials
+2. **Receive token**: Store Bearer token from response
+3. **Make requests**: Include `Authorization: Bearer {token}` header
+4. **Logout**: `POST /api/auth/logout` to invalidate session
+
+### 11.2 Permission Checking
+
+- All protected endpoints require both:
+  1. Valid authentication (`auth:sanctum`)
+  2. Appropriate module permissions (`module:{name},{level}`)
+
+- Check user permissions via `GET /api/auth/me` to determine UI access.
+
+### 11.3 Error Response Format
+
+All API errors follow consistent format:
+
+```json
+{
+  "message": "Error description",
+  "errors": {
+    "field_name": ["Error message 1", "Error message 2"]
+  }
+}
+```
+
+### 11.4 Common HTTP Status Codes
+
+- `200 OK`: Successful GET/PUT/PATCH/DELETE
+- `201 Created`: Successful POST
+- `400 Bad Request`: Malformed request
+- `401 Unauthorized`: Missing or invalid authentication
+- `403 Forbidden`: Authenticated but lacks permissions
+- `404 Not Found`: Resource doesn't exist
+- `422 Unprocessable Entity`: Validation errors
+- `500 Internal Server Error`: Server-side error
+
+---
+
+## 12. Production Deployment Checklist
+
+### 12.1 Environment Variables
+
+Ensure these are set in production:
+
+```env
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://your-backend-domain.com
+
+DB_CONNECTION=mysql
+DB_HOST=your-db-host
+DB_DATABASE=your-db-name
+DB_USERNAME=your-db-user
+DB_PASSWORD=your-db-password
+
+FRONTEND_URL=https://your-frontend-domain.com
+SANCTUM_STATEFUL_DOMAINS=your-frontend-domain.com
+```
+
+### 12.2 Pre-Deployment Steps
+
+1. ✅ Update CORS allowed origins
+2. ✅ Clear all caches:
+   ```bash
+   php artisan config:clear
+   php artisan route:clear
+   php artisan cache:clear
+   ```
+3. ✅ Run migrations: `php artisan migrate --force`
+4. ✅ Seed default data: `php artisan db:seed`
+5. ✅ Optimize for production:
+   ```bash
+   php artisan config:cache
+   php artisan route:cache
+   php artisan view:cache
+   ```
+
+### 12.3 Post-Deployment Verification
+
+1. Test authentication: `POST /api/auth/login`
+2. Test protected endpoint: `GET /api/auth/me`
+3. Test CORS: Check response headers from frontend domain
+4. Verify permissions system: Create test user with limited role
+
+---
+
+## End of Integration Guide
 
 

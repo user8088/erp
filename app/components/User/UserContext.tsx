@@ -37,10 +37,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     let isMounted = true;
 
     const init = async () => {
+      // Check if we have a token - if not, don't even try to authenticate
+      const hasToken = typeof window !== "undefined" && localStorage.getItem("access_token");
+      
+      if (!hasToken) {
+        if (isMounted) {
+          setUserState(null);
+          setPermissions({});
+          setAuthLoading(false);
+        }
+        return;
+      }
+
       try {
         type MeResponse = { user: User; permissions?: PermissionsMap } | User;
         const me = await apiClient.get<MeResponse>("/auth/me", {
-          authRequired: true, // Changed to true to send token if available
+          authRequired: true,
         });
         if (isMounted) {
           if ("user" in (me as MeResponse)) {
@@ -60,9 +72,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (e) {
-        // Only clear stored user on explicit auth errors; for other failures
-        // (e.g. network, misconfigured route) keep the last known session so
-        // refresh doesn't bounce the user back to login unnecessarily.
+        // Clear user state on any auth error
         if (
           isMounted &&
           e instanceof ApiError &&
@@ -108,6 +118,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   );
 
   const login = useCallback(async (email: string, password: string) => {
+    // Fetch CSRF cookie before login (for Laravel Sanctum)
+    try {
+      await fetch('/sanctum/csrf-cookie', { credentials: 'include' });
+    } catch (e) {
+      console.warn('Failed to fetch CSRF cookie:', e);
+    }
+    
     // Backend expects `login` field (can be email or username)
     const result = await apiClient.post<{
       user: User;
@@ -156,18 +173,26 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [setUser, setPermissions]);
 
   const logout = useCallback(async () => {
+    // Call backend logout FIRST (with token) to invalidate the token on the server
     try {
       await apiClient.post("/auth/logout");
-    } catch {
-      // ignore
-    } finally {
+    } catch (error) {
+      // Ignore errors - we'll clear local state anyway
+      console.warn("Backend logout failed, clearing local state:", error);
+    }
+    
+    // THEN: Clear all local state and storage
       setUser(null);
       setPermissions({});
       if (typeof window !== "undefined") {
         localStorage.removeItem("access_token");
-        window.localStorage.removeItem("lastPath");
+      localStorage.removeItem("user");
+      localStorage.removeItem("lastPath");
+    }
+    
+    // FINALLY: Redirect to login
+    if (typeof window !== "undefined") {
         window.location.href = "/login";
-      }
     }
   }, [setUser, setPermissions]);
 

@@ -5,11 +5,11 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'https://erp-server-main-xegmvt.laravel.cloud/api/:path*',
+        destination: 'http://localhost:8000/api/:path*',
       },
       {
         source: '/sanctum/csrf-cookie',
-        destination: 'https://erp-server-main-xegmvt.laravel.cloud/sanctum/csrf-cookie',
+        destination: 'http://localhost:8000/sanctum/csrf-cookie',
       },
     ];
   },
