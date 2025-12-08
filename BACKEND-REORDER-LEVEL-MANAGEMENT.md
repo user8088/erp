@@ -108,7 +108,7 @@ Accept: application/json
 
 #### cURL
 ```bash
-curl -X PATCH "http://localhost:8000/api/stock/item/9/reorder-level" \
+curl -X PATCH "https://erp-server-main-xegmvt.laravel.cloud/api/stock/item/9/reorder-level" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -236,7 +236,7 @@ Some updates succeeded, some failed:
 
 #### cURL
 ```bash
-curl -X PATCH "http://localhost:8000/api/stock/reorder-levels/bulk" \
+curl -X PATCH "https://erp-server-main-xegmvt.laravel.cloud/api/stock/reorder-levels/bulk" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -388,14 +388,14 @@ Without sales history:
 
 #### cURL (with defaults)
 ```bash
-curl -X POST "http://localhost:8000/api/stock/item/9/suggest-reorder-level" \
+curl -X POST "https://erp-server-main-xegmvt.laravel.cloud/api/stock/item/9/suggest-reorder-level" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json"
 ```
 
 #### cURL (with custom parameters)
 ```bash
-curl -X POST "http://localhost:8000/api/stock/item/9/suggest-reorder-level" \
+curl -X POST "https://erp-server-main-xegmvt.laravel.cloud/api/stock/item/9/suggest-reorder-level" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

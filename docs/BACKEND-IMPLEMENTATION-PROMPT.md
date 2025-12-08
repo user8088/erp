@@ -32,20 +32,20 @@ GET /api/accounts/tree
 
 #### Without Balances (Default Behavior)
 ```bash
-curl -X GET "http://localhost:8000/api/accounts/tree?company_id=1" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/tree?company_id=1" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 #### With Balances
 ```bash
-curl -X GET "http://localhost:8000/api/accounts/tree?company_id=1&include_balances=1" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/tree?company_id=1&include_balances=1" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 or
 
 ```bash
-curl -X GET "http://localhost:8000/api/accounts/tree?company_id=1&include_balances=true" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/tree?company_id=1&include_balances=true" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -128,7 +128,7 @@ DELETE /api/accounts/{id}
 
 #### Delete Account Without Balance
 ```bash
-curl -X DELETE "http://localhost:8000/api/accounts/15" \
+curl -X DELETE "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/15" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -141,7 +141,7 @@ curl -X DELETE "http://localhost:8000/api/accounts/15" \
 
 #### Delete Account With Balance (Requires Reallocation)
 ```bash
-curl -X DELETE "http://localhost:8000/api/accounts/5" \
+curl -X DELETE "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/5" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -254,7 +254,7 @@ Both endpoints require:
 
 ### Example with Bearer Token
 ```bash
-curl -X GET "http://localhost:8000/api/accounts/tree?company_id=1&include_balances=1" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/tree?company_id=1&include_balances=1" \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc..."
 ```
 
@@ -631,11 +631,11 @@ private function getAllDescendantLedgerIds(Account $account): array
 Test the endpoint with:
 ```bash
 # Without balances (should work as before)
-curl -X GET "http://localhost:8000/api/accounts/tree?company_id=1" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/tree?company_id=1" \
   -H "Authorization: Bearer {token}"
 
 # With balances (should include balance field)
-curl -X GET "http://localhost:8000/api/accounts/tree?company_id=1&include_balances=1" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/tree?company_id=1&include_balances=1" \
   -H "Authorization: Bearer {token}"
 ```
 
@@ -855,19 +855,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 ```bash
 # Test 1: Delete account with no balance
-curl -X DELETE "http://localhost:8000/api/accounts/15" \
+curl -X DELETE "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/15" \
   -H "Authorization: Bearer {token}"
 
 # Expected: 200 OK with message
 
 # Test 2: Delete account with balance (without reallocation - should fail)
-curl -X DELETE "http://localhost:8000/api/accounts/5" \
+curl -X DELETE "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/5" \
   -H "Authorization: Bearer {token}"
 
 # Expected: 422 Validation error
 
 # Test 3: Delete account with balance (with reallocation)
-curl -X DELETE "http://localhost:8000/api/accounts/5" \
+curl -X DELETE "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/5" \
   -H "Authorization: Bearer {token}" \
   -H "Content-Type: application/json" \
   -d '{"reallocate_to_account_id": 10}'
@@ -875,7 +875,7 @@ curl -X DELETE "http://localhost:8000/api/accounts/5" \
 # Expected: 200 OK, journal entry created, account deleted
 
 # Test 4: Delete account with children (should fail)
-curl -X DELETE "http://localhost:8000/api/accounts/2" \
+curl -X DELETE "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/2" \
   -H "Authorization: Bearer {token}"
 
 # Expected: 400 Bad Request
