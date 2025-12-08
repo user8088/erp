@@ -13,6 +13,17 @@ interface AccountDetailClientProps {
   id: string;
 }
 
+// Helper to get ordinal suffix for day (1st, 2nd, 3rd, 4th, etc.)
+const getOrdinalSuffix = (day: number): string => {
+  if (day > 3 && day < 21) return 'th'; // 11th, 12th, 13th, etc.
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+};
+
 // Helper to format transaction date (YYYY-MM-DD format) to readable format
 const formatTransactionDate = (dateString: string | undefined): string => {
   if (!dateString) return '—';
@@ -22,7 +33,7 @@ const formatTransactionDate = (dateString: string | undefined): string => {
     const date = new Date(dateString + 'T00:00:00'); // Add time to avoid timezone issues
     
     const day = date.getDate();
-    const suffix = ['th', 'st', 'nd', 'rd'][day % 10 > 3 ? 0 : (day % 100 - day % 10 != 10) * day % 10];
+    const suffix = getOrdinalSuffix(day);
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                         'July', 'August', 'September', 'October', 'November', 'December'];
     const month = monthNames[date.getMonth()];
@@ -43,7 +54,7 @@ const formatReadableDate = (isoString: string | undefined): { date: string; time
     
     // Format date: "27th October 2025"
     const day = date.getDate();
-    const suffix = ['th', 'st', 'nd', 'rd'][day % 10 > 3 ? 0 : (day % 100 - day % 10 != 10) * day % 10];
+    const suffix = getOrdinalSuffix(day);
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                         'July', 'August', 'September', 'October', 'November', 'December'];
     const month = monthNames[date.getMonth()];
