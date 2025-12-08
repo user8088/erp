@@ -33,9 +33,9 @@ export default function UserSettings({
       await apiClient.delete(`/users/${userId}`);
       addToast("User profile deleted.", "success");
       router.push("/staff/users");
-    } catch (e: any) {
+    } catch (e) {
       console.error(e);
-      addToast(e?.message ?? "Failed to delete user.", "error");
+      addToast(e instanceof Error ? e.message : "Failed to delete user.", "error");
     }
   };
 
@@ -55,10 +55,10 @@ export default function UserSettings({
         checked ? "User marked as inactive." : "User marked as active.",
         "info"
       );
-    } catch (e: any) {
+    } catch (e) {
       console.error(e);
       setIsInactive(status === "inactive");
-      addToast(e?.message ?? "Failed to update status.", "error");
+      addToast(e instanceof Error ? e.message : "Failed to update status.", "error");
     }
   };
 

@@ -12,7 +12,20 @@ const data = [
   },
 ];
 
-const CustomTooltip = ({ active, payload }: any) => {
+interface TooltipPayload {
+  name: string;
+  value: number;
+  payload: {
+    period: string;
+  };
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayload[];
+}
+
+const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const colors: { [key: string]: string } = {
       Income: "#ec4899",
@@ -30,7 +43,7 @@ const CustomTooltip = ({ active, payload }: any) => {
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-3">
         <p className="text-sm font-semibold text-gray-900 mb-2">{payload[0].payload.period}</p>
-        {payload.map((entry: any, index: number) => (
+        {payload.map((entry, index: number) => (
           <p key={index} className="text-sm mb-1" style={{ color: colors[entry.name] || "#000" }}>
             {entry.name} : {formatValue(entry.value)}
           </p>

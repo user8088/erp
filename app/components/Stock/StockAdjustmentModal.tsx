@@ -36,7 +36,7 @@ export default function StockAdjustmentModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quantity || Number(quantity) <= 0) return;
+    if (!quantity || Number(quantity) <= 0 || !item) return;
 
     let quantityInPrimaryUnit = Number(quantity);
     
@@ -174,7 +174,7 @@ export default function StockAdjustmentModal({
           {/* Quantity */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Quantity ({selectedUnit === 'primary' ? item.primary_unit : item.secondary_unit})
+              Quantity ({selectedUnit === 'primary' ? item.primary_unit : (item.secondary_unit || item.primary_unit)})
             </label>
             <input
               type="number"
@@ -183,7 +183,7 @@ export default function StockAdjustmentModal({
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder={`Enter quantity in ${selectedUnit === 'primary' ? item.primary_unit : item.secondary_unit}`}
+              placeholder={`Enter quantity in ${selectedUnit === 'primary' ? item.primary_unit : (item.secondary_unit || item.primary_unit)}`}
               required
             />
           </div>

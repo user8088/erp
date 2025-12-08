@@ -36,6 +36,7 @@ export interface User {
   phone?: string | null;
   address?: string | null;
   roles?: RoleSummary[];
+  updated_at?: string;
 }
 
 export interface UserProfile {

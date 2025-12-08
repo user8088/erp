@@ -58,11 +58,14 @@ export default function DeleteAccountModal({
     setError(null);
 
     try {
-      await accountsApi.deleteAccount(account.id, hasBalance ? reallocateToAccountId : undefined);
+      await accountsApi.deleteAccount(
+        account.id, 
+        hasBalance && reallocateToAccountId ? reallocateToAccountId : undefined
+      );
       onDeleted();
-    } catch (e: any) {
+    } catch (e) {
       console.error("Failed to delete account", e);
-      setError(e.message || "Failed to delete account. Please try again.");
+      setError(e instanceof Error ? e.message : "Failed to delete account. Please try again.");
     } finally {
       setLoading(false);
     }

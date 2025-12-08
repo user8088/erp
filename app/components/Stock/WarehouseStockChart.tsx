@@ -12,7 +12,17 @@ const data = [
   { category: "Tools", value: 180000 },
 ];
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipPayload {
+  value: number;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayload[];
+  label?: string;
+}
+
+const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const value = payload[0].value;
     const formattedValue = new Intl.NumberFormat('en-PK', {

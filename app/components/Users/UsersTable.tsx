@@ -71,7 +71,7 @@ export default function UsersTable({ users, loading }: UsersTableProps) {
           {users.map((user) => {
             const statusLabel =
               user.status === "active" ? "Active" : "Inactive";
-            const lastUpdated = (user as any).updated_at ?? "";
+            const lastUpdated = user.updated_at ?? "";
             const phone = user.phone ?? "";
             const address = user.address ?? "";
             const idDisplay = user.email || String(user.id);

@@ -48,7 +48,7 @@ export default function ItemDetailContent({
                     Last Purchase Price
                   </label>
                   <div className="text-2xl font-bold text-gray-900">
-                    {item?.last_purchase_price !== null ? (
+                    {item?.last_purchase_price !== null && item?.last_purchase_price !== undefined ? (
                       <>PKR {item.last_purchase_price.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -80,7 +80,7 @@ export default function ItemDetailContent({
                     Lowest Purchase Price
                   </label>
                   <div className="text-2xl font-bold text-green-600">
-                    {item?.lowest_purchase_price !== null ? (
+                    {item?.lowest_purchase_price !== null && item?.lowest_purchase_price !== undefined ? (
                       <>PKR {item.lowest_purchase_price.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -98,7 +98,7 @@ export default function ItemDetailContent({
                     Highest Purchase Price
                   </label>
                   <div className="text-2xl font-bold text-orange-600">
-                    {item?.highest_purchase_price !== null ? (
+                    {item?.highest_purchase_price !== null && item?.highest_purchase_price !== undefined ? (
                       <>PKR {item.highest_purchase_price.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -112,7 +112,7 @@ export default function ItemDetailContent({
               </div>
 
               {/* Price Range Analysis */}
-              {item?.lowest_purchase_price !== null && item?.highest_purchase_price !== null && (
+              {item && item.lowest_purchase_price !== null && item.highest_purchase_price !== null && (
                 <div className="mt-6 pt-6 border-t border-gray-200">
                   <div className="flex items-center justify-between">
                     <div>

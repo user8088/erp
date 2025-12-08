@@ -28,21 +28,8 @@ export default function AccountsListPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!canReadAccounting) {
-    return (
-      <div className="max-w-3xl mx-auto min-h-full py-8">
-        <h1 className="text-xl font-semibold text-gray-900 mb-2">
-          Accounting Access Required
-        </h1>
-        <p className="text-sm text-gray-600">
-          You don&apos;t have permission to view Accounts. Please contact your
-          system administrator if you believe this is a mistake.
-        </p>
-      </div>
-    );
-  }
-
   useEffect(() => {
+    if (!canReadAccounting) return;
     let cancelled = false;
     const load = async () => {
       setLoading(true);
@@ -82,7 +69,7 @@ export default function AccountsListPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters.search, filters.root_type, filters.is_group, page]);
+  }, [filters.search, filters.root_type, filters.is_group, page, canReadAccounting]);
 
   const toggleDisabled = async (account: Account) => {
     if (!canWriteAccounting) return;
@@ -105,6 +92,20 @@ export default function AccountsListPage() {
       console.error(e);
     }
   };
+
+  if (!canReadAccounting) {
+    return (
+      <div className="max-w-3xl mx-auto min-h-full py-8">
+        <h1 className="text-xl font-semibold text-gray-900 mb-2">
+          Accounting Access Required
+        </h1>
+        <p className="text-sm text-gray-600">
+          You don&apos;t have permission to view Accounts. Please contact your
+          system administrator if you believe this is a mistake.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto min-h-full py-4 space-y-4">

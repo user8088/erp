@@ -77,8 +77,8 @@ export default function SupplierDetailsForm({ supplier, onSupplierUpdated }: Sup
       onSupplierUpdated(response.supplier);
       addToast("Supplier updated successfully", "success");
       invalidateSuppliersCache();
-    } catch (error: any) {
-      addToast(error.message || "Failed to update supplier", "error");
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : "Failed to update supplier", "error");
     } finally {
       setSaving(false);
     }
