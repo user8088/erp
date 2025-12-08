@@ -74,20 +74,24 @@ export default function StockSettingsPage() {
     try {
       const response = await stockApi.autoDetectAccounts();
       
-      if (response.detected_accounts) {
+      const detectedAccounts = response.detected_accounts;
+      if (detectedAccounts?.inventory_account && detectedAccounts?.accounts_payable_account) {
+        const inventoryAccount = detectedAccounts.inventory_account;
+        const payableAccount = detectedAccounts.accounts_payable_account;
+        
         setMappings({
-          inventory_account_id: response.detected_accounts.inventory_account.id,
-          accounts_payable_account_id: response.detected_accounts.accounts_payable_account.id,
+          inventory_account_id: inventoryAccount.id,
+          accounts_payable_account_id: payableAccount.id,
         });
         
         addToast(
-          `Auto-detected with ${response.confidence} confidence: ${response.detected_accounts.inventory_account.name} & ${response.detected_accounts.accounts_payable_account.name}`,
+          `Auto-detected with ${response.confidence || 'high'} confidence: ${inventoryAccount.name} & ${payableAccount.name}`,
           "success"
         );
       } else {
-        addToast(response.message || "Could not auto-detect accounts", "warning");
+        addToast(response?.message || "Could not auto-detect accounts", "info");
         
-        if (response.suggestions && response.suggestions.length > 0) {
+        if (response?.suggestions && response.suggestions.length > 0) {
           console.log("Suggestions:", response.suggestions);
         }
       }

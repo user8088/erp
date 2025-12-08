@@ -111,8 +111,8 @@ export default function PurchaseOrderDetailPage() {
       try {
         const response = await purchaseOrdersApi.getPurchaseOrder(id);
         setPo(response.purchase_order);
-      } catch (error: any) {
-        addToast(error.message || "Failed to load purchase order", "error");
+      } catch (error) {
+        addToast(error instanceof Error ? error.message : "Failed to load purchase order", "error");
         router.push("/stock?tab=purchase-orders");
       } finally {
         setLoadingPO(false);
@@ -120,7 +120,7 @@ export default function PurchaseOrderDetailPage() {
     };
 
     fetchPO();
-  }, [params.id]);
+  }, [params.id, addToast, router]);
 
   useEffect(() => {
     if (!po) return;
@@ -183,8 +183,8 @@ export default function PurchaseOrderDetailPage() {
       addToast(response.message || "Stock received successfully", "success");
       setPo(response.purchase_order);
       setIsReceiving(false);
-    } catch (error: any) {
-      addToast(error.message || "Failed to receive stock", "error");
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : "Failed to receive stock", "error");
     } finally {
       setLoading(false);
     }
@@ -199,8 +199,8 @@ export default function PurchaseOrderDetailPage() {
       const response = await purchaseOrdersApi.updateStatus(po.id, newStatus);
       setPo(response.purchase_order);
       addToast(response.message || `Status updated to ${newStatus}`, "success");
-    } catch (error: any) {
-      addToast(error.message || "Failed to update status", "error");
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : "Failed to update status", "error");
     } finally {
       setLoading(false);
     }
@@ -546,7 +546,7 @@ export default function PurchaseOrderDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {po.journal_entry.entries?.map((entry: any) => (
+                        {po.journal_entry.entries?.map((entry) => (
                           <tr key={entry.id}>
                             <td className="px-3 py-2 text-gray-900">
                               {entry.account?.name || entry.account_name || '—'}

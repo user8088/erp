@@ -12,6 +12,18 @@ interface Tag {
 
 const STORAGE_KEY = "erp_tags";
 
+function isTag(value: unknown): value is Tag {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.id === "string" &&
+    typeof obj.name === "string" &&
+    typeof obj.color === "string"
+  );
+}
+
 function loadTags(): Tag[] {
   if (typeof window === "undefined") return [];
   try {
@@ -19,10 +31,7 @@ function loadTags(): Tag[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (t: any) =>
-        t && typeof t.id === "string" && typeof t.name === "string" && typeof t.color === "string"
-    );
+    return parsed.filter(isTag);
   } catch {
     return [];
   }
@@ -39,13 +48,9 @@ function saveTags(tags: Tag[]) {
 
 export default function TagManagerPage() {
   const { addToast } = useToast();
-  const [tags, setTags] = useState<Tag[]>([]);
+  const [tags, setTags] = useState<Tag[]>(() => loadTags());
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState("#f97316");
-
-  useEffect(() => {
-    setTags(loadTags());
-  }, []);
 
   const handleAddTag = (e: React.FormEvent) => {
     e.preventDefault();
