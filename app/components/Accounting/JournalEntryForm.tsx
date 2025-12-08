@@ -72,7 +72,7 @@ export default function JournalEntryForm({ accounts, onSuccess, onCancel }: Jour
       newLines[index][field] = Number(value);
     } else if (field === 'debit' || field === 'credit') {
       newLines[index][field] = Number(value) || 0;
-    } else {
+    } else if (field === 'description') {
       newLines[index][field] = value as string;
     }
     setLines(newLines);
