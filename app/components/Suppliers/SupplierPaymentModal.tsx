@@ -35,6 +35,7 @@ export default function SupplierPaymentModal({
   onAutoDetectPaymentAccount,
 }: SupplierPaymentModalProps) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<PaymentData>({
     amount: outstandingBalance,
     payment_account_id: 0,
@@ -55,6 +56,7 @@ export default function SupplierPaymentModal({
         notes: "",
         skip_invoice: false,
       });
+      setError(null);
     }
   }, [isOpen, outstandingBalance]);
 
@@ -64,17 +66,24 @@ export default function SupplierPaymentModal({
     const detectedAccountId = await onAutoDetectPaymentAccount();
     if (detectedAccountId) {
       setFormData({ ...formData, payment_account_id: detectedAccountId });
+      setError(null); // Clear error when account changes
     }
   };
 
+  // Clear error when form data changes
+  useEffect(() => {
+    setError(null);
+  }, [formData.amount, formData.payment_account_id]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     
     // Validate account balance
     const selectedAccount = paymentAccounts.find(acc => acc.id === formData.payment_account_id);
     if (selectedAccount && selectedAccount.balance !== null && selectedAccount.balance !== undefined) {
       if (formData.amount > selectedAccount.balance) {
-        alert(`Insufficient balance in ${selectedAccount.name}. Available: PKR ${Number(selectedAccount.balance).toLocaleString()}`);
+        setError(`Insufficient balance in ${selectedAccount.name}. Available: PKR ${Number(selectedAccount.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
         return;
       }
     }
@@ -85,7 +94,69 @@ export default function SupplierPaymentModal({
       await onPaymentSubmit(formData);
       onClose();
     } catch (error) {
-      // Error handled by parent
+      // Parse error message
+      let errorMessage = "Failed to record payment";
+      
+      if (error && typeof error === "object") {
+        // Check for backend error response
+        if ("message" in error && typeof error.message === "string") {
+          errorMessage = error.message;
+        } else if ("data" in error) {
+          const errorData = (error as { data: unknown }).data;
+          if (errorData && typeof errorData === "object") {
+            if ("message" in errorData && typeof errorData.message === "string") {
+              errorMessage = errorData.message;
+            } else if ("errors" in errorData) {
+              const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
+              const firstError = Object.values(backendErrors)[0]?.[0];
+              if (firstError) {
+                errorMessage = firstError;
+              }
+            }
+          }
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      // Check for specific error types
+      const lowerMessage = errorMessage.toLowerCase();
+      
+      if (lowerMessage.includes("negative balance") || 
+          lowerMessage.includes("insufficient funds") ||
+          lowerMessage.includes("balance cannot go negative") ||
+          lowerMessage.includes("would result in negative balance")) {
+        // Extract account name and balance if available
+        const accountMatch = errorMessage.match(/account[:\s]+([^,\.]+)/i);
+        const balanceMatch = errorMessage.match(/PKR\s*([\d,]+\.?\d*)/i) || 
+                            errorMessage.match(/([\d,]+\.?\d*)\s*PKR/i);
+        
+        if (accountMatch && balanceMatch) {
+          const accountName = accountMatch[1].trim();
+          const availableBalance = balanceMatch[1].replace(/,/g, '');
+          setError(
+            `Insufficient balance in ${accountName}. ` +
+            `Available: PKR ${Number(availableBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}. ` +
+            `Payment amount would result in a negative balance.`
+          );
+        } else {
+          setError(`Insufficient balance. ${errorMessage}`);
+        }
+      } else if (lowerMessage.includes("exceeds outstanding balance")) {
+        // Extract maximum allowed amount
+        const amountMatches = errorMessage.match(/PKR\s*([\d,]+\.?\d*)/g);
+        if (amountMatches && amountMatches.length >= 2) {
+          const maxAmount = amountMatches[1].replace(/PKR\s*|,/g, '');
+          setError(
+            `Payment amount exceeds outstanding balance. ` +
+            `Maximum allowed: PKR ${Number(maxAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+          );
+        } else {
+          setError(errorMessage);
+        }
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -126,8 +197,28 @@ export default function SupplierPaymentModal({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="text-red-600 text-xl">⚠️</div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-red-900">Payment Error</p>
+                  <p className="text-xs text-red-700 mt-1">{error}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setError(null)}
+                  className="text-red-400 hover:text-red-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+          
           {/* Warning: Insufficient Funds */}
-          {!canPayFull && paymentAccounts.length > 0 && (
+          {!canPayFull && paymentAccounts.length > 0 && !error && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
                 <div className="text-yellow-600 text-xl">⚠️</div>
@@ -168,20 +259,36 @@ export default function SupplierPaymentModal({
                 min="0.01"
                 max={outstandingBalance}
                 value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
-                className="w-full pl-14 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                onChange={(e) => {
+                  setFormData({ ...formData, amount: Number(e.target.value) });
+                  setError(null); // Clear error when amount changes
+                }}
+                className={`w-full pl-14 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                  selectedAccount && selectedAccount.balance !== null && selectedAccount.balance !== undefined &&
+                  formData.amount > Number(selectedAccount.balance)
+                    ? 'border-red-300 focus:ring-red-500 bg-red-50'
+                    : 'border-gray-300 focus:ring-orange-500'
+                }`}
                 required
               />
             </div>
             <div className="flex items-center justify-between mt-2">
-              <p className="text-xs text-gray-500">
-                Outstanding: PKR {outstandingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                {selectedAccount && selectedAccount.balance !== null && selectedAccount.balance !== undefined && (
-                  <span className="ml-2">
-                    | Available: PKR {Number(selectedAccount.balance).toLocaleString()}
-                  </span>
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-gray-500">
+                  Outstanding: PKR {outstandingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  {selectedAccount && selectedAccount.balance !== null && selectedAccount.balance !== undefined && (
+                    <span className="ml-2">
+                      | Available: PKR {Number(selectedAccount.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
+                </p>
+                {selectedAccount && selectedAccount.balance !== null && selectedAccount.balance !== undefined && 
+                 formData.amount > Number(selectedAccount.balance) && (
+                  <p className="text-xs text-red-600 font-medium">
+                    ⚠️ This payment would result in a negative balance of PKR {(formData.amount - Number(selectedAccount.balance)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
                 )}
-              </p>
+              </div>
               <div className="flex items-center gap-2">
                 {selectedAccount && selectedAccount.balance !== null && selectedAccount.balance !== undefined && 
                  formData.amount !== Math.min(outstandingBalance, Number(selectedAccount.balance)) && (
@@ -242,7 +349,10 @@ export default function SupplierPaymentModal({
             </div>
             <select
               value={formData.payment_account_id}
-              onChange={(e) => setFormData({ ...formData, payment_account_id: Number(e.target.value) })}
+              onChange={(e) => {
+                setFormData({ ...formData, payment_account_id: Number(e.target.value) });
+                setError(null); // Clear error when account changes
+              }}
               className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
                 hasInsufficientBalance 
                   ? 'border-red-300 focus:ring-red-500 bg-red-50' 

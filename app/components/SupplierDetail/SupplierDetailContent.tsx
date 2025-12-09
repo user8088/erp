@@ -208,8 +208,70 @@ export default function SupplierDetailContent({
       fetchPurchaseOrders();
       fetchPayments();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to record payment";
-      addToast(errorMessage, "error");
+      // Parse error to extract meaningful message
+      let errorMessage = "Failed to record payment";
+      
+      if (error && typeof error === "object") {
+        // Check for backend error response structure
+        if ("message" in error && typeof error.message === "string") {
+          errorMessage = error.message;
+        } else if ("data" in error) {
+          const errorData = (error as { data: unknown }).data;
+          if (errorData && typeof errorData === "object") {
+            if ("message" in errorData && typeof errorData.message === "string") {
+              errorMessage = errorData.message;
+            } else if ("errors" in errorData) {
+              const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
+              const firstError = Object.values(backendErrors)[0]?.[0];
+              if (firstError) {
+                errorMessage = firstError;
+              }
+            }
+          }
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      // Show user-friendly error message
+      const lowerMessage = errorMessage.toLowerCase();
+      
+      if (lowerMessage.includes("negative balance") || 
+          lowerMessage.includes("insufficient funds") ||
+          lowerMessage.includes("balance cannot go negative") ||
+          lowerMessage.includes("would result in negative balance")) {
+        // Extract account info if available
+        const accountMatch = errorMessage.match(/account[:\s]+([^,\.]+)/i);
+        const balanceMatch = errorMessage.match(/PKR\s*([\d,]+\.?\d*)/i) || 
+                            errorMessage.match(/([\d,]+\.?\d*)\s*PKR/i);
+        
+        if (accountMatch && balanceMatch) {
+          const accountName = accountMatch[1].trim();
+          const availableBalance = balanceMatch[1].replace(/,/g, '');
+          addToast(
+            `Insufficient balance in ${accountName}. Available: PKR ${Number(availableBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}. Payment would result in negative balance.`,
+            "error"
+          );
+        } else {
+          addToast(`Insufficient balance: ${errorMessage}`, "error");
+        }
+      } else if (lowerMessage.includes("exceeds outstanding balance")) {
+        // Extract maximum allowed amount
+        const amountMatches = errorMessage.match(/PKR\s*([\d,]+\.?\d*)/g);
+        if (amountMatches && amountMatches.length >= 2) {
+          const maxAmount = amountMatches[1].replace(/PKR\s*|,/g, '');
+          addToast(
+            `Payment amount exceeds outstanding balance. Maximum allowed: PKR ${Number(maxAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            "error"
+          );
+        } else {
+          addToast(errorMessage, "error");
+        }
+      } else {
+        addToast(errorMessage, "error");
+      }
+      
+      // Re-throw error so modal can handle it
       throw error;
     }
   };
