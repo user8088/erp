@@ -7,13 +7,21 @@ import { invalidateSuppliersCache } from "../Suppliers/useSuppliersList";
 import type { Supplier, Customer } from "../../lib/types";
 
 interface SupplierDetailsFormProps {
-  supplier: Supplier;
+  supplierId: string;
+  supplier: Supplier | null;
   onSupplierUpdated: (supplier: Supplier) => void;
+  externalSaveSignal?: number;
+  onSavingChange?: (saving: boolean) => void;
 }
 
-export default function SupplierDetailsForm({ supplier, onSupplierUpdated }: SupplierDetailsFormProps) {
+export default function SupplierDetailsForm({
+  supplierId,
+  supplier,
+  onSupplierUpdated,
+  externalSaveSignal,
+  onSavingChange,
+}: SupplierDetailsFormProps) {
   const { addToast } = useToast();
-  const [saving, setSaving] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
 
@@ -44,6 +52,12 @@ export default function SupplierDetailsForm({ supplier, onSupplierUpdated }: Sup
   }, [supplier]);
 
   useEffect(() => {
+    if (externalSaveSignal) {
+      handleSave();
+    }
+  }, [externalSaveSignal]);
+
+  useEffect(() => {
     const fetchCustomers = async () => {
       setLoadingCustomers(true);
       try {
@@ -59,7 +73,8 @@ export default function SupplierDetailsForm({ supplier, onSupplierUpdated }: Sup
   }, []);
 
   const handleSave = async () => {
-    setSaving(true);
+    if (!supplier) return;
+    onSavingChange?.(true);
     try {
       const payload = {
         name: formData.name,
@@ -73,37 +88,59 @@ export default function SupplierDetailsForm({ supplier, onSupplierUpdated }: Sup
         customer_id: formData.customer_id ? Number(formData.customer_id) : null,
       };
 
-      const response = await suppliersApi.updateSupplier(supplier.id, payload);
+      const response = await suppliersApi.updateSupplier(Number(supplierId), payload);
       onSupplierUpdated(response.supplier);
-      addToast("Supplier updated successfully", "success");
+      
+      // Invalidate cache to show fresh data when navigating back
       invalidateSuppliersCache();
-    } catch (error) {
-      addToast(error instanceof Error ? error.message : "Failed to update supplier", "error");
+      
+      addToast("Supplier updated successfully.", "success");
+    } catch (e: unknown) {
+      console.error(e);
+      
+      // Handle validation errors from backend
+      if (e && typeof e === "object" && "data" in e) {
+        const errorData = (e as { data: unknown }).data;
+        if (errorData && typeof errorData === "object" && "errors" in errorData) {
+          const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
+          
+          // Show the first error message in toast
+          const firstError = Object.values(backendErrors)[0]?.[0];
+          if (firstError) {
+            addToast(firstError, "error");
+          } else {
+            addToast("Failed to update supplier.", "error");
+          }
+          return;
+        }
+      }
+      
+      addToast("Failed to update supplier.", "error");
     } finally {
-      setSaving(false);
+      onSavingChange?.(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h2 className="text-base font-semibold text-gray-900 mb-4">Basic Information</h2>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
+      <h2 className="text-base font-semibold text-gray-900">Basic Information</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Serial Number - Read Only */}
-        <div className="md:col-span-2">
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Serial Number
           </label>
           <input
             type="text"
-            value={supplier.serial_number}
+            value={supplier?.serial_number || ""}
             disabled
             className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500 cursor-not-allowed"
           />
         </div>
 
         {/* Supplier Name */}
-        <div className="md:col-span-2">
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Supplier Name <span className="text-red-500">*</span>
           </label>
@@ -207,7 +244,7 @@ export default function SupplierDetailsForm({ supplier, onSupplierUpdated }: Sup
           </p>
         </div>
 
-        {/* Address */}
+        {/* Address - Full Width */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Address
@@ -216,18 +253,10 @@ export default function SupplierDetailsForm({ supplier, onSupplierUpdated }: Sup
             value={formData.address}
             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
           />
         </div>
       </div>
-
-      <button
-        onClick={handleSave}
-        disabled={saving || !formData.name}
-        className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-      >
-        {saving ? "Saving..." : "Save Changes"}
-      </button>
     </div>
   );
 }

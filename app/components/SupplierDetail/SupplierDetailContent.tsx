@@ -16,19 +16,22 @@ const formatDate = (dateString: string) => {
 };
 
 interface SupplierDetailContentProps {
-  supplier: Supplier;
-  activeTab: string;
-  onTabChange: (tab: string) => void;
-  onSupplierUpdated: (supplier: Supplier) => void;
+  supplierId: string;
+  supplier: Supplier | null;
+  onSupplierChange: (supplier: Supplier) => void;
+  saveSignal?: number;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 export default function SupplierDetailContent({
+  supplierId,
   supplier,
-  activeTab,
-  onTabChange,
-  onSupplierUpdated,
+  onSupplierChange,
+  saveSignal,
+  onSavingChange,
 }: SupplierDetailContentProps) {
   const { addToast } = useToast();
+  const [activeTab, setActiveTab] = useState("supplier-details");
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [loadingPOs, setLoadingPOs] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -40,6 +43,7 @@ export default function SupplierDetailContent({
   const [totalPaid, setTotalPaid] = useState(0);
 
   const fetchPurchaseOrders = useCallback(async () => {
+    if (!supplier) return;
     setLoadingPOs(true);
     try {
       const response = await purchaseOrdersApi.getPurchaseOrders({
@@ -55,7 +59,7 @@ export default function SupplierDetailContent({
     } finally {
       setLoadingPOs(false);
     }
-  }, [supplier.id]);
+  }, [supplier]);
 
   // Fetch payment accounts (asset accounts for payment)
   const fetchPaymentAccounts = useCallback(async () => {
@@ -75,7 +79,27 @@ export default function SupplierDetailContent({
          acc.name.toLowerCase().includes('easypaisa') ||
          acc.number?.startsWith('1'))
       );
-      setPaymentAccounts(filtered);
+      
+      // Fetch balances for each account
+      const accountsWithBalances = await Promise.all(
+        filtered.map(async (account) => {
+          try {
+            const balanceResponse = await accountsApi.getAccountBalance(account.id);
+            return {
+              ...account,
+              balance: balanceResponse.balance,
+            };
+          } catch (error) {
+            console.error(`Failed to fetch balance for account ${account.id}:`, error);
+            return {
+              ...account,
+              balance: 0,
+            };
+          }
+        })
+      );
+      
+      setPaymentAccounts(accountsWithBalances);
     } catch (error) {
       console.error("Failed to fetch payment accounts:", error);
       addToast("Failed to load payment accounts", "error");
@@ -84,6 +108,7 @@ export default function SupplierDetailContent({
 
   // Fetch payment history and balance
   const fetchPayments = useCallback(async () => {
+    if (!supplier) return;
     setLoadingPayments(true);
     try {
       // Fetch payments
@@ -114,7 +139,7 @@ export default function SupplierDetailContent({
     } finally {
       setLoadingPayments(false);
     }
-  }, [supplier.id, addToast]);
+  }, [supplier, addToast]);
 
   // Fetch purchase orders when tab is active
   useEffect(() => {
@@ -126,7 +151,7 @@ export default function SupplierDetailContent({
   }, [activeTab, fetchPurchaseOrders, fetchPayments]);
 
   // Extract unique items from purchase orders and aggregate quantities
-  const suppliedItems = purchaseOrders
+  const suppliedItems = supplier ? purchaseOrders
     .reduce((itemsMap, po) => {
       if (!po.items) return itemsMap;
       
@@ -166,12 +191,14 @@ export default function SupplierDetailContent({
       conversion_rate?: number | null;
       last_ordered: string 
     }>())
-    .values();
+    .values() : [];
   
   const suppliedItemsArray = Array.from(suppliedItems);
 
+
   // Handle payment submission
   const handlePaymentSubmit = async (paymentData: PaymentData) => {
+    if (!supplier) return;
     try {
       const response = await suppliersApi.createPayment(supplier.id, paymentData);
       
@@ -213,19 +240,28 @@ export default function SupplierDetailContent({
   };
 
   return (
-    <div className="space-y-6">
-      <SupplierDetailTabs activeTab={activeTab} onTabChange={onTabChange} />
-
-      <div>
-        {activeTab === "details" && (
-          <SupplierDetailsForm supplier={supplier} onSupplierUpdated={onSupplierUpdated} />
+    <div className="flex-1">
+      <SupplierDetailTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      <div className="mt-4">
+        {activeTab === "supplier-details" && (
+          <SupplierDetailsForm
+            supplierId={supplierId}
+            supplier={supplier}
+            onSupplierUpdated={onSupplierChange}
+            externalSaveSignal={saveSignal}
+            onSavingChange={onSavingChange}
+          />
         )}
 
         {activeTab === "purchase-orders" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">Purchase Orders</h2>
             
-            {loadingPOs ? (
+            {!supplier ? (
+              <div className="text-center py-12 text-gray-500">
+                <p className="text-sm">Loading supplier...</p>
+              </div>
+            ) : loadingPOs ? (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-sm">Loading purchase orders...</p>
               </div>
@@ -282,17 +318,23 @@ export default function SupplierDetailContent({
 
         {activeTab === "payments" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-gray-900">Payment History</h2>
-              <button
-                onClick={handleOpenPaymentModal}
-                disabled={outstandingBalance <= 0}
-                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              >
-                <CreditCard className="w-4 h-4" />
-                Make Payment
-              </button>
-            </div>
+            {!supplier ? (
+              <div className="text-center py-12 text-gray-500">
+                <p className="text-sm">Loading supplier...</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold text-gray-900">Payment History</h2>
+                  <button
+                    onClick={handleOpenPaymentModal}
+                    disabled={outstandingBalance <= 0}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Make Payment
+                  </button>
+                </div>
 
             {/* Outstanding Balance Card */}
             <div className="mb-6 p-4 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-lg">
@@ -372,28 +414,36 @@ export default function SupplierDetailContent({
                 </p>
               </div>
             )}
+              </>
+            )}
           </div>
         )}
 
         {activeTab === "items-supplied" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">Items & Products Supplied</h2>
-            
-            {supplier.items_supplied && (
-              <div className="prose prose-sm max-w-none mb-8">
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplier.items_supplied}</p>
+            {!supplier ? (
+              <div className="text-center py-12 text-gray-500">
+                <p className="text-sm">Loading supplier...</p>
               </div>
-            )}
+            ) : (
+              <>
+                <h2 className="text-base font-semibold text-gray-900 mb-4">Items & Products Supplied</h2>
+                
+                {supplier.items_supplied && (
+                  <div className="prose prose-sm max-w-none mb-8">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplier.items_supplied}</p>
+                  </div>
+                )}
 
-            {/* Historical Items Table */}
-            <div className="mt-8">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Items Purchased From This Supplier</h3>
-              
-              {loadingPOs ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="text-sm">Loading items history...</p>
-                </div>
-              ) : suppliedItemsArray.length > 0 ? (
+                {/* Historical Items Table */}
+                <div className="mt-8">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Items Purchased From This Supplier</h3>
+                  
+                  {loadingPOs ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="text-sm">Loading items history...</p>
+                    </div>
+                  ) : suppliedItemsArray.length > 0 ? (
                 <div className="overflow-x-auto border border-gray-200 rounded-lg">
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-200">
@@ -434,53 +484,39 @@ export default function SupplierDetailContent({
                   </p>
                 </div>
               )}
-            </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
-        {activeTab === "more-info" && (
-          <div className="space-y-6">
-            {/* Items Supplied */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h2 className="text-base font-semibold text-gray-900 mb-4">Items Supplied</h2>
-              <textarea
-                value={supplier.items_supplied || ""}
-                disabled
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 resize-none"
-                placeholder="No items information provided"
-              />
-            </div>
-
-            {/* Notes */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h2 className="text-base font-semibold text-gray-900 mb-4">Notes & Special Conditions</h2>
-              <textarea
-                value={supplier.notes || ""}
-                disabled
-                rows={6}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 resize-none"
-                placeholder="No notes available"
-              />
-              <p className="mt-2 text-xs text-gray-500">
-                Payment terms, delivery details, special conditions, etc.
-              </p>
-            </div>
+        {activeTab === "more-information" && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-4">More Information</h2>
+            <p className="text-sm text-gray-500">Additional supplier information will appear here.</p>
+          </div>
+        )}
+        {activeTab === "settings" && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-4">Supplier Settings</h2>
+            <p className="text-sm text-gray-500">Supplier-specific settings will appear here.</p>
           </div>
         )}
       </div>
 
       {/* Payment Modal */}
-      <SupplierPaymentModal
-        isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
-        supplierName={supplier.name}
-        supplierId={supplier.id}
-        outstandingBalance={outstandingBalance}
-        paymentAccounts={paymentAccounts}
-        onPaymentSubmit={handlePaymentSubmit}
-        onAutoDetectPaymentAccount={handleAutoDetectPaymentAccount}
-      />
+      {supplier && (
+        <SupplierPaymentModal
+          isOpen={isPaymentModalOpen}
+          onClose={() => setIsPaymentModalOpen(false)}
+          supplierName={supplier.name}
+          supplierId={supplier.id}
+          outstandingBalance={outstandingBalance}
+          paymentAccounts={paymentAccounts}
+          onPaymentSubmit={handlePaymentSubmit}
+          onAutoDetectPaymentAccount={handleAutoDetectPaymentAccount}
+        />
+      )}
     </div>
   );
 }

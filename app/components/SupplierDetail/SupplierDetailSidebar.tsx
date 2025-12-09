@@ -1,20 +1,20 @@
 "use client";
 
-import { useRef } from "react";
-import { Camera, User, Paperclip, Tag, Clock } from "lucide-react";
-import { suppliersApi } from "../../lib/apiClient";
+import { User, Paperclip, Tag, Camera } from "lucide-react";
+import { Plus } from "lucide-react";
+import { useRef, useState } from "react";
 import { useToast } from "../ui/ToastProvider";
-import { invalidateSuppliersCache } from "../Suppliers/useSuppliersList";
 import type { Supplier } from "../../lib/types";
 
 interface SupplierDetailSidebarProps {
-  supplier: Supplier;
-  onProfilePictureChange: (newPictureUrl: string) => void;
+  supplier: Supplier | null;
+  onProfilePictureChange?: (imageUrl: string) => void;
 }
 
 export default function SupplierDetailSidebar({ supplier, onProfilePictureChange }: SupplierDetailSidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
+  const [uploading, setUploading] = useState(false);
 
   const getInitials = (name: string) => {
     return name
@@ -34,139 +34,120 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64String = reader.result as string;
-      
-      try {
-        await suppliersApi.updateSupplier(supplier.id, {
-          picture_url: base64String,
-        });
-        
-        onProfilePictureChange(base64String);
-        addToast("Profile picture updated successfully", "success");
-        invalidateSuppliersCache();
-      } catch (error) {
-        addToast("Failed to update profile picture", "error");
-        console.error(error);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    setUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const imageUrl = reader.result as string;
+        onProfilePictureChange?.(imageUrl);
+        addToast("Profile picture updated successfully.", "success");
+      };
+      reader.readAsDataURL(file);
+    } catch (e) {
+      console.error(e);
+      addToast("Failed to upload profile picture.", "error");
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Profile Picture */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex flex-col items-center">
-          <div className="relative group">
-            <div className="w-32 h-32 rounded-full overflow-hidden bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center">
-              {supplier.picture_url ? (
-                <img
-                  src={supplier.picture_url}
-                  alt={supplier.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-3xl font-semibold text-white">
-                  {getInitials(supplier.name)}
-                </span>
-              )}
-            </div>
-            
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-50 rounded-full transition-all duration-200"
-            >
-              <Camera className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageChange}
-              className="hidden"
+    <div className="w-64 flex-shrink-0 space-y-4">
+      {/* Avatar */}
+      <div className="relative w-32 h-32 mx-auto">
+        <div className="w-full h-full rounded-lg flex items-center justify-center overflow-hidden">
+          {supplier?.picture_url ? (
+            <img
+              src={supplier.picture_url}
+              alt={supplier.name}
+              className="w-full h-full object-cover"
             />
-          </div>
-
-          <h2 className="mt-4 text-lg font-semibold text-gray-900 text-center">{supplier.name}</h2>
-          <p className="text-sm text-gray-500">{supplier.serial_number}</p>
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center">
+              <span className="text-3xl font-semibold text-white">
+                {supplier ? getInitials(supplier.name) : "?"}
+              </span>
+            </div>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="absolute bottom-0 right-0 p-2 bg-black text-white rounded-full hover:bg-gray-800 transition-colors shadow-lg disabled:opacity-60"
+          title="Change profile picture"
+        >
+          <Camera className="w-4 h-4" />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleImageChange}
+          className="hidden"
+        />
       </div>
 
-      {/* Linked Customer */}
-      {supplier.customer && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-3">
-            <User className="w-4 h-4 text-gray-600" />
-            Linked Customer
+      {/* Sections */}
+      <div className="space-y-2">
+        {/* Assigned To */}
+        <div className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-gray-600" />
+              <span className="text-sm text-gray-700">Assigned To</span>
+            </div>
+            <button
+              className="p-1 hover:bg-gray-200 rounded transition-colors"
+              type="button"
+            >
+              <Plus className="w-4 h-4 text-gray-600" />
+            </button>
           </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm font-medium text-blue-900">{supplier.customer.name}</p>
-            <p className="text-xs text-blue-700 mt-1">{supplier.customer.serial_number}</p>
+          <p className="mt-1 ml-6 text-xs text-gray-400">Not assigned</p>
+        </div>
+
+        {/* Attachments */}
+        <div className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Paperclip className="w-4 h-4 text-gray-600" />
+              <span className="text-sm text-gray-700">Attachments</span>
+            </div>
+            <button
+              className="p-1 hover:bg-gray-200 rounded transition-colors"
+              type="button"
+            >
+              <Plus className="w-4 h-4 text-gray-600" />
+            </button>
+          </div>
+          <p className="mt-1 ml-6 text-xs text-gray-400">No documents attached yet.</p>
+        </div>
+
+        {/* Tags */}
+        <div className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Tag className="w-4 h-4 text-gray-600" />
+              <span className="text-sm text-gray-700">Tags</span>
+            </div>
+            <button
+              className="p-1 hover:bg-gray-200 rounded transition-colors"
+              type="button"
+            >
+              <Plus className="w-4 h-4 text-gray-600" />
+            </button>
           </div>
         </div>
-      )}
-
-      {/* Total Purchases */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-3">
-          <User className="w-4 h-4 text-gray-600" />
-          Total Purchases
-        </div>
-        <p className="text-2xl font-bold text-orange-600">
-          PKR {Number(supplier.total_purchase_amount).toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
-        </p>
-        <p className="text-xs text-gray-500 mt-1">Lifetime total</p>
-      </div>
-
-      {/* Attachments Placeholder */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-3">
-          <Paperclip className="w-4 h-4 text-gray-600" />
-          Attachments
-        </div>
-        <p className="text-sm text-gray-500">No attachments</p>
-      </div>
-
-      {/* Tags Placeholder */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-3">
-          <Tag className="w-4 h-4 text-gray-600" />
-          Tags
-        </div>
-        <p className="text-sm text-gray-500">No tags</p>
       </div>
 
       {/* Activity Log */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-3">
-          <Clock className="w-4 h-4 text-gray-600" />
-          Activity
+      <div className="pt-4 border-t border-gray-200 space-y-2">
+        <div className="text-xs text-gray-500">
+          <p>Last edited · {supplier ? new Date(supplier.updated_at).toLocaleDateString() : "—"}</p>
         </div>
-        <div className="space-y-2 text-xs text-gray-600">
-          <div className="flex justify-between">
-            <span>Created:</span>
-            <span className="font-medium">{formatDate(supplier.created_at)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Updated:</span>
-            <span className="font-medium">{formatDate(supplier.updated_at)}</span>
-          </div>
+        <div className="text-xs text-gray-500">
+          <p>Created · {supplier ? new Date(supplier.created_at).toLocaleDateString() : "—"}</p>
         </div>
       </div>
     </div>
