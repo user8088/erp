@@ -268,7 +268,7 @@ export default function SupplierDetailContent({
           addToast(errorMessage, "error");
         }
       } else {
-        addToast(errorMessage, "error");
+      addToast(errorMessage, "error");
       }
       
       // Re-throw error so modal can handle it
@@ -386,17 +386,17 @@ export default function SupplierDetailContent({
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-semibold text-gray-900">Payment History</h2>
-                  <button
-                    onClick={handleOpenPaymentModal}
-                    disabled={outstandingBalance <= 0}
-                    className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-2"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    Make Payment
-                  </button>
-                </div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-gray-900">Payment History</h2>
+              <button
+                onClick={handleOpenPaymentModal}
+                disabled={outstandingBalance <= 0}
+                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              >
+                <CreditCard className="w-4 h-4" />
+                Make Payment
+              </button>
+            </div>
 
             {/* Outstanding Balance Card */}
             <div className="mb-6 p-4 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-lg">
@@ -489,23 +489,23 @@ export default function SupplierDetailContent({
               </div>
             ) : (
               <>
-                <h2 className="text-base font-semibold text-gray-900 mb-4">Items & Products Supplied</h2>
-                
-                {supplier.items_supplied && (
-                  <div className="prose prose-sm max-w-none mb-8">
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplier.items_supplied}</p>
-                  </div>
-                )}
+            <h2 className="text-base font-semibold text-gray-900 mb-4">Items & Products Supplied</h2>
+            
+            {supplier.items_supplied && (
+              <div className="prose prose-sm max-w-none mb-8">
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplier.items_supplied}</p>
+              </div>
+            )}
 
-                {/* Historical Items Table */}
-                <div className="mt-8">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Items Purchased From This Supplier</h3>
-                  
-                  {loadingPOs ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <p className="text-sm">Loading items history...</p>
-                    </div>
-                  ) : suppliedItemsArray.length > 0 ? (
+            {/* Historical Items Table */}
+            <div className="mt-8">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Items Purchased From This Supplier</h3>
+              
+              {loadingPOs ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">Loading items history...</p>
+                </div>
+              ) : suppliedItemsArray.length > 0 ? (
                 <div className="overflow-x-auto border border-gray-200 rounded-lg">
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-200">
@@ -546,20 +546,20 @@ export default function SupplierDetailContent({
                   </p>
                 </div>
               )}
-                </div>
+            </div>
               </>
             )}
           </div>
         )}
 
         {activeTab === "more-information" && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">More Information</h2>
             <p className="text-sm text-gray-500">Additional supplier information will appear here.</p>
-          </div>
+            </div>
         )}
         {activeTab === "settings" && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">Supplier Settings</h2>
             <p className="text-sm text-gray-500">Supplier-specific settings will appear here.</p>
           </div>
@@ -568,16 +568,16 @@ export default function SupplierDetailContent({
 
       {/* Payment Modal */}
       {supplier && (
-        <SupplierPaymentModal
-          isOpen={isPaymentModalOpen}
-          onClose={() => setIsPaymentModalOpen(false)}
-          supplierName={supplier.name}
-          supplierId={supplier.id}
-          outstandingBalance={outstandingBalance}
-          paymentAccounts={paymentAccounts}
-          onPaymentSubmit={handlePaymentSubmit}
-          onAutoDetectPaymentAccount={handleAutoDetectPaymentAccount}
-        />
+      <SupplierPaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        supplierName={supplier.name}
+        supplierId={supplier.id}
+        outstandingBalance={outstandingBalance}
+        paymentAccounts={paymentAccounts}
+        onPaymentSubmit={handlePaymentSubmit}
+        onAutoDetectPaymentAccount={handleAutoDetectPaymentAccount}
+      />
       )}
     </div>
   );

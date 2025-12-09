@@ -36,13 +36,13 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
 
     setUploading(true);
     try {
-      const reader = new FileReader();
+    const reader = new FileReader();
       reader.onloadend = () => {
         const imageUrl = reader.result as string;
         onProfilePictureChange?.(imageUrl);
         addToast("Profile picture updated successfully.", "success");
-      };
-      reader.readAsDataURL(file);
+    };
+    reader.readAsDataURL(file);
     } catch (e) {
       console.error(e);
       addToast("Failed to upload profile picture.", "error");
@@ -57,36 +57,36 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
       <div className="relative w-32 h-32 mx-auto">
         <div className="w-full h-full rounded-lg flex items-center justify-center overflow-hidden">
           {supplier?.picture_url ? (
-            <img
-              src={supplier.picture_url}
-              alt={supplier.name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
+                <img
+                  src={supplier.picture_url}
+                  alt={supplier.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
             <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center">
-              <span className="text-3xl font-semibold text-white">
+                <span className="text-3xl font-semibold text-white">
                 {supplier ? getInitials(supplier.name) : "?"}
-              </span>
+                </span>
             </div>
-          )}
-        </div>
-        <button
+              )}
+            </div>
+            <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
+              onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           className="absolute bottom-0 right-0 p-2 bg-black text-white rounded-full hover:bg-gray-800 transition-colors shadow-lg disabled:opacity-60"
           title="Change profile picture"
-        >
+            >
           <Camera className="w-4 h-4" />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleImageChange}
-          className="hidden"
-        />
-      </div>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
+            />
+          </div>
 
       {/* Sections */}
       <div className="space-y-2">
@@ -94,9 +94,9 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
         <div className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-gray-600" />
+            <User className="w-4 h-4 text-gray-600" />
               <span className="text-sm text-gray-700">Assigned To</span>
-            </div>
+          </div>
             <button
               className="p-1 hover:bg-gray-200 rounded transition-colors"
               type="button"
@@ -105,13 +105,13 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
             </button>
           </div>
           <p className="mt-1 ml-6 text-xs text-gray-400">Not assigned</p>
-        </div>
+      </div>
 
         {/* Attachments */}
         <div className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Paperclip className="w-4 h-4 text-gray-600" />
+          <Paperclip className="w-4 h-4 text-gray-600" />
               <span className="text-sm text-gray-700">Attachments</span>
             </div>
             <button
@@ -120,15 +120,15 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
             >
               <Plus className="w-4 h-4 text-gray-600" />
             </button>
-          </div>
-          <p className="mt-1 ml-6 text-xs text-gray-400">No documents attached yet.</p>
         </div>
+          <p className="mt-1 ml-6 text-xs text-gray-400">No documents attached yet.</p>
+      </div>
 
         {/* Tags */}
         <div className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-gray-600" />
+          <Tag className="w-4 h-4 text-gray-600" />
               <span className="text-sm text-gray-700">Tags</span>
             </div>
             <button

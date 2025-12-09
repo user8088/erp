@@ -374,4 +374,61 @@ export interface SupplierBalanceResponse {
   };
 }
 
+// Invoice System
+export interface Invoice {
+  id: number;
+  invoice_number: string;
+  invoice_type: 'supplier' | 'sale' | 'payment' | 'purchase' | 'expense';
+  type_label?: string;
+  company_id: number | null;
+  reference_type: string | null;
+  reference_id: number | null;
+  amount: number;
+  tax_amount: number;
+  total_amount: number;
+  invoice_date: string;
+  due_date: string | null;
+  status: 'draft' | 'issued' | 'paid' | 'cancelled';
+  pdf_path: string | null;
+  has_pdf?: boolean;
+  metadata: {
+    supplier?: {
+      id: number;
+      name: string;
+      contact_person?: string;
+      email?: string;
+      phone?: string;
+      address?: string;
+    };
+    payment?: {
+      payment_number: string;
+      payment_date: string;
+      payment_account?: {
+        id: number;
+        name: string;
+        number?: string;
+      };
+      invoice_number?: string;
+      notes?: string;
+    };
+    [key: string]: unknown;
+  } | null;
+  notes: string | null;
+  created_by: number;
+  creator?: {
+    id: number;
+    name: string;
+  };
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  reference?: {
+    id: number;
+    payment_number?: string;
+    amount?: number;
+    payment_date?: string;
+    [key: string]: unknown;
+  };
+}
+
 

@@ -102,7 +102,7 @@ export const apiClient = {
 
 // Domain-specific helpers
 
-import type { Account, Paginated, Transaction, JournalEntry, Customer, Item, Category, ItemTag, ItemStock, PurchaseOrder, StockMovement, Supplier, StockAccountMapping, AutoDetectResponse, SupplierPayment, SupplierBalanceResponse } from "./types";
+import type { Account, Paginated, Transaction, JournalEntry, Customer, Item, Category, ItemTag, ItemStock, PurchaseOrder, StockMovement, Supplier, StockAccountMapping, AutoDetectResponse, SupplierPayment, SupplierBalanceResponse, Invoice } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
 export interface GetAccountsParams {
@@ -546,7 +546,20 @@ export const stockApi = {
     };
     message: string;
   }> {
-    return await apiClient.post<any>(`/stock/item/${itemId}/suggest-reorder-level`, params || {});
+    return await apiClient.post<{
+      item: { id: number; serial_number: string; name: string; primary_unit: string };
+      suggested_reorder_level: number;
+      calculation: {
+        average_daily_sales: number;
+        lead_time_days: number;
+        safety_stock_percentage: number;
+        lead_time_demand: number;
+        safety_stock: number;
+        total_sold_last_30_days: number;
+        sales_records_count: number;
+      };
+      message: string;
+    }>(`/stock/item/${itemId}/suggest-reorder-level`, params || {});
   },
 
   async getLowStockAlerts(): Promise<{ low_stock: ItemStock[]; out_of_stock: ItemStock[]; low_stock_count: number; out_of_stock_count: number }> {
@@ -557,9 +570,10 @@ export const stockApi = {
   async getAccountMappings(): Promise<{ mappings: StockAccountMapping | null; message?: string }> {
     try {
       return await apiClient.get<{ mappings: StockAccountMapping }>("/stock/account-mappings");
-    } catch (error: any) {
-      if (error.status === 404) {
-        return { mappings: null, message: error.data?.message || "No mappings configured" };
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        const errorData = error.data as { message?: string } | undefined;
+        return { mappings: null, message: errorData?.message || "No mappings configured" };
       }
       throw error;
     }
@@ -575,9 +589,9 @@ export const stockApi = {
   async autoDetectAccounts(): Promise<AutoDetectResponse> {
     try {
       return await apiClient.get<AutoDetectResponse>("/stock/account-mappings/auto-detect");
-    } catch (error: any) {
-      if (error.status === 404 && error.data) {
-        return error.data;
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404 && error.data) {
+        return error.data as AutoDetectResponse;
       }
       throw error;
     }
@@ -813,7 +827,11 @@ export const suppliersApi = {
     if (params?.sort_order) queryParams.append("sort_order", params.sort_order);
 
     const queryString = queryParams.toString();
-    return await apiClient.get<any>(`/suppliers/${supplierId}/payments${queryString ? `?${queryString}` : ""}`);
+    return await apiClient.get<{
+      payments: SupplierPayment[];
+      pagination: { current_page: number; per_page: number; total: number; last_page: number };
+      summary: { total_paid: number; total_received: number; outstanding_balance: number };
+    }>(`/suppliers/${supplierId}/payments${queryString ? `?${queryString}` : ""}`);
   },
 
   async createPayment(supplierId: number, data: {
@@ -829,7 +847,12 @@ export const suppliersApi = {
     outstanding_balance: number;
     message: string;
   }> {
-    return await apiClient.post<any>(`/suppliers/${supplierId}/payments`, data);
+    return await apiClient.post<{
+      payment: SupplierPayment;
+      journal_entry: JournalEntry;
+      outstanding_balance: number;
+      message: string;
+    }>(`/suppliers/${supplierId}/payments`, data);
   },
 
   async getBalance(supplierId: number): Promise<SupplierBalanceResponse> {
@@ -845,10 +868,24 @@ export const suppliersApi = {
     suggestions?: string[];
   }> {
     try {
-      return await apiClient.get<any>('/suppliers/payment-account/auto-detect');
-    } catch (error: any) {
-      if (error.status === 404 && error.data) {
-        return error.data;
+      return await apiClient.get<{
+        detected_account: Account | null;
+        confidence: 'high' | 'medium' | 'low' | 'none';
+        method: string;
+        reason: string;
+        message: string;
+        suggestions?: string[];
+      }>('/suppliers/payment-account/auto-detect');
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404 && error.data) {
+        return error.data as {
+          detected_account: Account | null;
+          confidence: 'high' | 'medium' | 'low' | 'none';
+          method: string;
+          reason: string;
+          message: string;
+          suggestions?: string[];
+        };
       }
       throw error;
     }
@@ -942,6 +979,97 @@ export const itemTagsApi = {
     return await apiClient.post<{ message: string; data: ItemTag[] }>(
       `/items/${itemId}/tags/sync`,
       { tag_ids: tagIds }
+    );
+  },
+};
+
+// Invoices API
+export interface GetInvoicesParams {
+  invoice_type?: 'supplier' | 'sale' | 'payment' | 'purchase' | 'expense';
+  status?: 'draft' | 'issued' | 'paid' | 'cancelled';
+  start_date?: string;
+  end_date?: string;
+  search?: string;
+  sort_by?: string;
+  sort_direction?: 'asc' | 'desc';
+  page?: number;
+  per_page?: number;
+}
+
+export const invoicesApi = {
+  async getInvoices(params: GetInvoicesParams = {}): Promise<{
+    invoices: Invoice[];
+    pagination: {
+      current_page: number;
+      per_page: number;
+      total: number;
+      last_page: number;
+    };
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params.invoice_type) queryParams.append("invoice_type", params.invoice_type);
+    if (params.status) queryParams.append("status", params.status);
+    if (params.start_date) queryParams.append("start_date", params.start_date);
+    if (params.end_date) queryParams.append("end_date", params.end_date);
+    if (params.search) queryParams.append("search", params.search);
+    if (params.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params.sort_direction) queryParams.append("sort_direction", params.sort_direction);
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+
+    const queryString = queryParams.toString();
+    const url = `/invoices${queryString ? `?${queryString}` : ""}`;
+    
+    return await apiClient.get<{
+      invoices: Invoice[];
+      pagination: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+      };
+    }>(url);
+  },
+
+  async getInvoice(id: number): Promise<{ invoice: Invoice }> {
+    return await apiClient.get<{ invoice: Invoice }>(`/invoices/${id}`);
+  },
+
+  async downloadInvoice(id: number): Promise<Blob> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const headers: HeadersInit = {
+      Accept: "application/pdf",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/invoices/${id}/download`, {
+      method: "GET",
+      credentials: "include",
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "Failed to download invoice" }));
+      throw new ApiError(errorData.message || "Failed to download invoice", response.status, errorData);
+    }
+
+    return await response.blob();
+  },
+
+  getInvoiceViewUrl(id: number): string {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    return `${API_BASE_URL}/invoices/${id}/view${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  },
+
+  async updateInvoiceStatus(id: number, status: 'draft' | 'issued' | 'paid' | 'cancelled'): Promise<{
+    invoice: Invoice;
+    message: string;
+  }> {
+    return await apiClient.patch<{ invoice: Invoice; message: string }>(
+      `/invoices/${id}/status`,
+      { status }
     );
   },
 };
