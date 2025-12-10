@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ItemDetailTabs from "./ItemDetailTabs";
 import ItemDetailsForm from "./ItemDetailsForm";
-import type { Item } from "../../lib/types";
+import { stockApi, stockMovementsApi } from "../../lib/apiClient";
+import { useToast } from "../ui/ToastProvider";
+import type { Item, ItemStock, StockMovement } from "../../lib/types";
+import { Package, TrendingUp, TrendingDown, RefreshCw, Calendar } from "lucide-react";
 
 interface ItemDetailContentProps {
   itemId: string;
@@ -20,7 +23,54 @@ export default function ItemDetailContent({
   saveSignal,
   onSavingChange,
 }: ItemDetailContentProps) {
+  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState("item-details");
+  const [stock, setStock] = useState<ItemStock | null>(null);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [loadingStock, setLoadingStock] = useState(false);
+  const [loadingMovements, setLoadingMovements] = useState(false);
+
+  const fetchStockInfo = useCallback(async () => {
+    if (!itemId) return;
+    
+    setLoadingStock(true);
+    try {
+      const response = await stockApi.getItemStock(Number(itemId));
+      setStock(response.stock);
+    } catch (error) {
+      console.error("Failed to fetch stock:", error);
+      setStock(null);
+    } finally {
+      setLoadingStock(false);
+    }
+  }, [itemId]);
+
+  const fetchStockMovements = useCallback(async () => {
+    if (!itemId) return;
+    
+    setLoadingMovements(true);
+    try {
+      const response = await stockMovementsApi.getStockMovements({
+        item_id: Number(itemId),
+        per_page: 20,
+        sort_by: 'created_at',
+        sort_order: 'desc',
+      });
+      setStockMovements(response.data);
+    } catch (error) {
+      console.error("Failed to fetch stock movements:", error);
+      setStockMovements([]);
+    } finally {
+      setLoadingMovements(false);
+    }
+  }, [itemId]);
+
+  useEffect(() => {
+    if (activeTab === "stock-info") {
+      fetchStockInfo();
+      fetchStockMovements();
+    }
+  }, [activeTab, fetchStockInfo, fetchStockMovements]);
 
   return (
     <div className="flex-1">
@@ -148,13 +198,236 @@ export default function ItemDetailContent({
           </div>
         )}
         {activeTab === "stock-info" && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">Stock Information</h2>
-            <div className="text-center py-12 text-gray-500">
-              <p className="text-sm">Stock information not available yet.</p>
-              <p className="text-xs mt-1 text-gray-400">
-                This section will show inventory levels, stock movements, and warehouse locations.
-              </p>
+          <div className="space-y-6">
+            {/* Stock Details Card */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-4">Stock Information</h2>
+              
+              {loadingStock ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">Loading stock information...</p>
+                </div>
+              ) : stock ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Current Stock */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Current Stock
+                    </label>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {Math.floor(stock.quantity_on_hand).toLocaleString()} {item?.primary_unit || 'units'}
+                    </div>
+                    {item?.secondary_unit && item?.conversion_rate && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        ({Math.floor(stock.quantity_on_hand * item.conversion_rate).toLocaleString()} {item.secondary_unit})
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Stock Status */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Stock Status
+                    </label>
+                    <div className="mt-1">
+                      {(() => {
+                        const quantity = Number(stock.quantity_on_hand);
+                        const reorderLevel = Number(stock.reorder_level);
+                        let status: 'in_stock' | 'low_stock' | 'out_of_stock';
+                        if (quantity === 0 || quantity < 0) {
+                          status = 'out_of_stock';
+                        } else if (quantity > 0 && quantity <= reorderLevel) {
+                          status = 'low_stock';
+                        } else {
+                          status = 'in_stock';
+                        }
+
+                        const styles = {
+                          in_stock: "bg-green-100 text-green-800 border-green-200",
+                          low_stock: "bg-yellow-100 text-yellow-800 border-yellow-200",
+                          out_of_stock: "bg-red-100 text-red-800 border-red-200",
+                        };
+
+                        const labels = {
+                          in_stock: "In Stock",
+                          low_stock: "Low Stock",
+                          out_of_stock: "Out of Stock",
+                        };
+
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${styles[status]}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${status === 'in_stock' ? 'bg-green-500' : status === 'low_stock' ? 'bg-yellow-500' : 'bg-red-500'}`}></span>
+                            {labels[status]}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Reorder Level */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Reorder Level
+                    </label>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {Math.floor(stock.reorder_level).toLocaleString()} {item?.primary_unit || 'units'}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Minimum stock level before reordering</p>
+                  </div>
+
+                  {/* Stock Value */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Stock Value
+                    </label>
+                    <div className="text-2xl font-bold text-gray-900">
+                      PKR {stock.stock_value.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Total value at selling price</p>
+                  </div>
+
+                  {/* Last Restocked */}
+                  {stock.last_restocked_at && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Last Restocked
+                      </label>
+                      <div className="text-sm text-gray-900">
+                        {new Date(stock.last_restocked_at).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No stock record found for this item.</p>
+                  <p className="text-xs mt-1 text-gray-400">
+                    Stock information will appear here once inventory is tracked.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Stock Movements */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-4">Recent Stock Movements</h2>
+              
+              {loadingMovements ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">Loading stock movements...</p>
+                </div>
+              ) : stockMovements.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date & Time</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Quantity Change</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Previous Stock</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">New Stock</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Performed By</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {stockMovements.map((movement) => {
+                        const getMovementIcon = (type: StockMovement['movement_type'], quantity: number) => {
+                          if (type === 'adjustment') {
+                            return <RefreshCw className="w-4 h-4" />;
+                          }
+                          return quantity > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />;
+                        };
+
+                        const getMovementColor = (type: StockMovement['movement_type'], quantity: number) => {
+                          if (type === 'adjustment') {
+                            return 'text-blue-600 bg-blue-50';
+                          }
+                          return quantity > 0 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50';
+                        };
+
+                        const getMovementLabel = (type: StockMovement['movement_type']) => {
+                          const labels = {
+                            purchase: "Purchase",
+                            sale: "Sale",
+                            adjustment: "Adjustment",
+                            return: "Return",
+                          };
+                          return labels[type];
+                        };
+
+                        const quantity = Number(movement.quantity);
+                        const previousStock = Number(movement.previous_stock);
+                        const newStock = Number(movement.new_stock);
+
+                        return (
+                          <tr key={movement.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                              {new Date(movement.created_at).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getMovementColor(movement.movement_type, quantity)}`}>
+                                {getMovementIcon(movement.movement_type, quantity)}
+                                {getMovementLabel(movement.movement_type)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm whitespace-nowrap text-right">
+                              <span className={`font-semibold ${quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {quantity > 0 ? '+' : ''}{Math.floor(quantity).toLocaleString()} {item?.primary_unit || 'units'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap text-right">
+                              {Math.floor(previousStock).toLocaleString()} {item?.primary_unit || 'units'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right font-semibold">
+                              {Math.floor(newStock).toLocaleString()} {item?.primary_unit || 'units'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                              {movement.reference_type && movement.reference_id ? (
+                                <span className="font-mono text-xs">
+                                  {movement.reference_type}-{movement.reference_id}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                              {movement.performed_by_name || `User #${movement.performed_by}`}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
+                              {movement.notes || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-sm">No stock movements found.</p>
+                  <p className="text-xs mt-1 text-gray-400">
+                    Stock movements will appear here when inventory changes occur.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
