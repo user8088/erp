@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 const shortcuts = [
+  { label: "Point of Sale", href: "/selling/point-of-sale" },
   { label: "Item", href: "/item", badge: "10 Available", badgeColor: "bg-gray-100 text-gray-700" },
   { label: "Sales Order", href: "/sales-order", badge: "0 To Deliver", badgeColor: "bg-gray-100 text-gray-700" },
   { label: "Sales Analytics", href: "/sales-analytics" },
