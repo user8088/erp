@@ -1,17 +1,64 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-
-const shortcuts = [
-  { label: "Item", href: "/item", badge: "10 Available", badgeColor: "bg-green-100 text-green-700" },
-  { label: "Material Request", href: "/material-request", badge: "0 Pending", badgeColor: "bg-gray-100 text-gray-700" },
-  { label: "Purchase Order", href: "/purchase-order", badge: "4 To Receive", badgeColor: "bg-yellow-100 text-yellow-700" },
-  { label: "Purchase Analytics", href: "/purchase-analytics" },
-  { label: "Purchase Order Analysis", href: "/purchase-order-analysis" },
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Learn Procurement", href: "/learn-procurement" },
-];
+import { itemsApi, purchaseOrdersApi } from "../../lib/apiClient";
 
 export default function BuyingShortcuts() {
+  const [itemsCount, setItemsCount] = useState<number | null>(null);
+  const [purchaseOrdersCount, setPurchaseOrdersCount] = useState<number | null>(null);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [loadingPOs, setLoadingPOs] = useState(false);
+
+  useEffect(() => {
+    // Fetch items count
+    const fetchItemsCount = async () => {
+      setLoadingItems(true);
+      try {
+        const response = await itemsApi.getItems({ per_page: 1 });
+        setItemsCount(response.meta.total);
+      } catch (error) {
+        console.error("Failed to fetch items count:", error);
+      } finally {
+        setLoadingItems(false);
+      }
+    };
+
+    // Fetch purchase orders count
+    const fetchPurchaseOrdersCount = async () => {
+      setLoadingPOs(true);
+      try {
+        const response = await purchaseOrdersApi.getPurchaseOrders({ per_page: 1 });
+        setPurchaseOrdersCount(response.meta.total);
+      } catch (error) {
+        console.error("Failed to fetch purchase orders count:", error);
+      } finally {
+        setLoadingPOs(false);
+      }
+    };
+
+    fetchItemsCount();
+    fetchPurchaseOrdersCount();
+  }, []);
+
+  const shortcuts = [
+    {
+      label: "Item",
+      href: "/items",
+      badge: itemsCount !== null ? `${itemsCount} Available` : loadingItems ? "Loading..." : "—",
+      badgeColor: "bg-green-100 text-green-700",
+    },
+    {
+      label: "Purchase Order",
+      href: "/stock?tab=purchase-orders",
+      badge: purchaseOrdersCount !== null ? `${purchaseOrdersCount} Created` : loadingPOs ? "Loading..." : "—",
+      badgeColor: "bg-yellow-100 text-yellow-700",
+    },
+    { label: "Purchase Analytics", href: "/purchase-analytics" },
+    { label: "Purchase Order Analysis", href: "/purchase-order-analysis" },
+  ];
+
   return (
     <section className="mb-8">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Shortcuts</h2>

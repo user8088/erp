@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import SupplierDetailTabs from "./SupplierDetailTabs";
 import SupplierDetailsForm from "./SupplierDetailsForm";
 import SupplierPaymentModal, { type PaymentData } from "../Suppliers/SupplierPaymentModal";
@@ -42,8 +42,24 @@ export default function SupplierDetailContent({
   const [totalPurchased, setTotalPurchased] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
 
-  const fetchPurchaseOrders = useCallback(async () => {
+  // Track which tabs have been loaded to prevent unnecessary API calls
+  const loadedTabsRef = useRef<Set<string>>(new Set());
+  const currentSupplierIdRef = useRef<number | null>(null);
+
+  const fetchPurchaseOrders = useCallback(async (force = false) => {
     if (!supplier) return;
+    
+    // Reset loaded state if supplier changed
+    if (currentSupplierIdRef.current !== supplier.id) {
+      loadedTabsRef.current.clear();
+      currentSupplierIdRef.current = supplier.id;
+    }
+    
+    // Only fetch if not already loaded or if forced
+    if (!force && loadedTabsRef.current.has("purchase-orders")) {
+      return;
+    }
+    
     setLoadingPOs(true);
     try {
       const response = await purchaseOrdersApi.getPurchaseOrders({
@@ -53,6 +69,7 @@ export default function SupplierDetailContent({
         sort_order: "desc",
       });
       setPurchaseOrders(response.data);
+      loadedTabsRef.current.add("purchase-orders");
     } catch (error) {
       console.error("Failed to fetch purchase orders:", error);
       setPurchaseOrders([]);
@@ -107,8 +124,20 @@ export default function SupplierDetailContent({
   }, [addToast]);
 
   // Fetch payment history and balance
-  const fetchPayments = useCallback(async () => {
+  const fetchPayments = useCallback(async (force = false) => {
     if (!supplier) return;
+    
+    // Reset loaded state if supplier changed
+    if (currentSupplierIdRef.current !== supplier.id) {
+      loadedTabsRef.current.clear();
+      currentSupplierIdRef.current = supplier.id;
+    }
+    
+    // Only fetch if not already loaded or if forced
+    if (!force && loadedTabsRef.current.has("payments")) {
+      return;
+    }
+    
     setLoadingPayments(true);
     try {
       // Fetch payments
@@ -122,6 +151,7 @@ export default function SupplierDetailContent({
       setTotalPaid(paymentsResponse.summary.total_paid);
       setTotalPurchased(paymentsResponse.summary.total_received);
       setOutstandingBalance(paymentsResponse.summary.outstanding_balance);
+      loadedTabsRef.current.add("payments");
     } catch (error) {
       console.error("Failed to fetch payments:", error);
       addToast("Failed to load payment history", "error");
@@ -141,7 +171,7 @@ export default function SupplierDetailContent({
     }
   }, [supplier, addToast]);
 
-  // Fetch purchase orders when tab is active
+  // Fetch purchase orders when tab is active - only fetch once per tab
   useEffect(() => {
     if (activeTab === "purchase-orders" || activeTab === "items-supplied") {
       fetchPurchaseOrders();
@@ -149,6 +179,14 @@ export default function SupplierDetailContent({
       fetchPayments();
     }
   }, [activeTab, fetchPurchaseOrders, fetchPayments]);
+
+  // Reset loaded state when supplier changes
+  useEffect(() => {
+    if (supplier && currentSupplierIdRef.current !== supplier.id) {
+      loadedTabsRef.current.clear();
+      currentSupplierIdRef.current = supplier.id;
+    }
+  }, [supplier]);
 
   // Extract unique items from purchase orders and aggregate quantities
   const suppliedItems = supplier ? purchaseOrders
@@ -204,9 +242,14 @@ export default function SupplierDetailContent({
       
       addToast(response.message || "Payment recorded successfully", "success");
       
-      // Refresh data
-      fetchPurchaseOrders();
-      fetchPayments();
+      // Force refresh data after payment (data has changed)
+      loadedTabsRef.current.delete("payments");
+      fetchPayments(true);
+      // Purchase orders might also be affected if payment was linked to a PO
+      loadedTabsRef.current.delete("purchase-orders");
+      if (activeTab === "purchase-orders" || activeTab === "items-supplied") {
+        fetchPurchaseOrders(true);
+      }
     } catch (error) {
       // Parse error to extract meaningful message
       let errorMessage = "Failed to record payment";
