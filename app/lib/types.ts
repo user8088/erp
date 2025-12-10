@@ -400,6 +400,14 @@ export interface Invoice {
       phone?: string;
       address?: string;
     };
+    customer?: {
+      id: number;
+      name: string;
+      serial_number?: string;
+      email?: string;
+      phone?: string;
+      address?: string;
+    };
     payment?: {
       payment_number: string;
       payment_date: string;
@@ -411,6 +419,7 @@ export interface Invoice {
       invoice_number?: string;
       notes?: string;
     };
+    sale_type?: 'walk-in' | 'delivery';
     [key: string]: unknown;
   } | null;
   notes: string | null;

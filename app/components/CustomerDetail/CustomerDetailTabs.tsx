@@ -11,6 +11,7 @@ export default function CustomerDetailTabs({
 }: CustomerDetailTabsProps) {
   const tabs = [
     { id: "customer-details", label: "Customer Details" },
+    { id: "customer-payments", label: "Customer Payments" },
     { id: "transactions", label: "Transactions" },
     { id: "more-information", label: "More Information" },
     { id: "settings", label: "Settings" },
