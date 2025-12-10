@@ -180,25 +180,40 @@ export default function PurchaseInvoicesPage() {
 
     const purchaseOrders = purchaseOrdersMap.get(supplierId) || [];
     
-    // Find purchase orders that match the invoice date (within 30 days before invoice date)
+    // Find the purchase order that best matches this invoice
+    // We'll match by: same supplier, date close to invoice date, and similar total amount
     const invoiceDate = new Date(invoice.invoice_date);
-    const matchingPOs = purchaseOrders.filter(po => {
-      const poDate = new Date(po.order_date);
-      const daysDiff = (invoiceDate.getTime() - poDate.getTime()) / (1000 * 60 * 60 * 24);
-      return daysDiff >= 0 && daysDiff <= 30; // PO should be before or on invoice date, within 30 days
-    });
+    const invoiceTotal = invoice.total_amount;
+    
+    // Find purchase orders within 30 days before invoice date
+    const candidatePOs = purchaseOrders
+      .map(po => {
+        const poDate = new Date(po.order_date);
+        const daysDiff = (invoiceDate.getTime() - poDate.getTime()) / (1000 * 60 * 60 * 24);
+        const amountDiff = Math.abs(po.total - invoiceTotal);
+        return {
+          po,
+          daysDiff,
+          amountDiff,
+          score: daysDiff <= 30 && daysDiff >= 0 ? (30 - daysDiff) - (amountDiff / 1000) : -1
+        };
+      })
+      .filter(candidate => candidate.score >= 0)
+      .sort((a, b) => b.score - a.score); // Sort by best match
+    
+    // Use only the best matching purchase order (most recent and closest amount)
+    const bestMatch = candidatePOs[0];
+    if (!bestMatch || !bestMatch.po.items || bestMatch.po.items.length === 0) {
+      return "";
+    }
 
-    // Collect all items from matching purchase orders
+    // Collect items from the best matching purchase order only
     const items: string[] = [];
-    matchingPOs.forEach(po => {
-      if (po.items && po.items.length > 0) {
-        po.items.forEach(item => {
-          const quantity = Math.floor(item.quantity_ordered);
-          const unit = item.item?.primary_unit || 'units';
-          const itemName = item.item?.name || `Item #${item.item_id}`;
-          items.push(`${quantity} ${unit} of ${itemName}`);
-        });
-      }
+    bestMatch.po.items.forEach(item => {
+      const quantity = Math.floor(item.quantity_ordered);
+      const unit = item.item?.primary_unit || 'units';
+      const itemName = item.item?.name || `Item #${item.item_id}`;
+      items.push(`${quantity} ${unit} of ${itemName}`);
     });
 
     return items.length > 0 ? items.join(", ") : "";
