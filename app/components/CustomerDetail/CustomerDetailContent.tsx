@@ -368,7 +368,7 @@ export default function CustomerDetailContent({
                               <div className="flex items-center gap-4 mt-1">
                                 <p className="text-xs text-gray-500 flex items-center gap-1">
                                   <Calendar className="w-3 h-3" />
-                                  {new Date(invoice.date).toLocaleDateString()}
+                                  {new Date(invoice.invoice_date).toLocaleDateString()}
                                 </p>
                                 {metadata?.sale_type && (
                                   <p className="text-xs text-gray-500 capitalize">
