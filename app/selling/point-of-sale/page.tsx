@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, ApiError } from "../../lib/apiClient";
+import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, ApiError, type ProcessSalePayload } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
 import type { ItemStock, Customer, Account, Vehicle } from "../../lib/types";
 import { Package, ShoppingCart, User, Search, Plus, Minus, Trash2, Truck, Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 interface CartItem {
   itemStock: ItemStock;
@@ -18,7 +17,6 @@ interface CartItem {
 }
 
 export default function PointOfSalePage() {
-  const router = useRouter();
   const { addToast } = useToast();
   const [stockItems, setStockItems] = useState<ItemStock[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
@@ -78,10 +76,11 @@ export default function PointOfSalePage() {
   const fetchVehicles = useCallback(async () => {
     // TODO: Replace with actual API call when vehicles API is available
     // For now, using mock data
+    const now = new Date().toISOString();
     const mockVehicles: Vehicle[] = [
-      { id: 1, name: "Truck-001", registration_number: "ABC-123" },
-      { id: 2, name: "Van-002", registration_number: "XYZ-456" },
-      { id: 3, name: "Pickup-003", registration_number: "DEF-789" },
+      { id: 1, name: "Truck-001", registration_number: "ABC-123", created_at: now, updated_at: now },
+      { id: 2, name: "Van-002", registration_number: "XYZ-456", created_at: now, updated_at: now },
+      { id: 3, name: "Pickup-003", registration_number: "DEF-789", created_at: now, updated_at: now },
     ];
     setVehicles(mockVehicles);
   }, []);
@@ -309,14 +308,14 @@ export default function PointOfSalePage() {
 
       console.log("[POS] Sale created:", saleResponse);
       console.log("[POS] Sale response structure:", {
-        hasSale: !!(saleResponse as any).sale,
-        hasId: !!(saleResponse as any).id,
+        hasSale: !!saleResponse.sale,
+        hasId: !!saleResponse.sale?.id,
         keys: Object.keys(saleResponse || {}),
       });
 
-      // Handle different response structures from backend
-      // Backend might return { sale: Sale } or just Sale directly
-      const sale = (saleResponse as any).sale || saleResponse;
+      // Extract sale from response
+      // API returns { sale: Sale }
+      const sale = saleResponse.sale;
       
       if (!sale || !sale.id) {
         console.error("[POS] Invalid sale response:", saleResponse);
@@ -329,17 +328,11 @@ export default function PointOfSalePage() {
       console.log("[POS] Using sale:", { id: sale.id, sale_number: sale.sale_number });
 
       // Process sale
-      const processPayload: {
-        payment_method?: string;
-        payment_account_id?: number;
-        amount_paid?: number;
-        use_advance?: boolean;
-        notes?: string;
-      } = {};
+      const processPayload: ProcessSalePayload = {};
       
       // For walk-in sales, include payment info
       if (saleType === "walk-in") {
-        processPayload.payment_method = "cash";
+        processPayload.payment_method = "cash" as const;
         processPayload.payment_account_id = selectedPaymentAccount!;
         processPayload.amount_paid = total;
         processPayload.use_advance = useAdvance;

@@ -334,7 +334,7 @@ export default function CustomerDetailContent({
                 <p className="text-sm">Loading transactions...</p>
               </div>
             ) : customerInvoices.length === 0 && customerPayments.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-gray-500">
                 <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                 <p className="text-sm font-medium text-gray-900 mb-1">No transactions found</p>
                 <p className="text-xs text-gray-400">
@@ -440,8 +440,8 @@ export default function CustomerDetailContent({
                               payment.status === 'pending' ? 'text-yellow-600' : 'text-red-600'
                             }`}>
                               {payment.status}
-                            </p>
-                          </div>
+              </p>
+            </div>
                         </div>
                       ))}
                     </div>
