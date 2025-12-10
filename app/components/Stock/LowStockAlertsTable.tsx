@@ -30,7 +30,7 @@ export default function LowStockAlertsTable({ stock, loading, onCreatePO }: LowS
           <div>
             <h3 className="text-sm font-semibold text-yellow-900">Low Stock Alert</h3>
             <p className="text-sm text-yellow-700 mt-1">
-              {stock.length} item{stock.length !== 1 ? 's' : ''} below or at reorder level. Consider creating purchase orders.
+              {stock.filter((item) => item.item !== null && item.item !== undefined).length} item{stock.filter((item) => item.item !== null && item.item !== undefined).length !== 1 ? 's' : ''} below or at reorder level. Consider creating purchase orders.
             </p>
           </div>
         </div>
@@ -55,7 +55,7 @@ export default function LowStockAlertsTable({ stock, loading, onCreatePO }: LowS
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {stock.map((item) => {
+            {stock.filter((item) => item.item !== null && item.item !== undefined).map((item) => {
               const { color } = formatStockLevel(item.quantity_on_hand, item.reorder_level);
               const suggestedOrder = Math.max(item.reorder_level * 2 - item.quantity_on_hand, item.reorder_level);
               

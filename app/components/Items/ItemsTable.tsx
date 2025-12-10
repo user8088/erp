@@ -134,9 +134,7 @@ export default function ItemsTable({ items, loading, onDelete, onBulkDelete, onS
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Are you sure you want to delete ${item.name}?`)) {
-                              onDelete(item.id);
-                            }
+                            onDelete(item.id);
                           }}
                           className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                           title="Delete item"

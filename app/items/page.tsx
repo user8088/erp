@@ -32,9 +32,13 @@ export default function ItemsPage() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this item? This will also remove the associated stock record from the inventory table. Stock movements will still be visible but will show as 'Item discontinued'.")) {
+      return;
+    }
+    
     try {
       await itemsApi.deleteItem(id);
-      addToast("Item deleted successfully.", "success");
+      addToast("Item deleted successfully. Stock record removed from inventory.", "success");
       refresh();
     } catch (e: unknown) {
       console.error(e);
@@ -56,6 +60,10 @@ export default function ItemsPage() {
   };
 
   const handleBulkDelete = async (ids: number[]) => {
+    if (!confirm(`Are you sure you want to delete ${ids.length} item(s)? This will also remove the associated stock records from the inventory table. Stock movements will still be visible but will show as 'Item discontinued'.`)) {
+      return;
+    }
+    
     try {
       const result = await itemsApi.deleteItems(ids);
       

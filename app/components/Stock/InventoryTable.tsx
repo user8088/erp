@@ -25,8 +25,11 @@ export default function InventoryTable({
   const [reorderLevelValues, setReorderLevelValues] = useState<Record<number, number>>({});
 
   const getStockStatus = (item: ItemStock): StockStatus => {
-    if (item.quantity_on_hand === 0) return 'out_of_stock';
-    if (item.quantity_on_hand <= item.reorder_level) return 'low_stock';
+    const quantity = Number(item.quantity_on_hand);
+    const reorderLevel = Number(item.reorder_level);
+    
+    if (quantity === 0 || quantity < 0) return 'out_of_stock';
+    if (quantity > 0 && quantity <= reorderLevel) return 'low_stock';
     return 'in_stock';
   };
 
@@ -72,7 +75,7 @@ export default function InventoryTable({
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {stock.map((item) => {
+          {stock.filter((item) => item.item !== null && item.item !== undefined).map((item) => {
             const status = getStockStatus(item);
             return (
               <tr

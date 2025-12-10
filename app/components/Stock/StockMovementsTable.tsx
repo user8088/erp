@@ -74,7 +74,12 @@ export default function StockMovementsTable({ movements, loading }: StockMovemen
                   <Package className="w-4 h-4 text-gray-400" />
                   <div>
                     <p className="font-medium">{movement.item?.name || "Unknown Item"}</p>
-                    <p className="text-xs text-gray-500">{movement.item?.serial_number}</p>
+                    <p className="text-xs text-gray-500">
+                      {movement.item?.serial_number || `Item #${movement.item_id}`}
+                      {!movement.item && (
+                        <span className="ml-2 text-xs text-orange-600 italic">(Item discontinued)</span>
+                      )}
+                    </p>
                   </div>
                 </div>
               </td>

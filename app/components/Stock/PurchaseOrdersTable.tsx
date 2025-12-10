@@ -62,7 +62,14 @@ export default function PurchaseOrdersTable({ orders, loading, onDelete }: Purch
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
           {orders.map((order) => {
-            const totalItems = order.items?.reduce((sum, item) => sum + item.quantity_ordered, 0) || 0;
+            // Format items display with item names: "5 bags Cement, 5 bags Pussy"
+            const itemsDisplay = order.items?.map((item) => {
+              const quantity = Math.floor(Number(item.quantity_ordered) || 0);
+              const unit = item.item?.primary_unit || 'units';
+              const itemName = item.item?.name || `Item #${item.item_id}`;
+              return `${quantity} ${unit} ${itemName}`;
+            }).join(', ') || '—';
+
             return (
               <tr
                 key={order.id}
@@ -85,7 +92,7 @@ export default function PurchaseOrdersTable({ orders, loading, onDelete }: Purch
                   {getStatusBadge(order.status)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right font-medium">
-                  {Math.floor(totalItems).toLocaleString()}
+                  {itemsDisplay || '—'}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right font-semibold">
                   PKR {order.total.toLocaleString(undefined, {
