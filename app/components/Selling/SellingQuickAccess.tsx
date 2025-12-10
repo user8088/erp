@@ -1,16 +1,52 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-
-const shortcuts = [
-  { label: "Point of Sale", href: "/selling/point-of-sale" },
-  { label: "Item", href: "/item", badge: "10 Available", badgeColor: "bg-gray-100 text-gray-700" },
-  { label: "Sales Order", href: "/sales-order", badge: "0 To Deliver", badgeColor: "bg-gray-100 text-gray-700" },
-  { label: "Sales Analytics", href: "/sales-analytics" },
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Learn Sales Management", href: "/learn-sales-management" },
-];
+import { salesApi } from "../../lib/apiClient";
 
 export default function SellingQuickAccess() {
+  const [ordersToDeliver, setOrdersToDeliver] = useState<number | null>(null);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  useEffect(() => {
+    const fetchOrdersCount = async () => {
+      setLoadingOrders(true);
+      try {
+        const response = await salesApi.getSales({
+          sale_type: 'delivery',
+          status: 'draft',
+          per_page: 1,
+        });
+        setOrdersToDeliver(response.meta.total);
+      } catch (error) {
+        console.error("Failed to fetch orders count:", error);
+        setOrdersToDeliver(null);
+      } finally {
+        setLoadingOrders(false);
+      }
+    };
+
+    fetchOrdersCount();
+  }, []);
+
+  const shortcuts = [
+    { label: "Point of Sale", href: "/selling/point-of-sale" },
+    { label: "Item", href: "/item", badge: "10 Available", badgeColor: "bg-gray-100 text-gray-700" },
+    { 
+      label: "Sales Order", 
+      href: "/selling/sales-orders", 
+      badge: ordersToDeliver !== null 
+        ? `${ordersToDeliver} To Deliver` 
+        : loadingOrders 
+        ? "Loading..." 
+        : "—", 
+      badgeColor: "bg-orange-100 text-orange-700" 
+    },
+    { label: "Sales Analytics", href: "/sales-analytics" },
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Learn Sales Management", href: "/learn-sales-management" },
+  ];
   return (
     <section className="mb-8">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Access</h2>

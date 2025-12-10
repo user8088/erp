@@ -355,7 +355,7 @@ export default function CustomerDetailContent({
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <FileText className="w-4 h-4 text-gray-400" />
-                                <p className="text-sm font-medium text-gray-900">{invoice.invoice_number || invoice.reference}</p>
+                                <p className="text-sm font-medium text-gray-900">{invoice.invoice_number || `Invoice #${invoice.id}`}</p>
                                 <span className={`text-xs px-2 py-0.5 rounded ${
                                   invoice.status === 'paid' ? 'bg-green-100 text-green-700' :
                                   invoice.status === 'issued' ? 'bg-yellow-100 text-yellow-700' :

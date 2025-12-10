@@ -1157,6 +1157,18 @@ export const salesApi = {
   async cancelSale(id: number): Promise<{ sale: Sale }> {
     return await apiClient.post<{ sale: Sale }>(`/sales/${id}/cancel`);
   },
+
+  async markAsDelivered(id: number): Promise<{
+    sale: Sale;
+    invoice: Invoice;
+    message: string;
+  }> {
+    return await apiClient.post<{
+      sale: Sale;
+      invoice: Invoice;
+      message: string;
+    }>(`/sales/${id}/mark-delivered`);
+  },
 };
 
 // Customer Payments API
