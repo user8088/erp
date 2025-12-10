@@ -1,16 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { stockApi, customersApi } from "../../lib/apiClient";
+import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
-import type { ItemStock, Customer } from "../../lib/types";
-import { Package, ShoppingCart, User, Search, Plus, Minus, Trash2, Truck } from "lucide-react";
-
-interface Vehicle {
-  id: number;
-  name: string;
-  registration_number?: string;
-}
+import type { ItemStock, Customer, Account, Vehicle } from "../../lib/types";
+import { Package, ShoppingCart, User, Search, Plus, Minus, Trash2, Truck, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface CartItem {
   itemStock: ItemStock;
@@ -23,6 +18,7 @@ interface CartItem {
 }
 
 export default function PointOfSalePage() {
+  const router = useRouter();
   const { addToast } = useToast();
   const [stockItems, setStockItems] = useState<ItemStock[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
@@ -30,10 +26,15 @@ export default function PointOfSalePage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [saleType, setSaleType] = useState<"order" | "walk-in">("walk-in");
+  const [saleType, setSaleType] = useState<"walk-in" | "delivery">("walk-in");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<number | null>(null);
+  const [useAdvance, setUseAdvance] = useState(false);
+  const [processingSale, setProcessingSale] = useState(false);
 
   // Fetch stocked items
   const fetchStockItems = useCallback(async () => {
@@ -85,11 +86,54 @@ export default function PointOfSalePage() {
     setVehicles(mockVehicles);
   }, []);
 
+  // Fetch payment accounts (Cash, Bank accounts)
+  const fetchPaymentAccounts = useCallback(async () => {
+    setLoadingAccounts(true);
+    try {
+      // Get account mappings to find cash/bank accounts
+      const mappingsResponse = await accountMappingsApi.getAccountMappings();
+      const cashMapping = mappingsResponse.data.find(m => m.mapping_type === 'pos_cash');
+      const bankMapping = mappingsResponse.data.find(m => m.mapping_type === 'pos_bank');
+      
+      // Fetch all asset accounts (Cash and Bank are typically assets)
+      const accountsResponse = await accountsApi.getAccounts({
+        company_id: 1,
+        root_type: 'asset',
+        is_group: false,
+        per_page: 1000,
+      });
+
+      // Filter for cash and bank accounts, or use mapped accounts
+      const relevantAccounts = accountsResponse.data.filter(acc => {
+        if (cashMapping && acc.id === cashMapping.account_id) return true;
+        if (bankMapping && acc.id === bankMapping.account_id) return true;
+        // Also include accounts with "cash" or "bank" in name
+        const nameLower = acc.name.toLowerCase();
+        return nameLower.includes('cash') || nameLower.includes('bank');
+      });
+
+      setPaymentAccounts(relevantAccounts);
+      
+      // Auto-select cash account if available
+      if (cashMapping && relevantAccounts.find(a => a.id === cashMapping.account_id)) {
+        setSelectedPaymentAccount(cashMapping.account_id);
+      } else if (relevantAccounts.length > 0) {
+        setSelectedPaymentAccount(relevantAccounts[0].id);
+      }
+    } catch (error) {
+      console.error("Failed to fetch payment accounts:", error);
+      // Don't show error toast, just continue without account selection
+    } finally {
+      setLoadingAccounts(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchStockItems();
     fetchCustomers();
     fetchVehicles();
-  }, [fetchStockItems, fetchCustomers, fetchVehicles]);
+    fetchPaymentAccounts();
+  }, [fetchStockItems, fetchCustomers, fetchVehicles, fetchPaymentAccounts]);
 
   // Filter stock items by search query
   const filteredItems = stockItems.filter((item) => {
@@ -221,10 +265,146 @@ export default function PointOfSalePage() {
     (sum, item) => sum + (item.unitPrice - item.discountedPrice) * item.quantity,
     0
   );
-  const totalDeliveryCharges = saleType === "order" 
+  const totalDeliveryCharges = saleType === "delivery" 
     ? cart.reduce((sum, item) => sum + item.deliveryCharge, 0)
     : 0;
   const total = subtotal + totalDeliveryCharges;
+
+  // Process Sale
+  const handleProcessSale = async () => {
+    if (!selectedCustomer || cart.length === 0) return;
+
+    // For walk-in sales, payment account is required
+    if (saleType === "walk-in" && !selectedPaymentAccount) {
+      addToast("Please select a payment account", "error");
+      return;
+    }
+
+    setProcessingSale(true);
+    try {
+      // Prepare sale items
+      const saleItems = cart.map(item => ({
+        item_id: item.itemStock.item!.id,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        discount_percentage: item.discount,
+        delivery_charge: saleType === "delivery" ? item.deliveryCharge : 0,
+      }));
+
+      console.log("[POS] Creating sale:", {
+        sale_type: saleType,
+        customer_id: selectedCustomer.id,
+        items_count: saleItems.length,
+        items: saleItems,
+      });
+
+      // Create sale (draft)
+      const saleResponse = await salesApi.createSale({
+        sale_type: saleType,
+        customer_id: selectedCustomer.id,
+        vehicle_id: saleType === "delivery" ? selectedVehicle?.id || null : null,
+        delivery_address: saleType === "delivery" ? selectedCustomer.address || null : null,
+        items: saleItems,
+      });
+
+      console.log("[POS] Sale created:", saleResponse);
+      console.log("[POS] Sale response structure:", {
+        hasSale: !!(saleResponse as any).sale,
+        hasId: !!(saleResponse as any).id,
+        keys: Object.keys(saleResponse || {}),
+      });
+
+      // Handle different response structures from backend
+      // Backend might return { sale: Sale } or just Sale directly
+      const sale = (saleResponse as any).sale || saleResponse;
+      
+      if (!sale || !sale.id) {
+        console.error("[POS] Invalid sale response:", saleResponse);
+        console.error("[POS] Extracted sale:", sale);
+        addToast("Failed to create sale: Invalid response from server", "error");
+        setProcessingSale(false);
+        return;
+      }
+
+      console.log("[POS] Using sale:", { id: sale.id, sale_number: sale.sale_number });
+
+      // Process sale
+      const processPayload: {
+        payment_method?: string;
+        payment_account_id?: number;
+        amount_paid?: number;
+        use_advance?: boolean;
+        notes?: string;
+      } = {};
+      
+      // For walk-in sales, include payment info
+      if (saleType === "walk-in") {
+        processPayload.payment_method = "cash";
+        processPayload.payment_account_id = selectedPaymentAccount!;
+        processPayload.amount_paid = total;
+        processPayload.use_advance = useAdvance;
+      }
+
+      console.log("[POS] Processing sale:", { sale_id: sale.id, payload: processPayload });
+      const processResponse = await salesApi.processSale(sale.id, processPayload);
+      console.log("[POS] Sale processed:", processResponse);
+
+      // Success!
+      const successMessage = saleType === "walk-in" 
+        ? `Walk-in sale processed successfully! Sale #${sale.sale_number}` 
+        : `Delivery sale processed successfully! Sale #${sale.sale_number}`;
+      
+      addToast(successMessage, "success");
+
+      // Reset cart and form
+      setCart([]);
+      setSelectedCustomer(null);
+      setSelectedVehicle(null);
+      setUseAdvance(false);
+      setSearchQuery(""); // Clear search as well
+
+      // Refresh stock items to reflect updated quantities
+      await fetchStockItems();
+    } catch (error) {
+      console.error("Failed to process sale:", error);
+      
+      if (error instanceof ApiError) {
+        // Handle validation errors (422) with field-specific messages
+        if (error.status === 422 || error.status === 400) {
+          const errorData = error.data as { message?: string; errors?: Record<string, string[]> };
+          
+          if (errorData.errors) {
+            // Show all validation errors
+            const errorMessages = Object.values(errorData.errors).flat();
+            if (errorMessages.length > 0) {
+              // Show first error in toast, log all errors
+              addToast(errorMessages[0], "error");
+              if (errorMessages.length > 1) {
+                console.warn("Additional validation errors:", errorMessages.slice(1));
+              }
+            } else {
+              addToast(errorData.message || "Validation failed", "error");
+            }
+          } else {
+            // Business logic error
+            addToast(errorData.message || "Failed to process sale", "error");
+          }
+        } else if (error.status === 404) {
+          addToast("Sales API endpoint not found. Please check backend configuration.", "error");
+        } else if (error.status === 403) {
+          addToast("You don't have permission to process sales", "error");
+        } else if (error.status === 401) {
+          addToast("Please log in to continue", "error");
+        } else {
+          addToast(error.message || "Failed to process sale", "error");
+        }
+      } else {
+        addToast("Failed to process sale. Please try again.", "error");
+      }
+    } finally {
+      setProcessingSale(false);
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -381,9 +561,9 @@ export default function PointOfSalePage() {
                   Walk-in Sale
                 </button>
                 <button
-                  onClick={() => setSaleType("order")}
+                  onClick={() => setSaleType("delivery")}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    saleType === "order"
+                    saleType === "delivery"
                       ? "bg-orange-500 text-white"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
@@ -417,8 +597,8 @@ export default function PointOfSalePage() {
               </div>
             </div>
 
-            {/* Vehicle Selection (Only for Order Sale) */}
-            {saleType === "order" && (
+            {/* Vehicle Selection (Only for Delivery Sale) */}
+            {saleType === "delivery" && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Transport Vehicle <span className="text-gray-400 font-normal">(Optional)</span>
@@ -442,6 +622,48 @@ export default function PointOfSalePage() {
                   </select>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">You can set this later if needed</p>
+              </div>
+            )}
+
+            {/* Payment Account Selection (Only for Walk-in Sale) */}
+            {saleType === "walk-in" && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Payment Account <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedPaymentAccount || ""}
+                  onChange={(e) => setSelectedPaymentAccount(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  disabled={loadingAccounts}
+                >
+                  <option value="">Select Payment Account</option>
+                  {paymentAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.number ? `${account.number} - ` : ""}{account.name}
+                    </option>
+                  ))}
+                </select>
+                {paymentAccounts.length === 0 && !loadingAccounts && (
+                  <p className="text-xs text-red-500 mt-1">
+                    No payment accounts found. Please configure account mappings in settings.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Use Advance Option (Only for Walk-in Sale) */}
+            {saleType === "walk-in" && selectedCustomer && (
+              <div className="mb-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useAdvance}
+                    onChange={(e) => setUseAdvance(e.target.checked)}
+                    className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+                  />
+                  <span className="text-sm text-gray-700">Use customer advance payment (if available)</span>
+                </label>
               </div>
             )}
 
@@ -551,8 +773,8 @@ export default function PointOfSalePage() {
                               </span>
                             </div>
                           )}
-                          {/* Delivery Charge (Only for Order Sale) */}
-                          {saleType === "order" && (
+                          {/* Delivery Charge (Only for Delivery Sale) */}
+                          {saleType === "delivery" && (
                             <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
                               <Truck className="w-4 h-4 text-gray-400" />
                               <div className="flex-1">
@@ -579,7 +801,7 @@ export default function PointOfSalePage() {
                             <span className="text-gray-900">
                               PKR {(
                                 cartItem.discountedPrice * cartItem.quantity + 
-                                (saleType === "order" ? cartItem.deliveryCharge : 0)
+                                (saleType === "delivery" ? cartItem.deliveryCharge : 0)
                               ).toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                               })}
@@ -610,7 +832,7 @@ export default function PointOfSalePage() {
                     </span>
                   </div>
                 )}
-                {saleType === "order" && totalDeliveryCharges > 0 && (
+                {saleType === "delivery" && totalDeliveryCharges > 0 && (
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">Total Delivery Charges:</span>
                     <span className="font-medium text-blue-600">
@@ -629,18 +851,36 @@ export default function PointOfSalePage() {
 
             {/* Process Sale Button */}
             <button
-              disabled={cart.length === 0 || !selectedCustomer}
-              className={`w-full mt-4 py-3 rounded-md font-semibold transition-colors ${
-                cart.length === 0 || !selectedCustomer
+              disabled={
+                cart.length === 0 || 
+                !selectedCustomer || 
+                (saleType === "walk-in" && !selectedPaymentAccount) ||
+                processingSale
+              }
+              onClick={handleProcessSale}
+              className={`w-full mt-4 py-3 rounded-md font-semibold transition-colors flex items-center justify-center gap-2 ${
+                cart.length === 0 || 
+                !selectedCustomer || 
+                (saleType === "walk-in" && !selectedPaymentAccount) ||
+                processingSale
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-orange-500 text-white hover:bg-orange-600"
               }`}
             >
-              {!selectedCustomer
-                ? "Select Customer to Continue"
-                : saleType === "walk-in"
-                ? "Process Walk-in Sale"
-                : "Process Order Sale"}
+              {processingSale ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processing...
+                </>
+              ) : !selectedCustomer ? (
+                "Select Customer to Continue"
+              ) : saleType === "walk-in" && !selectedPaymentAccount ? (
+                "Select Payment Account to Continue"
+              ) : saleType === "walk-in" ? (
+                "Process Walk-in Sale"
+              ) : (
+                "Process Delivery Sale"
+              )}
             </button>
           </div>
         </div>

@@ -440,4 +440,135 @@ export interface Invoice {
   };
 }
 
+// POS System Types
+
+export interface Vehicle {
+  id: number;
+  name: string;
+  registration_number?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SaleItem {
+  id: number;
+  sale_id: number;
+  item_id: number;
+  item_stock_id: number;
+  item?: Item;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  original_price: number;
+  discount_percentage: number;
+  discount_amount: number;
+  delivery_charge: number;
+  subtotal: number;
+  total: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Sale {
+  id: number;
+  sale_number: string;
+  sale_type: 'walk-in' | 'delivery';
+  customer_id: number;
+  customer?: Customer;
+  created_by: number;
+  subtotal: number;
+  total_discount: number;
+  total_delivery_charges: number;
+  tax_amount: number;
+  total_amount: number;
+  payment_status: 'paid' | 'unpaid' | 'partial';
+  amount_paid: number;
+  amount_due: number;
+  advance_used: number;
+  vehicle_id?: number | null;
+  vehicle?: Vehicle | null;
+  delivery_address?: string | null;
+  expected_delivery_date?: string | null;
+  status: 'draft' | 'completed' | 'cancelled';
+  notes?: string | null;
+  items?: SaleItem[];
+  invoice?: Invoice | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerPayment {
+  id: number;
+  payment_number: string;
+  customer_id: number;
+  customer?: Customer;
+  created_by: number;
+  payment_type: 'invoice_payment' | 'advance_payment' | 'refund';
+  invoice_id?: number | null;
+  invoice?: Invoice | null;
+  amount: number;
+  payment_method: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
+  payment_account_id: number;
+  payment_account?: Account | null;
+  reference_number?: string | null;
+  payment_date: string;
+  notes?: string | null;
+  status: 'pending' | 'completed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerAdvance {
+  id: number;
+  customer_id: number;
+  customer?: Customer;
+  payment_id?: number | null;
+  payment?: CustomerPayment | null;
+  sale_id?: number | null;
+  sale?: Sale | null;
+  amount: number;
+  balance: number;
+  transaction_type: 'received' | 'used' | 'refunded';
+  reference?: string | null;
+  transaction_date: string;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountMapping {
+  id: number;
+  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount';
+  account_id: number;
+  account?: Account;
+  company_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountMappingStatus {
+  mapping_type: string;
+  label: string;
+  is_configured: boolean;
+  account_id?: number | null;
+  account_name?: string | null;
+}
+
+export interface CustomerPaymentSummary {
+  customer_id: number;
+  due_amount: number;
+  prepaid_amount: number;
+  total_spent: number;
+  total_paid: number;
+  outstanding_invoices: Array<{
+    invoice_id: number;
+    invoice_number: string;
+    amount: number;
+    due_amount: number;
+    invoice_date: string;
+  }>;
+  advance_balance: number;
+  advance_transactions: CustomerAdvance[];
+}
+
 

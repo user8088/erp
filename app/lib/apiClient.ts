@@ -102,7 +102,7 @@ export const apiClient = {
 
 // Domain-specific helpers
 
-import type { Account, Paginated, Transaction, JournalEntry, Customer, Item, Category, ItemTag, ItemStock, PurchaseOrder, StockMovement, Supplier, StockAccountMapping, AutoDetectResponse, SupplierPayment, SupplierBalanceResponse, Invoice } from "./types";
+import type { Account, Paginated, Transaction, JournalEntry, Customer, Item, Category, ItemTag, ItemStock, PurchaseOrder, StockMovement, Supplier, StockAccountMapping, AutoDetectResponse, SupplierPayment, SupplierBalanceResponse, Invoice, Sale, SaleItem, CustomerPayment, CustomerAdvance, AccountMapping, AccountMappingStatus, CustomerPaymentSummary, Vehicle } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
 export interface GetAccountsParams {
@@ -1070,6 +1070,208 @@ export const invoicesApi = {
     return await apiClient.patch<{ invoice: Invoice; message: string }>(
       `/invoices/${id}/status`,
       { status }
+    );
+  },
+};
+
+// Sales API
+export interface GetSalesParams {
+  page?: number;
+  per_page?: number;
+  customer_id?: number;
+  sale_type?: 'walk-in' | 'delivery';
+  status?: 'draft' | 'completed' | 'cancelled';
+  payment_status?: 'paid' | 'unpaid' | 'partial';
+  start_date?: string;
+  end_date?: string;
+  search?: string;
+}
+
+export interface CreateSalePayload {
+  sale_type: 'walk-in' | 'delivery';
+  customer_id: number;
+  vehicle_id?: number | null;
+  delivery_address?: string | null;
+  expected_delivery_date?: string | null;
+  items: Array<{
+    item_id: number;
+    quantity: number;
+    unit_price: number;
+    discount_percentage?: number;
+    delivery_charge?: number;
+  }>;
+  notes?: string | null;
+}
+
+export interface ProcessSalePayload {
+  payment_method?: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
+  payment_account_id?: number;
+  amount_paid?: number;
+  use_advance?: boolean;
+  notes?: string | null;
+}
+
+export const salesApi = {
+  async getSales(params: GetSalesParams = {}): Promise<Paginated<Sale>> {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.customer_id) queryParams.append("customer_id", String(params.customer_id));
+    if (params.sale_type) queryParams.append("sale_type", params.sale_type);
+    if (params.status) queryParams.append("status", params.status);
+    if (params.payment_status) queryParams.append("payment_status", params.payment_status);
+    if (params.start_date) queryParams.append("start_date", params.start_date);
+    if (params.end_date) queryParams.append("end_date", params.end_date);
+    if (params.search) queryParams.append("search", params.search);
+
+    const queryString = queryParams.toString();
+    const url = `/sales${queryString ? `?${queryString}` : ""}`;
+    
+    return await apiClient.get<Paginated<Sale>>(url);
+  },
+
+  async getSale(id: number): Promise<{ sale: Sale }> {
+    return await apiClient.get<{ sale: Sale }>(`/sales/${id}`);
+  },
+
+  async createSale(payload: CreateSalePayload): Promise<{ sale: Sale }> {
+    return await apiClient.post<{ sale: Sale }>("/sales", payload);
+  },
+
+  async processSale(id: number, payload?: ProcessSalePayload): Promise<{
+    sale: Sale;
+    invoice: Invoice;
+    payment?: CustomerPayment;
+    journal_entries: unknown[];
+    stock_movements: unknown[];
+  }> {
+    return await apiClient.post<{
+      sale: Sale;
+      invoice: Invoice;
+      payment?: CustomerPayment;
+      journal_entries: unknown[];
+      stock_movements: unknown[];
+    }>(`/sales/${id}/process`, payload || {});
+  },
+
+  async cancelSale(id: number): Promise<{ sale: Sale }> {
+    return await apiClient.post<{ sale: Sale }>(`/sales/${id}/cancel`);
+  },
+};
+
+// Customer Payments API
+export interface GetCustomerPaymentsParams {
+  page?: number;
+  per_page?: number;
+  customer_id?: number;
+  payment_type?: 'invoice_payment' | 'advance_payment' | 'refund';
+  start_date?: string;
+  end_date?: string;
+  search?: string;
+}
+
+export interface CreateCustomerPaymentPayload {
+  customer_id: number;
+  payment_type: 'invoice_payment' | 'advance_payment' | 'refund';
+  invoice_id?: number;
+  amount: number;
+  payment_method: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
+  payment_account_id: number;
+  payment_date: string;
+  reference_number?: string | null;
+  notes?: string | null;
+}
+
+export const customerPaymentsApi = {
+  async getCustomerPayments(params: GetCustomerPaymentsParams = {}): Promise<Paginated<CustomerPayment>> {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.customer_id) queryParams.append("customer_id", String(params.customer_id));
+    if (params.payment_type) queryParams.append("payment_type", params.payment_type);
+    if (params.start_date) queryParams.append("start_date", params.start_date);
+    if (params.end_date) queryParams.append("end_date", params.end_date);
+    if (params.search) queryParams.append("search", params.search);
+
+    const queryString = queryParams.toString();
+    const url = `/customer-payments${queryString ? `?${queryString}` : ""}`;
+    
+    return await apiClient.get<Paginated<CustomerPayment>>(url);
+  },
+
+  async getCustomerPayment(id: number): Promise<{ payment: CustomerPayment }> {
+    return await apiClient.get<{ payment: CustomerPayment }>(`/customer-payments/${id}`);
+  },
+
+  async createCustomerPayment(payload: CreateCustomerPaymentPayload): Promise<{
+    payment: CustomerPayment;
+    journal_entries: unknown[];
+    advance_transaction?: CustomerAdvance | null;
+  }> {
+    return await apiClient.post<{
+      payment: CustomerPayment;
+      journal_entries: unknown[];
+      advance_transaction?: CustomerAdvance | null;
+    }>("/customer-payments", payload);
+  },
+};
+
+// Account Mappings API
+export interface GetAccountMappingsParams {
+  mapping_type?: string;
+  company_id?: number;
+}
+
+export interface CreateAccountMappingPayload {
+  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount';
+  account_id: number;
+  company_id?: number | null;
+}
+
+export const accountMappingsApi = {
+  async getAccountMappings(params: GetAccountMappingsParams = {}): Promise<{
+    data: AccountMapping[];
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params.mapping_type) queryParams.append("mapping_type", params.mapping_type);
+    if (params.company_id) queryParams.append("company_id", String(params.company_id));
+
+    const queryString = queryParams.toString();
+    const url = `/account-mappings${queryString ? `?${queryString}` : ""}`;
+    
+    return await apiClient.get<{ data: AccountMapping[] }>(url);
+  },
+
+  async getAccountMappingStatus(company_id?: number): Promise<{
+    data: AccountMappingStatus[];
+  }> {
+    const queryParams = new URLSearchParams();
+    if (company_id) queryParams.append("company_id", String(company_id));
+
+    const queryString = queryParams.toString();
+    const url = `/account-mappings/status${queryString ? `?${queryString}` : ""}`;
+    
+    return await apiClient.get<{ data: AccountMappingStatus[] }>(url);
+  },
+
+  async createAccountMapping(payload: CreateAccountMappingPayload): Promise<{
+    account_mapping: AccountMapping;
+  }> {
+    return await apiClient.post<{ account_mapping: AccountMapping }>("/account-mappings", payload);
+  },
+
+  async deleteAccountMapping(id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/account-mappings/${id}`);
+  },
+};
+
+// Customer Payment Summary API (extends customersApi)
+export const customerPaymentSummaryApi = {
+  async getCustomerPaymentSummary(customerId: number): Promise<{
+    payment_summary: CustomerPaymentSummary;
+  }> {
+    return await apiClient.get<{ payment_summary: CustomerPaymentSummary }>(
+      `/customers/${customerId}/payment-summary`
     );
   },
 };

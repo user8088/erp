@@ -13,7 +13,7 @@ const reports = {
   ],
   "Point of Sale": [
     { label: "Point-of-Sale Profile", href: "/pos-profile" },
-    { label: "POS Settings", href: "/pos-settings" },
+    { label: "POS Settings", href: "/selling/settings" },
     { label: "POS Opening Entry", href: "/pos-opening-entry" },
     { label: "POS Closing Entry", href: "/pos-closing-entry" },
     { label: "Loyalty Program", href: "/loyalty-program" },
