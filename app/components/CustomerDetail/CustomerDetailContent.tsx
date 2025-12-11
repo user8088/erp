@@ -30,7 +30,6 @@ export default function CustomerDetailContent({
   // Payment summary data
   const [paymentSummary, setPaymentSummary] = useState<CustomerPaymentSummary | null>(null);
   const [loadingPayments, setLoadingPayments] = useState(false);
-  const [paymentApiUnavailable, setPaymentApiUnavailable] = useState(false);
   
   // Customer payments list
   const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
@@ -46,7 +45,37 @@ export default function CustomerDetailContent({
   // Calculate effective payment summary (from API or calculated from invoices)
   const effectiveSummary = useMemo(() => {
     if (paymentSummary) {
-      return paymentSummary;
+      // Normalize prepaid/advance fields in case backend omits one of them
+      const receivedAdvance = Array.isArray(paymentSummary.advance_transactions)
+        ? paymentSummary.advance_transactions
+            .filter(tx => tx.transaction_type === 'received')
+            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
+        : 0;
+      const usedAdvance = Array.isArray(paymentSummary.advance_transactions)
+        ? paymentSummary.advance_transactions
+            .filter(tx => tx.transaction_type === 'used')
+            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
+        : 0;
+      const refundedAdvance = Array.isArray(paymentSummary.advance_transactions)
+        ? paymentSummary.advance_transactions
+            .filter(tx => tx.transaction_type === 'refunded')
+            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
+        : 0;
+      const computedAdvance =
+        receivedAdvance - usedAdvance - refundedAdvance;
+
+      const prepaid =
+        paymentSummary.prepaid_amount ??
+        paymentSummary.advance_balance ??
+        computedAdvance ??
+        0;
+
+      return {
+        ...paymentSummary,
+        prepaid_amount: prepaid,
+        advance_balance: paymentSummary.advance_balance ?? prepaid,
+        advance_transactions: paymentSummary.advance_transactions || [],
+      };
     }
     
     // Calculate from invoices if API data is not available
@@ -82,27 +111,93 @@ export default function CustomerDetailContent({
     };
   }, [paymentSummary, customerInvoices, customerId]);
 
+  // Decide if we should show the summary/payment section (even if values are zero)
+  const hasAnyPaymentData =
+    effectiveSummary.total_spent > 0 ||
+    effectiveSummary.due_amount > 0 ||
+    effectiveSummary.prepaid_amount > 0 ||
+    (effectiveSummary.advance_transactions?.length ?? 0) > 0 ||
+    customerPayments.length > 0;
+
+  // Helpers to normalize API responses that may have multiple shapes
+  const asRecord = (value: unknown): Record<string, unknown> | null =>
+    value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+
+  const isPaymentSummary = (value: unknown): value is CustomerPaymentSummary => {
+    if (!value || typeof value !== "object") return false;
+    const rec = value as Record<string, unknown>;
+    return "customer_id" in rec && "due_amount" in rec && "total_spent" in rec;
+  };
+
+  const extractPaymentSummary = useCallback((resp: unknown): CustomerPaymentSummary | null => {
+    if (isPaymentSummary(resp)) return resp;
+
+    const root = asRecord(resp);
+    if (!root) return null;
+
+    const dataField = asRecord(root.data);
+
+    const candidates: unknown[] = [
+      root.payment_summary,
+      root.paymentSummary,
+      dataField?.payment_summary,
+      dataField?.paymentSummary,
+      root.data,
+    ];
+
+    for (const candidate of candidates) {
+      if (isPaymentSummary(candidate)) return candidate;
+    }
+
+    return null;
+  }, []);
+
+  const extractPayments = useCallback((resp: unknown): CustomerPayment[] => {
+    if (Array.isArray(resp)) return resp;
+
+    const root = asRecord(resp);
+    if (!root) return [];
+
+    const dataField = root.data;
+    const paymentsField = root.payments;
+
+    const candidates: unknown[] = [
+      dataField,
+      paymentsField,
+      asRecord(dataField)?.payments,
+      asRecord(paymentsField)?.data,
+      asRecord(dataField)?.data,
+      asRecord(asRecord(dataField)?.data)?.data,
+      asRecord(asRecord(dataField)?.payments)?.data,
+    ];
+
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) return candidate as CustomerPayment[];
+    }
+
+    return [];
+  }, []);
+
   // Fetch payment summary
   const fetchPaymentSummary = useCallback(async () => {
     if (!customerId || activeTab !== "customer-payments") return;
     
     setLoadingPayments(true);
-    setPaymentApiUnavailable(false);
     try {
       const response = await customerPaymentSummaryApi.getCustomerPaymentSummary(Number(customerId));
-      setPaymentSummary(response.payment_summary);
+      const summary = extractPaymentSummary(response);
+      console.log("[CustomerPayments] payment summary raw:", response, "parsed:", summary);
+      setPaymentSummary(summary || null);
     } catch (error) {
       console.error("Failed to fetch payment summary:", error);
-      if (error instanceof ApiError && error.status === 404) {
-        setPaymentApiUnavailable(true);
-      } else {
+      if (!(error instanceof ApiError && error.status === 404)) {
         addToast("Failed to load payment summary", "error");
       }
       setPaymentSummary(null);
     } finally {
       setLoadingPayments(false);
     }
-  }, [customerId, activeTab, addToast]);
+  }, [customerId, activeTab, addToast, extractPaymentSummary]);
 
   // Fetch customer payments list
   const fetchCustomerPayments = useCallback(async () => {
@@ -114,14 +209,16 @@ export default function CustomerDetailContent({
         customer_id: Number(customerId),
         per_page: 50,
       });
-      setCustomerPayments(response.data);
+      const payments = extractPayments(response);
+      console.log("[CustomerPayments] payments raw:", response, "parsed:", payments);
+      setCustomerPayments(payments || []);
     } catch (error) {
       console.error("Failed to fetch customer payments:", error);
       setCustomerPayments([]);
     } finally {
       setLoadingPaymentList(false);
     }
-  }, [customerId, activeTab]);
+  }, [customerId, activeTab, extractPayments]);
 
   // Fetch customer invoices
   const fetchCustomerInvoices = useCallback(async () => {
@@ -140,7 +237,7 @@ export default function CustomerDetailContent({
       // Filter invoices for this customer
       const customerIdNum = Number(customerId);
       const filtered = response.invoices.filter(invoice => {
-        const metadata = invoice.metadata as any;
+        const metadata = invoice.metadata;
         return metadata?.customer?.id === customerIdNum;
       });
       setCustomerInvoices(filtered);
@@ -208,7 +305,7 @@ export default function CustomerDetailContent({
               <div className="text-center py-12 text-gray-500">
                 <p className="text-sm">Loading payment information...</p>
               </div>
-            ) : (effectiveSummary.total_spent > 0 || effectiveSummary.due_amount > 0 || effectiveSummary.prepaid_amount > 0) ? (
+            ) : hasAnyPaymentData ? (
               <div className="space-y-6">
                 {/* Payment Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -413,7 +510,7 @@ export default function CustomerDetailContent({
                     <h3 className="text-sm font-semibold text-gray-900 mb-3">Invoices</h3>
                     <div className="space-y-2">
                       {customerInvoices.map((invoice) => {
-                        const metadata = invoice.metadata as any;
+                        const metadata = invoice.metadata;
                         return (
                           <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                             <div className="flex-1">
