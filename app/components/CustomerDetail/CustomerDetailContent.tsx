@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import CustomerDetailTabs from "./CustomerDetailTabs";
 import CustomerDetailsForm from "./CustomerDetailsForm";
+import RecordPaymentModal from "./RecordPaymentModal";
 import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
 import type { Customer, CustomerPaymentSummary, CustomerPayment, Invoice } from "../../lib/types";
-import { DollarSign, TrendingUp, CreditCard, FileText, Calendar } from "lucide-react";
+import { DollarSign, TrendingUp, CreditCard, FileText, Calendar, Plus } from "lucide-react";
 
 interface CustomerDetailContentProps {
   customerId: string;
@@ -38,6 +39,48 @@ export default function CustomerDetailContent({
   // Customer invoices
   const [customerInvoices, setCustomerInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  
+  // Payment recording modal
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+  // Calculate effective payment summary (from API or calculated from invoices)
+  const effectiveSummary = useMemo(() => {
+    if (paymentSummary) {
+      return paymentSummary;
+    }
+    
+    // Calculate from invoices if API data is not available
+    const totalSpent = customerInvoices
+      .filter(inv => inv.status !== 'cancelled')
+      .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+    
+    const dueAmount = customerInvoices
+      .filter(inv => inv.status === 'issued')
+      .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+    
+    const paidAmount = customerInvoices
+      .filter(inv => inv.status === 'paid')
+      .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+    
+    return {
+      customer_id: Number(customerId),
+      due_amount: dueAmount,
+      prepaid_amount: 0, // We don't have advance payment data without API
+      total_spent: totalSpent,
+      total_paid: paidAmount,
+      outstanding_invoices: customerInvoices
+        .filter(inv => inv.status === 'issued')
+        .map(inv => ({
+          invoice_id: inv.id,
+          invoice_number: inv.invoice_number,
+          amount: inv.total_amount,
+          due_amount: inv.total_amount,
+          invoice_date: inv.invoice_date,
+        })),
+      advance_balance: 0,
+      advance_transactions: [],
+    };
+  }, [paymentSummary, customerInvoices, customerId]);
 
   // Fetch payment summary
   const fetchPaymentSummary = useCallback(async () => {
@@ -82,7 +125,10 @@ export default function CustomerDetailContent({
 
   // Fetch customer invoices
   const fetchCustomerInvoices = useCallback(async () => {
-    if (!customerId || activeTab !== "transactions") return;
+    if (!customerId) return;
+    
+    // Only fetch if we're on a tab that needs invoices
+    if (activeTab !== "transactions" && activeTab !== "customer-payments") return;
     
     setLoadingInvoices(true);
     try {
@@ -110,11 +156,26 @@ export default function CustomerDetailContent({
     if (activeTab === "customer-payments") {
       fetchPaymentSummary();
       fetchCustomerPayments();
+      fetchCustomerInvoices(); // Also fetch invoices for payment modal
     } else if (activeTab === "transactions") {
       fetchCustomerInvoices();
       fetchCustomerPayments(); // Also fetch payments for transactions tab
     }
   }, [activeTab, fetchPaymentSummary, fetchCustomerPayments, fetchCustomerInvoices]);
+
+  // Fetch invoices when payment modal opens
+  useEffect(() => {
+    if (showPaymentModal && customerInvoices.length === 0) {
+      fetchCustomerInvoices();
+    }
+  }, [showPaymentModal, customerInvoices.length, fetchCustomerInvoices]);
+
+  // Handle payment recorded - refresh all payment data
+  const handlePaymentRecorded = useCallback(() => {
+    fetchPaymentSummary();
+    fetchCustomerPayments();
+    fetchCustomerInvoices();
+  }, [fetchPaymentSummary, fetchCustomerPayments, fetchCustomerInvoices]);
 
   return (
     <div className="flex-1">
@@ -131,20 +192,23 @@ export default function CustomerDetailContent({
         )}
         {activeTab === "customer-payments" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-6">Customer Payments</h2>
-            {loadingPayments ? (
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-base font-semibold text-gray-900">Customer Payments</h2>
+              {customer && (
+                <button
+                  onClick={() => setShowPaymentModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Record Payment
+                </button>
+              )}
+            </div>
+            {loadingPayments || loadingInvoices ? (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-sm">Loading payment information...</p>
               </div>
-            ) : paymentApiUnavailable ? (
-              <div className="text-center py-12 text-gray-500">
-                <DollarSign className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-sm font-medium text-gray-900 mb-1">Payment Summary API Not Available</p>
-                <p className="text-xs text-gray-500">
-                  The backend endpoint for customer payment summary has not been implemented yet.
-                </p>
-              </div>
-            ) : paymentSummary ? (
+            ) : (effectiveSummary.total_spent > 0 || effectiveSummary.due_amount > 0 || effectiveSummary.prepaid_amount > 0) ? (
               <div className="space-y-6">
                 {/* Payment Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -154,7 +218,7 @@ export default function CustomerDetailContent({
                       <div>
                         <p className="text-xs font-medium text-red-700 mb-1">Due Amount</p>
                         <p className="text-2xl font-bold text-red-900">
-                          PKR {paymentSummary.due_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          PKR {effectiveSummary.due_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </p>
                         <p className="text-xs text-red-600 mt-1">Unpaid invoices</p>
                       </div>
@@ -168,7 +232,7 @@ export default function CustomerDetailContent({
                       <div>
                         <p className="text-xs font-medium text-blue-700 mb-1">Pre-paid Amount</p>
                         <p className="text-2xl font-bold text-blue-900">
-                          PKR {paymentSummary.prepaid_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          PKR {effectiveSummary.prepaid_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </p>
                         <p className="text-xs text-blue-600 mt-1">Advance payments</p>
                       </div>
@@ -182,7 +246,7 @@ export default function CustomerDetailContent({
                       <div>
                         <p className="text-xs font-medium text-green-700 mb-1">Total Spent</p>
                         <p className="text-2xl font-bold text-green-900">
-                          PKR {paymentSummary.total_spent.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          PKR {effectiveSummary.total_spent.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </p>
                         <p className="text-xs text-green-600 mt-1">All-time sales</p>
                       </div>
@@ -192,11 +256,11 @@ export default function CustomerDetailContent({
                 </div>
 
                 {/* Outstanding Invoices */}
-                {paymentSummary.outstanding_invoices && paymentSummary.outstanding_invoices.length > 0 && (
+                {effectiveSummary.outstanding_invoices && effectiveSummary.outstanding_invoices.length > 0 && (
                   <div className="border-t border-gray-200 pt-6">
                     <h3 className="text-sm font-semibold text-gray-900 mb-4">Outstanding Invoices</h3>
                     <div className="space-y-2">
-                      {paymentSummary.outstanding_invoices.map((invoice) => (
+                      {effectiveSummary.outstanding_invoices.map((invoice) => (
                         <div key={invoice.invoice_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                           <div>
                             <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
@@ -217,11 +281,11 @@ export default function CustomerDetailContent({
                 )}
 
                 {/* Advance Transactions */}
-                {paymentSummary.advance_transactions && paymentSummary.advance_transactions.length > 0 && (
+                {effectiveSummary.advance_transactions && effectiveSummary.advance_transactions.length > 0 && (
                   <div className="border-t border-gray-200 pt-6">
                     <h3 className="text-sm font-semibold text-gray-900 mb-4">Advance Transactions</h3>
                     <div className="space-y-2">
-                      {paymentSummary.advance_transactions.slice(0, 10).map((transaction) => (
+                      {effectiveSummary.advance_transactions.slice(0, 10).map((transaction) => (
                         <div key={transaction.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                           <div>
                             <p className="text-sm font-medium text-gray-900">
@@ -464,6 +528,17 @@ export default function CustomerDetailContent({
           </div>
         )}
       </div>
+
+      {/* Record Payment Modal */}
+      {customer && (
+        <RecordPaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          customer={customer}
+          outstandingInvoices={effectiveSummary.outstanding_invoices}
+          onPaymentRecorded={handlePaymentRecorded}
+        />
+      )}
     </div>
   );
 }
