@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, ApiError, type ProcessSalePayload } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
-import type { ItemStock, Customer, Account, Vehicle } from "../../lib/types";
+import type { ItemStock, Customer, Account, Vehicle, Sale } from "../../lib/types";
 import { Package, ShoppingCart, User, Search, Plus, Minus, Trash2, Truck, Loader2 } from "lucide-react";
 
 interface CartItem {
@@ -311,15 +311,27 @@ export default function PointOfSalePage() {
         hasSale: !!saleResponse.sale,
         hasId: !!saleResponse.sale?.id,
         keys: Object.keys(saleResponse || {}),
+        fullResponse: JSON.stringify(saleResponse, null, 2),
       });
 
       // Extract sale from response
-      // API returns { sale: Sale }
-      const sale = saleResponse.sale;
+      // API might return { sale: Sale } or just Sale directly
+      let sale = saleResponse.sale;
+      
+      // If saleResponse.sale doesn't exist, check if saleResponse itself is the sale
+      if (!sale && saleResponse && typeof saleResponse === 'object') {
+        // Check if the response has sale-like properties (id, sale_number, etc.)
+        if ('id' in saleResponse || 'sale_number' in saleResponse) {
+          console.log("[POS] Response appears to be a direct sale object");
+          sale = saleResponse as unknown as Sale;
+        }
+      }
       
       if (!sale || !sale.id) {
         console.error("[POS] Invalid sale response:", saleResponse);
         console.error("[POS] Extracted sale:", sale);
+        console.error("[POS] Response type:", typeof saleResponse);
+        console.error("[POS] Response keys:", saleResponse ? Object.keys(saleResponse) : 'null');
         addToast("Failed to create sale: Invalid response from server", "error");
         setProcessingSale(false);
         return;
