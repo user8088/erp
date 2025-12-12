@@ -2,11 +2,12 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 const shortcuts = [
-  { label: "Users", href: "/staff/users" },
   { label: "Staff Members", href: "/staff/members" },
+  { label: "Salary Structures", href: "/staff/salary" },
+  { label: "Attendance", href: "/staff/attendance" },
   { label: "Staff Invoices", href: "/staff/invoices" },
+  { label: "Users", href: "/staff/users" },
   { label: "Permission Manager", href: "/staff/permission-manager" },
-  { label: "User Types", href: "/staff/user-types" },
 ];
 
 export default function StaffShortcuts() {

@@ -102,7 +102,35 @@ export const apiClient = {
 
 // Domain-specific helpers
 
-import type { Account, Paginated, Transaction, JournalEntry, Customer, Item, Category, ItemTag, ItemStock, PurchaseOrder, StockMovement, Supplier, StockAccountMapping, AutoDetectResponse, SupplierPayment, SupplierBalanceResponse, Invoice, Sale, SaleItem, CustomerPayment, CustomerAdvance, AccountMapping, AccountMappingStatus, CustomerPaymentSummary, Vehicle } from "./types";
+import type {
+  Account,
+  Paginated,
+  Transaction,
+  JournalEntry,
+  Customer,
+  Item,
+  Category,
+  ItemTag,
+  ItemStock,
+  PurchaseOrder,
+  StockMovement,
+  Supplier,
+  StockAccountMapping,
+  AutoDetectResponse,
+  SupplierPayment,
+  SupplierBalanceResponse,
+  Invoice,
+  Sale,
+  CustomerPayment,
+  CustomerAdvance,
+  AccountMapping,
+  AccountMappingStatus,
+  CustomerPaymentSummary,
+  StaffMember,
+  StaffSalaryStructure,
+  AttendanceEntry,
+  StaffSalaryRun,
+} from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
 export interface GetAccountsParams {
@@ -218,6 +246,144 @@ export const accountsApi = {
 export const journalApi = {
   createJournalEntry(payload: JournalEntry) {
     return apiClient.post<{ journal_entry: JournalEntry }>("/journal-entries", payload);
+  },
+};
+
+// Staff & Payroll APIs
+export const staffApi = {
+  list(params: {
+    q?: string;
+    status?: string;
+    department?: string;
+    designation?: string;
+    is_erp_user?: string | number | boolean;
+    page?: number;
+    per_page?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params.q) query.set("q", params.q);
+    if (params.status) query.set("status", params.status);
+    if (params.department) query.set("department", params.department);
+    if (params.designation) query.set("designation", params.designation);
+    if (params.is_erp_user !== undefined) {
+      query.set("is_erp_user", String(params.is_erp_user ? 1 : 0));
+    }
+    if (params.page) query.set("page", String(params.page));
+    if (params.per_page) query.set("per_page", String(params.per_page));
+    const path = `/staff?${query.toString()}`;
+    return apiClient.get<Paginated<StaffMember>>(path);
+  },
+
+  get(id: string | number) {
+    const path = `/staff/${id}`;
+    return apiClient.get<StaffMember>(path);
+  },
+  create(payload: Omit<StaffMember, "id" | "erp_user_id" | "is_erp_user"> & { erp_user_id?: string | number | null }) {
+    return apiClient.post<{ staff: StaffMember }>("/staff", payload);
+  },
+  update(id: string | number, payload: Partial<StaffMember>) {
+    return apiClient.patch<{ staff: StaffMember }>(`/staff/${id}`, payload);
+  },
+};
+
+export const salaryStructuresApi = {
+  list(params?: { pay_frequency?: string; name?: string; page?: number; per_page?: number }) {
+    const query = new URLSearchParams();
+    if (params?.pay_frequency) query.set("pay_frequency", params.pay_frequency);
+    if (params?.name) query.set("name", params.name);
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.per_page) query.set("per_page", String(params.per_page));
+    const qs = query.toString();
+    const path = `/staff/salary-structures${qs ? `?${qs}` : ""}`;
+    return apiClient.get<Paginated<StaffSalaryStructure>>(path);
+  },
+  create(payload: Omit<StaffSalaryStructure, "id">) {
+    return apiClient.post<{ salary_structure: StaffSalaryStructure }>(
+      "/staff/salary-structures",
+      payload
+    );
+  },
+  update(id: string | number, payload: Partial<Omit<StaffSalaryStructure, "id">>) {
+    return apiClient.patch<{ salary_structure: StaffSalaryStructure }>(
+      `/staff/salary-structures/${id}`,
+      payload
+    );
+  },
+  remove(id: string | number) {
+    return apiClient.delete<{ message: string }>(`/staff/salary-structures/${id}`);
+  },
+};
+
+export const attendanceApi = {
+  list(params: {
+    date?: string;
+    from?: string;
+    to?: string;
+    person_type?: "staff" | "user";
+    person_ids?: (string | number)[];
+    status?: string;
+    summary?: boolean;
+    page?: number;
+    per_page?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params.date) query.set("date", params.date);
+    if (params.from) query.set("from", params.from);
+    if (params.to) query.set("to", params.to);
+    if (params.person_type) query.set("person_type", params.person_type);
+    if (params.person_ids && params.person_ids.length) {
+      params.person_ids.forEach((id) => query.append("person_ids[]", String(id)));
+    }
+    if (params.status) query.set("status", params.status);
+    if (params.summary) query.set("summary", "1");
+    if (params.page) query.set("page", String(params.page));
+    if (params.per_page) query.set("per_page", String(params.per_page));
+    const path = `/attendance?${query.toString()}`;
+    return apiClient.get<{ data: AttendanceEntry[]; summary?: Record<string, number>; meta: Paginated<unknown>["meta"] }>(path);
+  },
+  bulkUpsert(payload: { date: string; entries: Array<Omit<AttendanceEntry, "id" | "date" | "name" | "designation"> & { note?: string }> }) {
+    return apiClient.post<{ data: AttendanceEntry[] }>("/attendance/bulk", payload);
+  },
+  update(id: string | number, payload: Partial<Pick<AttendanceEntry, "status" | "note">>) {
+    return apiClient.patch<{ attendance: AttendanceEntry }>(`/attendance/${id}`, payload);
+  },
+  markAll(payload: {
+    date: string;
+    status: AttendanceEntry["status"];
+    person_type: AttendanceEntry["person_type"];
+    person_ids?: Array<string | number>;
+    department?: string;
+    designation?: string;
+    staff_status?: string;
+  }) {
+    return apiClient.post<{ data: AttendanceEntry[] }>("/attendance/mark-all", payload);
+  },
+};
+
+export const salaryRunsApi = {
+  list(staffId: string | number, params?: { month?: string; status?: string; page?: number; per_page?: number }) {
+    const query = new URLSearchParams();
+    if (params?.month) query.set("month", params.month);
+    if (params?.status) query.set("status", params.status);
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.per_page) query.set("per_page", String(params.per_page));
+    const path = `/staff/${staffId}/salary-runs${query.toString() ? `?${query.toString()}` : ""}`;
+    return apiClient.get<Paginated<StaffSalaryRun>>(path);
+  },
+  create(staffId: string | number, payload: Partial<StaffSalaryRun> & { month: string; salary_structure_id?: string | number; override_basic?: number; override_allowances?: Array<{ label: string; amount: number }>; override_deductions?: Array<{ label: string; amount: number }>; payable_days?: number }) {
+    return apiClient.post<{ salary_run: StaffSalaryRun }>(
+      `/staff/${staffId}/salary-runs`,
+      payload
+    );
+  },
+  pay(runId: string | number, payload: { paid_on?: string; notes?: string; payment_metadata?: Record<string, unknown>; advance_adjusted?: number }) {
+    return apiClient.patch<{ salary_run: StaffSalaryRun; invoice?: Invoice }>(
+      `/staff/salary-runs/${runId}/pay`,
+      payload
+    );
+  },
+  get(runId: string | number) {
+    return apiClient.get<{ salary_run: StaffSalaryRun }>(`/staff/salary-runs/${runId}`);
   },
 };
 

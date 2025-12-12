@@ -639,7 +639,7 @@ storage/
 
 1. **Create a category:**
 ```bash
-curl -X POST https://erp-server-main-xegmvt.laravel.cloud/api/categories \
+curl -X POST http://localhost:8000/api/categories \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -651,7 +651,7 @@ curl -X POST https://erp-server-main-xegmvt.laravel.cloud/api/categories \
 
 2. **Create an item in that category:**
 ```bash
-curl -X POST https://erp-server-main-xegmvt.laravel.cloud/api/items \
+curl -X POST http://localhost:8000/api/items \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -666,7 +666,7 @@ curl -X POST https://erp-server-main-xegmvt.laravel.cloud/api/items \
 
 3. **List items:**
 ```bash
-curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/items?per_page=20" \
+curl -X GET "http://localhost:8000/api/items?per_page=20" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 

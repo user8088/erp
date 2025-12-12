@@ -46,6 +46,111 @@ export interface UserProfile {
   cnic_back_path?: string | null;
 }
 
+// Staff Management
+export interface StaffMember {
+  id: string | number;
+  code?: string;
+  full_name: string;
+  designation: string;
+  department?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  status: "active" | "on_leave" | "inactive";
+  date_of_joining?: string | null;
+  monthly_salary?: number | null;
+  next_pay_date?: string | null;
+  last_paid_on?: string | null;
+  is_erp_user?: boolean;
+  erp_user_id?: string | number | null;
+  user?: {
+    id: string | number;
+    email?: string | null;
+    full_name?: string | null;
+  };
+}
+
+export interface StaffSalary {
+  id: string | number;
+  staff_id: string | number;
+  month: string; // YYYY-MM
+  status: "scheduled" | "due" | "paid";
+  amount: number;
+  due_date: string;
+  paid_on?: string | null;
+  invoice_number?: string | null;
+  advance_adjusted?: number | null;
+  notes?: string | null;
+}
+
+export interface StaffAdvance {
+  id: string | number;
+  staff_id: string | number;
+  amount: number;
+  balance: number;
+  status: "open" | "settled";
+  issued_on: string;
+  remarks?: string | null;
+}
+
+export type PayFrequency = "monthly" | "biweekly" | "weekly";
+
+export interface SalaryComponent {
+  id?: string | number;
+  label: string;
+  amount: number;
+}
+
+export interface StaffSalaryStructure {
+  id: string | number;
+  name: string;
+  basic_amount: number;
+  allowances: SalaryComponent[];
+  deductions: SalaryComponent[];
+  pay_frequency: PayFrequency;
+  payable_days: number;
+  notes?: string | null;
+}
+
+export type AttendanceStatus =
+  | "present"
+  | "absent"
+  | "paid_leave"
+  | "unpaid_leave";
+
+export interface AttendanceEntry {
+  id: string | number;
+  person_id: string | number;
+  person_type: "staff" | "user";
+  name: string;
+  designation?: string | null;
+  date: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+  note?: string | null;
+}
+
+export interface StaffSalaryRun {
+  id: string | number;
+  staff_id: string | number;
+  month: string; // YYYY-MM
+  status: "scheduled" | "due" | "paid";
+  gross: number;
+  per_day_rate: number;
+  payable_days: number;
+  present_days: number;
+  paid_leave_days: number;
+  unpaid_leave_days: number;
+  absent_days: number;
+  net_before_advance: number;
+  advance_adjusted: number;
+  net_payable: number;
+  invoice_id?: string | number | null;
+  invoice_number?: string | null;
+  due_date?: string | null;
+  paid_on?: string | null;
+  notes?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface Tag {
   id: string | number;
   name: string;

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import CustomerDetailTabs from "./CustomerDetailTabs";
 import CustomerDetailsForm from "./CustomerDetailsForm";
 import RecordPaymentModal from "./RecordPaymentModal";
-import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, ApiError } from "../../lib/apiClient";
+import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
-import type { Customer, CustomerPaymentSummary, CustomerPayment, Invoice } from "../../lib/types";
+import type { Customer, CustomerPaymentSummary, CustomerPayment, Invoice, Sale, SaleItem } from "../../lib/types";
 import { DollarSign, TrendingUp, CreditCard, FileText, Calendar, Plus } from "lucide-react";
 
 interface CustomerDetailContentProps {
@@ -34,6 +34,8 @@ export default function CustomerDetailContent({
   // Customer payments list
   const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
   const [loadingPaymentList, setLoadingPaymentList] = useState(false);
+  const [invoiceItemSummaries, setInvoiceItemSummaries] = useState<Record<number, string>>({});
+  const fetchedSaleIdsRef = useRef<Set<number>>(new Set());
   
   // Customer invoices
   const [customerInvoices, setCustomerInvoices] = useState<Invoice[]>([]);
@@ -178,6 +180,76 @@ export default function CustomerDetailContent({
     return [];
   }, []);
 
+  const formatSaleItems = (saleItems: SaleItem[] | undefined | null): string => {
+    if (!saleItems || saleItems.length === 0) return "";
+    return saleItems
+      .map((item) => {
+        const name = item?.item?.name ?? `Item #${item?.item_id ?? ""}`.trim();
+        const unit = item?.unit ? ` ${item.unit}` : "";
+        const qty = item?.quantity ?? 0;
+        return `${qty}${unit} ${name}`.trim();
+      })
+      .filter(Boolean)
+      .join(", ");
+  };
+
+  const fetchSaleItemsForInvoices = useCallback(async (invoices: Invoice[]) => {
+    const saleInvoices = invoices.filter(
+      (invoice) => invoice.reference_type === "sale" || invoice.reference_id
+    );
+
+    const tasks = saleInvoices.map(async (invoice) => {
+      // Try to derive saleId and items from metadata first
+      const metadata = invoice.metadata as Record<string, unknown> | undefined;
+      const metaSale: Sale | undefined = (metadata?.sale as Sale) ?? undefined;
+      const metaItems: SaleItem[] | undefined =
+        (metaSale?.items as SaleItem[] | undefined) ||
+        (metadata?.items as SaleItem[] | undefined);
+      const metaSaleId: number | undefined =
+        (metadata?.sale_id as number | undefined) ??
+        (metaSale?.id as number | undefined) ??
+        (invoice.reference_id as number | undefined);
+
+      // If items are already present in metadata, use them without fetching
+      if (metaItems && metaItems.length > 0) {
+        const summary = formatSaleItems(metaItems);
+        if (summary) {
+          setInvoiceItemSummaries((prev) => ({
+            ...prev,
+            [invoice.id]: summary,
+          }));
+        }
+        // Even if we had items, skip refetch if we already have saleId cached
+        if (metaSaleId) {
+          fetchedSaleIdsRef.current.add(metaSaleId);
+        }
+        return;
+      }
+
+      // Otherwise fetch sale by id if available
+      if (!metaSaleId || fetchedSaleIdsRef.current.has(metaSaleId)) return;
+
+      fetchedSaleIdsRef.current.add(metaSaleId);
+      try {
+        const saleResponse = await salesApi.getSale(metaSaleId);
+        const sale =
+          (saleResponse as { sale?: Sale }).sale ??
+          (saleResponse as unknown as Sale | undefined);
+        const summary = formatSaleItems(sale?.items);
+        if (summary) {
+          setInvoiceItemSummaries((prev) => ({
+            ...prev,
+            [invoice.id]: summary,
+          }));
+        }
+      } catch (error) {
+        console.warn("Failed to fetch sale items for invoice", invoice.id, error);
+      }
+    });
+
+    await Promise.all(tasks);
+  }, []);
+
   // Fetch payment summary
   const fetchPaymentSummary = useCallback(async () => {
     if (!customerId || activeTab !== "customer-payments") return;
@@ -241,13 +313,14 @@ export default function CustomerDetailContent({
         return metadata?.customer?.id === customerIdNum;
       });
       setCustomerInvoices(filtered);
+      fetchSaleItemsForInvoices(filtered);
     } catch (error) {
       console.error("Failed to fetch customer invoices:", error);
       setCustomerInvoices([]);
     } finally {
       setLoadingInvoices(false);
     }
-  }, [customerId, activeTab]);
+  }, [customerId, activeTab, fetchSaleItemsForInvoices]);
 
   useEffect(() => {
     if (activeTab === "customer-payments") {
@@ -364,6 +437,11 @@ export default function CustomerDetailContent({
                             <p className="text-xs text-gray-500">
                               {new Date(invoice.invoice_date).toLocaleDateString()}
                             </p>
+                            {invoiceItemSummaries[invoice.invoice_id] && (
+                              <p className="text-xs text-gray-500 line-clamp-2">
+                                Items: {invoiceItemSummaries[invoice.invoice_id]}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-semibold text-gray-900">
@@ -445,9 +523,16 @@ export default function CustomerDetailContent({
                                 {payment.payment_method.replace('_', ' ')}
                               </p>
                               {payment.invoice && (
-                                <p className="text-xs text-gray-500">
+                              <div className="flex flex-col gap-0.5 text-xs text-gray-500">
+                                <p>
                                   Invoice: {payment.invoice.invoice_number}
                                 </p>
+                                {invoiceItemSummaries[payment.invoice.id] && (
+                                  <p className="line-clamp-2">
+                                    Items: {invoiceItemSummaries[payment.invoice.id]}
+                                  </p>
+                                )}
+                              </div>
                               )}
                             </div>
                           </div>
@@ -536,6 +621,11 @@ export default function CustomerDetailContent({
                                     {metadata.sale_type.replace('-', ' ')}
                                   </p>
                                 )}
+                              {invoiceItemSummaries[invoice.id] && (
+                                <div className="mt-1 text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded px-2 py-1 leading-snug line-clamp-2">
+                                  <span className="font-medium text-gray-700">Items:</span> {invoiceItemSummaries[invoice.id]}
+                                </div>
+                              )}
                               </div>
                             </div>
                             <div className="text-right">
@@ -586,9 +676,14 @@ export default function CustomerDetailContent({
                                 {payment.payment_method.replace('_', ' ')}
                               </p>
                               {payment.invoice && (
-                                <p className="text-xs text-gray-500">
-                                  Invoice: {payment.invoice.invoice_number}
-                                </p>
+                                <div className="flex flex-col gap-0.5 text-xs text-gray-500">
+                                  <p>Invoice: {payment.invoice.invoice_number}</p>
+                                  {invoiceItemSummaries[payment.invoice.id] && (
+                                    <div className="mt-0.5 text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded px-2 py-1 leading-snug line-clamp-2">
+                                      <span className="font-medium text-gray-700">Items:</span> {invoiceItemSummaries[payment.invoice.id]}
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </div>

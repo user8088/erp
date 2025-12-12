@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { invoicesApi, customersApi, ApiError } from "../../lib/apiClient";
-import type { Invoice, Customer } from "../../lib/types";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { invoicesApi, customersApi, salesApi, ApiError } from "../../lib/apiClient";
+import type { Invoice, Customer, Sale, SaleItem } from "../../lib/types";
 import { FileText, Download, Eye, Filter } from "lucide-react";
 import { useToast } from "../../components/ui/ToastProvider";
 
@@ -19,6 +19,8 @@ export default function CustomerInvoicesPage() {
   const [invoiceApiUnavailable, setInvoiceApiUnavailable] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [invoiceItemSummaries, setInvoiceItemSummaries] = useState<Record<number, string>>({});
+  const fetchedSaleIdsRef = useRef<Set<number>>(new Set());
   const [invoicePagination, setInvoicePagination] = useState({
     current_page: 1,
     per_page: 15,
@@ -33,6 +35,72 @@ export default function CustomerInvoicesPage() {
     end_date: '',
     search: '',
   });
+
+  const formatSaleItems = (saleItems: SaleItem[] | undefined | null): string => {
+    if (!saleItems || saleItems.length === 0) return "";
+    return saleItems
+      .map((item) => {
+        const name = item?.item?.name ?? `Item #${item?.item_id ?? ""}`.trim();
+        const unit = item?.unit ? ` ${item.unit}` : "";
+        const qty = item?.quantity ?? 0;
+        return `${qty}${unit} ${name}`.trim();
+      })
+      .filter(Boolean)
+      .join(", ");
+  };
+
+  const fetchSaleItemsForInvoices = useCallback(async (fetchedInvoices: Invoice[]) => {
+    const saleInvoices = fetchedInvoices.filter(
+      (invoice) => invoice.reference_type === "sale" || invoice.reference_id
+    );
+
+    const tasks = saleInvoices.map(async (invoice) => {
+      const metadata = invoice.metadata as Record<string, unknown> | undefined;
+      const metaSale: Sale | undefined = (metadata?.sale as Sale) ?? undefined;
+      const metaItems: SaleItem[] | undefined =
+        (metaSale?.items as SaleItem[] | undefined) ||
+        (metadata?.items as SaleItem[] | undefined);
+      const metaSaleId: number | undefined =
+        (metadata?.sale_id as number | undefined) ??
+        (metaSale?.id as number | undefined) ??
+        (invoice.reference_id as number | undefined);
+
+      if (metaItems && metaItems.length > 0) {
+        const summary = formatSaleItems(metaItems);
+        if (summary) {
+          setInvoiceItemSummaries((prev) => ({
+            ...prev,
+            [invoice.id]: summary,
+          }));
+        }
+        if (metaSaleId) {
+          fetchedSaleIdsRef.current.add(metaSaleId);
+        }
+        return;
+      }
+
+      if (!metaSaleId || fetchedSaleIdsRef.current.has(metaSaleId)) return;
+
+      fetchedSaleIdsRef.current.add(metaSaleId);
+      try {
+        const saleResponse = await salesApi.getSale(metaSaleId);
+        const sale =
+          (saleResponse as { sale?: Sale }).sale ??
+          (saleResponse as unknown as Sale | undefined);
+        const summary = formatSaleItems(sale?.items);
+        if (summary) {
+          setInvoiceItemSummaries((prev) => ({
+            ...prev,
+            [invoice.id]: summary,
+          }));
+        }
+      } catch (error) {
+        console.warn("Failed to fetch sale items for invoice", invoice.id, error);
+      }
+    });
+
+    await Promise.all(tasks);
+  }, []);
 
   // Fetch customers for filter dropdown
   const fetchCustomers = useCallback(async () => {
@@ -103,6 +171,7 @@ export default function CustomerInvoicesPage() {
       });
 
       setInvoices(filteredInvoices);
+      fetchSaleItemsForInvoices(filteredInvoices);
       setInvoicePagination({
         current_page: page,
         per_page: invoicePagination.per_page,
@@ -129,7 +198,7 @@ export default function CustomerInvoicesPage() {
     } finally {
       setLoadingInvoices(false);
     }
-  }, [invoiceFilters.status, invoiceFilters.start_date, invoiceFilters.end_date, invoiceFilters.search, invoiceFilters.customer_id, invoiceFilters.invoice_type, invoicePagination.per_page, addToast]);
+  }, [invoiceFilters.status, invoiceFilters.start_date, invoiceFilters.end_date, invoiceFilters.search, invoiceFilters.customer_id, invoiceFilters.invoice_type, invoicePagination.per_page, addToast, fetchSaleItemsForInvoices]);
 
   useEffect(() => {
     fetchCustomers();
@@ -352,6 +421,11 @@ export default function CustomerInvoicesPage() {
                     <tr key={invoice.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{invoice.invoice_number}</div>
+                        {invoiceItemSummaries[invoice.id] && (
+                          <div className="text-xs text-gray-500 line-clamp-2 mt-1">
+                            Items: {invoiceItemSummaries[invoice.id]}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getInvoiceTypeBadge(invoice)}

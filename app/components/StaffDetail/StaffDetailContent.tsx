@@ -1,0 +1,462 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Calendar,
+  Receipt,
+  HandCoins,
+  Clock,
+  ShieldCheck,
+  CheckCircle2,
+  AlarmClock,
+} from "lucide-react";
+import StaffDetailTabs from "./StaffDetailTabs";
+import StaffDetailsForm from "./StaffDetailsForm";
+import StaffMoreInformation from "./StaffMoreInformation";
+import type { StaffAdvance, StaffMember, StaffSalary } from "../../lib/types";
+import { useToast } from "../ui/ToastProvider";
+
+interface StaffDetailContentProps {
+  staff: StaffMember;
+  salaryHistory: StaffSalary[];
+  advances: StaffAdvance[];
+  onPaySalary?: () => Promise<void> | void;
+  paying?: boolean;
+}
+
+export default function StaffDetailContent({
+  staff,
+  salaryHistory,
+  advances,
+  onPaySalary,
+  paying,
+}: StaffDetailContentProps) {
+  const [activeTab, setActiveTab] = useState("staff-details");
+  const { addToast } = useToast();
+
+  return (
+    <div className="flex-1">
+      <StaffDetailTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      <div className="mt-4">
+        {activeTab === "staff-details" && (
+          <>
+            <StaffDetailsForm staff={staff} />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+              <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Staff Code</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {staff.code || "STF-DRAFT"}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-xs font-medium">
+                    <AlarmClock className="w-3 h-3" />
+                    Salary cycle: Monthly
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                  <InfoCard title="Contact" lines={[staff.phone || "Not provided", staff.email || "No email"]} />
+                  <InfoCard
+                    title="Department & Role"
+                    lines={[staff.designation, staff.department || "Not assigned"]}
+                  />
+                  <InfoCard
+                    title="Employment"
+                    lines={[
+                      `Joined ${staff.date_of_joining || "Not set"}`,
+                      "Attendance & shifts will appear once configured.",
+                    ]}
+                  />
+                  <InfoCard
+                    title="Salary Prefs"
+                    lines={[
+                      staff.monthly_salary
+                        ? `Monthly salary PKR ${staff.monthly_salary.toLocaleString()}`
+                        : "Not set",
+                      `Next pay on ${staff.next_pay_date || "—"} (pay anytime earlier).`,
+                    ]}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-3">
+                <p className="text-sm font-semibold text-gray-900">
+                  ERP User Mapping
+                </p>
+                {staff.is_erp_user ? (
+                  <div className="rounded-lg border border-green-100 bg-green-50 p-3 space-y-2">
+                    <p className="text-sm text-gray-900 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-green-600" />
+                      Already mapped
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      ERP User ID: {staff.erp_user_id ?? "—"}
+                    </p>
+                    <button
+                      type="button"
+                      className="text-xs text-orange-600 hover:text-orange-700"
+                    >
+                      Open ERP user profile
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600">
+                      Convert this staff member into an ERP user to give login
+                      access and permissions.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button className="flex-1 px-3 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">
+                        Create ERP User
+                      </button>
+                      <button className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        Link Existing
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Permissions can be assigned from Role Manager.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "roles-permissions" && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <p className="text-sm text-gray-600">
+              Roles & permissions mirror the ERP user experience. Map staff to ERP user
+              roles to manage access.
+            </p>
+          </div>
+        )}
+
+        {activeTab === "salary" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <SummaryCard
+                title="Monthly Salary"
+                value={
+                  staff.monthly_salary
+                    ? `PKR ${staff.monthly_salary.toLocaleString()}`
+                    : "Not set"
+                }
+                subtitle="Base pay before allowances / deductions"
+                icon={<WalletIcon />}
+              />
+              <SummaryCard
+                title="Next Pay Date"
+                value={staff.next_pay_date ?? "Set cycle"}
+                subtitle="Salary can be paid anytime earlier"
+                icon={<Calendar className="w-8 h-8 text-blue-400" />}
+              />
+              <SummaryCard
+                title="Advance Balance"
+                value="PKR 35,000"
+                subtitle="Will auto-adjust in next salary"
+                icon={<HandCoins className="w-8 h-8 text-amber-400" />}
+              />
+            </div>
+
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-blue-500 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-blue-900">
+                  Salary payment creates staff invoice automatically
+                </p>
+                <p className="text-xs text-blue-800">
+                  Paying salary posts an invoice for this staff member. Advance
+                  balances are auto-adjusted, and you can pay before the due
+                  date.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">
+                    Salary Timeline
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    Track monthly salary, due dates, and generated invoices.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    Schedule Early Pay
+                  </button>
+                  <button
+                    className="px-4 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-60"
+                    disabled={paying}
+                    onClick={async () => {
+                      try {
+                        await onPaySalary?.();
+                      } catch (e) {
+                        console.error(e);
+                        addToast("Failed to pay salary.", "error");
+                      }
+                    }}
+                  >
+                    {paying ? "Paying..." : "Pay Salary"}
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <table className="w-full min-w-[720px]">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                        Month
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                        Due / Paid
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                        Invoice
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                        Advance Adjusted
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {salaryHistory.map((salary) => (
+                      <tr key={salary.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {salary.month}
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusPill status={salary.status} />
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          <div className="flex flex-col">
+                            <span>
+                              Due {salary.due_date} •{" "}
+                              {`PKR ${salary.amount.toLocaleString()}`}
+                            </span>
+                            {salary.paid_on && (
+                              <span className="text-xs text-gray-500">
+                                Paid on {salary.paid_on}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          {salary.invoice_number ? (
+                            <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-100 text-green-700 rounded-md text-xs">
+                              <Receipt className="w-3 h-3" />
+                              {salary.invoice_number}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-500">
+                              Auto-generate on payment
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          {salary.advance_adjusted
+                            ? `PKR ${salary.advance_adjusted.toLocaleString()}`
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "advances" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">
+                  Advances
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Issue advances and let them auto-adjust in salary.
+                </p>
+              </div>
+              <button className="px-4 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">
+                Issue Advance
+              </button>
+            </div>
+            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+              <table className="w-full min-w-[640px]">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                      Issued On
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                      Amount
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                      Balance
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                      Remarks
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {advances.map((advance) => (
+                    <tr key={advance.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {advance.issued_on}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        PKR {advance.amount.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        PKR {advance.balance.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            advance.status === "open"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-green-100 text-green-700"
+                          }`}
+                        >
+                          {advance.status === "open" ? "Open" : "Settled"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {advance.remarks ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "attendance" && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <SummaryCard
+              title="Attendance"
+              value="24 / 26"
+              subtitle="Present this month"
+              icon={<Clock className="w-8 h-8 text-green-400" />}
+            />
+            <SummaryCard
+              title="Late Arrivals"
+              value="2"
+              subtitle="Needs attention"
+              icon={<Clock className="w-8 h-8 text-amber-400" />}
+            />
+            <SummaryCard
+              title="Leaves"
+              value="1"
+              subtitle="Approved"
+              icon={<Calendar className="w-8 h-8 text-blue-400" />}
+            />
+          </div>
+        )}
+
+        {activeTab === "more-information" && (
+          <StaffMoreInformation staff={staff} />
+        )}
+
+        {activeTab === "settings" && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-2">
+              Settings
+            </h2>
+            <p className="text-sm text-gray-500">
+              Configure salary cycle, allowances, deductions, and permissions
+              from here.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  title,
+  value,
+  subtitle,
+  icon,
+}: {
+  title: string;
+  value: string;
+  subtitle: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3">
+      <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+        {icon}
+      </div>
+      <div>
+        <p className="text-xs font-medium text-gray-500">{title}</p>
+        <p className="text-lg font-semibold text-gray-900">{value}</p>
+        <p className="text-xs text-gray-500">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: StaffSalary["status"] }) {
+  const map = {
+    scheduled: "bg-blue-100 text-blue-700",
+    due: "bg-amber-100 text-amber-800",
+    paid: "bg-green-100 text-green-700",
+  } as const;
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+        map[status]
+      }`}
+    >
+      {status === "scheduled"
+        ? "Scheduled"
+        : status === "due"
+        ? "Due"
+        : "Paid"}
+    </span>
+  );
+}
+
+function WalletIcon() {
+  return (
+    <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center">
+      <Receipt className="w-4 h-4" />
+    </div>
+  );
+}
+
+function InfoCard({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+        {title}
+      </p>
+      <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 space-y-1">
+        {lines.map((line, idx) => (
+          <p
+            key={`${title}-${idx}`}
+            className={idx === 0 ? "text-sm text-gray-900" : "text-xs text-gray-500"}
+          >
+            {line}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+

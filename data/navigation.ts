@@ -14,6 +14,7 @@ import {
   Tag,
   Box,
   FolderOpen,
+  HandCoins,
 } from "lucide-react";
 
 export interface NavItem {
@@ -159,6 +160,12 @@ export const navigationData: NavItem[] = [
     icon: Users,
     href: "/staff",
     children: [
+      {
+        id: "staff-members",
+        label: "Staff Members",
+        icon: User,
+        href: "/staff/members",
+      },
       {
         id: "staff-invoices",
         label: "Staff Invoices",
