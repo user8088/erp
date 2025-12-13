@@ -131,6 +131,10 @@ import type {
   AttendanceEntry,
   StaffSalaryRun,
   Vehicle,
+  VehicleProfitabilityStats,
+  VehicleMaintenance,
+  VehicleMaintenanceStatistics,
+  VehicleDeliveryOrder,
 } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
