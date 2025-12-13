@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { salaryStructuresApi, ApiError } from "../../../../lib/apiClient";
-import { useToast } from "../../../../components/ui/ToastProvider";
-import type { StaffSalaryStructure } from "../../../../lib/types";
-import { PAY_FREQUENCY_OPTIONS } from "../../../../lib/staffConstants";
+import { salaryStructuresApi, ApiError } from "../../../lib/apiClient";
+import { useToast } from "../../../components/ui/ToastProvider";
+import type { StaffSalaryStructure } from "../../../lib/types";
+import { PAY_FREQUENCY_OPTIONS } from "../../../lib/staffConstants";
 
 interface SalaryComponent {
   label: string;
@@ -169,7 +169,7 @@ export default function EditSalaryStructurePage({ params }: { params: { id: stri
             </label>
             <select
               value={form.pay_frequency}
-              onChange={(e) => setForm({ ...form, pay_frequency: e.target.value as any })}
+              onChange={(e) => setForm({ ...form, pay_frequency: e.target.value as "monthly" | "biweekly" | "weekly" })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
               required
             >
