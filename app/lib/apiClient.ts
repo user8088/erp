@@ -130,6 +130,7 @@ import type {
   StaffSalaryStructure,
   AttendanceEntry,
   StaffSalaryRun,
+  User,
   Vehicle,
   VehicleProfitabilityStats,
   VehicleMaintenance,
@@ -294,6 +295,25 @@ export const staffApi = {
   update(id: string | number, payload: Partial<StaffMember>) {
     return apiClient.patch<{ staff: StaffMember }>(`/staff/${id}`, payload);
   },
+  deleteStaff(id: number): Promise<{ message: string }> {
+    return apiClient.delete<{ message: string }>(`/staff/${id}`);
+  },
+  createUser(staffId: number, payload: {
+    email: string;
+    password: string;
+    password_confirmation: string;
+    full_name: string;
+    role_ids?: number[];
+    phone?: string | null;
+  }) {
+    return apiClient.post<{ user: User }>(`/staff/${staffId}/create-user`, payload);
+  },
+  linkUser(staffId: number, userId: number) {
+    return apiClient.post<{ staff: StaffMember }>(`/staff/${staffId}/link-user`, { user_id: userId });
+  },
+  unlinkUser(staffId: number) {
+    return apiClient.delete<{ message: string }>(`/staff/${staffId}/link-user`);
+  },
   paySalary(staffId: string | number, payload: {
     month: string; // YYYY-MM format
     override_basic?: number;
@@ -345,8 +365,55 @@ export const staffApi = {
   },
 };
 
-// Salary Structures API removed - use direct payment API instead
-// @deprecated - Salary structures are no longer used. Use staffApi.paySalary() for direct payments.
+// Salary Structures API
+export const salaryStructuresApi = {
+  list(params: {
+    pay_frequency?: string;
+    name?: string;
+    page?: number;
+    per_page?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params.pay_frequency) query.set("pay_frequency", params.pay_frequency);
+    if (params.name) query.set("name", params.name);
+    if (params.page) query.set("page", String(params.page));
+    if (params.per_page) query.set("per_page", String(params.per_page));
+    const path = `/staff/salary-structures?${query.toString()}`;
+    return apiClient.get<Paginated<StaffSalaryStructure>>(path);
+  },
+
+  get(id: number) {
+    return apiClient.get<StaffSalaryStructure>(`/staff/salary-structures/${id}`);
+  },
+
+  create(payload: {
+    name: string;
+    basic_amount: number;
+    allowances?: Array<{ label: string; amount: number }>;
+    deductions?: Array<{ label: string; amount: number }>;
+    pay_frequency: "monthly" | "biweekly" | "weekly";
+    payable_days: number;
+    notes?: string | null;
+  }) {
+    return apiClient.post<{ salary_structure: StaffSalaryStructure }>("/staff/salary-structures", payload);
+  },
+
+  update(id: number, payload: Partial<{
+    name: string;
+    basic_amount: number;
+    allowances?: Array<{ label: string; amount: number }>;
+    deductions?: Array<{ label: string; amount: number }>;
+    pay_frequency: "monthly" | "biweekly" | "weekly";
+    payable_days: number;
+    notes?: string | null;
+  }>) {
+    return apiClient.patch<{ salary_structure: StaffSalaryStructure }>(`/staff/salary-structures/${id}`, payload);
+  },
+
+  delete(id: number): Promise<{ message: string }> {
+    return apiClient.delete<{ message: string }>(`/staff/salary-structures/${id}`);
+  },
+};
 
 export const attendanceApi = {
   list(params: {
@@ -1187,7 +1254,7 @@ export const itemTagsApi = {
 
 // Invoices API
 export interface GetInvoicesParams {
-  invoice_type?: 'supplier' | 'sale' | 'payment' | 'purchase' | 'expense';
+  invoice_type?: 'supplier' | 'sale' | 'payment' | 'purchase' | 'expense' | 'staff';
   status?: 'draft' | 'issued' | 'paid' | 'cancelled';
   start_date?: string;
   end_date?: string;

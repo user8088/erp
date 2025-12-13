@@ -5,6 +5,8 @@ import { CalendarDays, CheckCircle2, XCircle, Coffee, AlertTriangle } from "luci
 import type { AttendanceEntry, AttendanceStatus } from "../../lib/types";
 import { attendanceApi, staffApi } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
+import { ATTENDANCE_STATUS_COLORS } from "../../lib/staffConstants";
+import { useUser } from "../../components/User/UserContext";
 
 const statusLabels: Record<AttendanceStatus, string> = {
   present: "Present",
@@ -13,15 +15,14 @@ const statusLabels: Record<AttendanceStatus, string> = {
   unpaid_leave: "Unpaid Leave",
 };
 
-const statusStyles: Record<AttendanceStatus, string> = {
-  present: "bg-green-100 text-green-800",
-  absent: "bg-red-100 text-red-700",
-  paid_leave: "bg-blue-100 text-blue-700",
-  unpaid_leave: "bg-amber-100 text-amber-800",
-};
+const statusStyles = ATTENDANCE_STATUS_COLORS;
 
 export default function AttendancePage() {
   const { addToast } = useToast();
+  const { hasAtLeast } = useUser();
+  const canManageAttendance = hasAtLeast("staff.attendance.manage", "read-write");
+  const canViewAttendance = hasAtLeast("module.staff", "read");
+  
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [date, setDate] = useState(today);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
@@ -33,6 +34,7 @@ export default function AttendancePage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [staffMap, setStaffMap] = useState<Map<string | number, { status: string; full_name: string }>>(new Map());
 
   const load = async (targetDate: string) => {
     setLoading(true);
@@ -50,6 +52,12 @@ export default function AttendancePage() {
       // Always fetch all active staff to show everyone, then merge with attendance records
       const staffRes = await staffApi.list({ status: "active", per_page: 500 });
       const allStaff = staffRes.data ?? [];
+      
+      // Create a map of staff by ID for validation
+      const staffMapData = new Map(
+        allStaff.map((staff) => [staff.id, { status: staff.status, full_name: staff.full_name }])
+      );
+      setStaffMap(staffMapData);
       
       // Create a map of attendance records by person_id
       const attendanceMap = new Map(
@@ -124,19 +132,27 @@ export default function AttendancePage() {
 
   const updateStatus = async (entry: AttendanceEntry, status: AttendanceStatus) => {
     try {
-      // Check if this is a placeholder entry (id is a string starting with "staff-")
-      const isPlaceholder = typeof entry.id === "string" && entry.id.startsWith("staff-");
-      
-      if (isPlaceholder || !entry.id) {
-        // Placeholder entry or no ID - use bulk upsert to create the record
-        await attendanceApi.bulkUpsert({
-          date,
-          entries: [{ person_id: entry.person_id, person_type: entry.person_type, status, note: entry.note ?? "" }],
-        });
-      } else {
-        // Real attendance record - update it
-        await attendanceApi.update(entry.id, { status });
+      // Validate staff exists and is active
+      if (entry.person_type === "staff") {
+        const staff = staffMap.get(entry.person_id);
+        if (!staff) {
+          addToast(`Staff member not found. Please refresh the page.`, "error");
+          return;
+        }
+        if (staff.status !== "active") {
+          addToast(`Cannot mark attendance for inactive staff member: ${staff.full_name}`, "error");
+          return;
+        }
       }
+
+      // Use composite ID format directly - API supports it and will auto-create if needed
+      const compositeId = entry.person_type === "staff" 
+        ? `staff-${entry.person_id}` 
+        : `user-${entry.person_id}`;
+      
+      await attendanceApi.update(compositeId, { 
+        status
+      });
       await load(date);
     } catch (e) {
       console.error(e);
@@ -146,19 +162,14 @@ export default function AttendancePage() {
 
   const updateNote = async (entry: AttendanceEntry, note: string) => {
     try {
-      // Check if this is a placeholder entry (id is a string starting with "staff-")
-      const isPlaceholder = typeof entry.id === "string" && entry.id.startsWith("staff-");
+      // Use composite ID format directly - API supports it and will auto-create if needed
+      const compositeId = entry.person_type === "staff" 
+        ? `staff-${entry.person_id}` 
+        : `user-${entry.person_id}`;
       
-      if (isPlaceholder || !entry.id) {
-        // Placeholder entry or no ID - use bulk upsert to create the record
-        await attendanceApi.bulkUpsert({
-          date,
-          entries: [{ person_id: entry.person_id, person_type: entry.person_type, status: entry.status, note }],
-        });
-      } else {
-        // Real attendance record - update it
-        await attendanceApi.update(entry.id, { note });
-      }
+      await attendanceApi.update(compositeId, { 
+        note
+      });
       // Optimistically update the UI
       setEntries((prev) =>
         prev.map((e) => (e.person_id === entry.person_id && e.date === entry.date ? { ...e, note } : e))
@@ -185,6 +196,16 @@ export default function AttendancePage() {
     }
   };
 
+  if (!canViewAttendance) {
+    return (
+      <div className="max-w-6xl mx-auto min-h-full px-2 md:px-0">
+        <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">
+          You don&apos;t have permission to view attendance.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto min-h-full px-2 md:px-0">
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -204,22 +225,24 @@ export default function AttendancePage() {
               className="text-sm focus:outline-none"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => bulkSet("present")}
-              className="px-3 py-2 text-xs bg-green-600 text-white rounded-md hover:bg-green-700"
-            >
-              Mark All Present
-            </button>
-            <button
-              type="button"
-              onClick={() => bulkSet("absent")}
-              className="px-3 py-2 text-xs bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Mark All Absent
-            </button>
-          </div>
+          {canManageAttendance && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => bulkSet("present")}
+                className="px-3 py-2 text-xs bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Mark All Present
+              </button>
+              <button
+                type="button"
+                onClick={() => bulkSet("absent")}
+                className="px-3 py-2 text-xs bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Mark All Absent
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -280,12 +303,14 @@ export default function AttendancePage() {
                           <button
                             key={status}
                             type="button"
-                            onClick={() => updateStatus(entry, status)}
+                            onClick={() => canManageAttendance && updateStatus(entry, status)}
+                            disabled={!canManageAttendance}
                             className={`px-3 py-1.5 text-xs rounded-full border ${
                               isSelected
                                 ? `${statusStyles[status]} border-transparent`
                                 : "border-gray-300 text-gray-700 bg-white"
-                            }`}
+                            } ${!canManageAttendance ? "opacity-50 cursor-not-allowed" : ""}`}
+                            title={!canManageAttendance ? "You don't have permission to manage attendance" : ""}
                           >
                             {statusLabels[status]}
                           </button>
@@ -298,9 +323,11 @@ export default function AttendancePage() {
                   <input
                     type="text"
                     value={entry.note ?? ""}
-                    onChange={(e) => void updateNote(entry, e.target.value)}
+                    onChange={(e) => canManageAttendance && void updateNote(entry, e.target.value)}
+                    disabled={!canManageAttendance}
                     placeholder="Optional note"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent ${!canManageAttendance ? "bg-gray-100 cursor-not-allowed" : ""}`}
+                    title={!canManageAttendance ? "You don't have permission to edit attendance notes" : ""}
                   />
                 </td>
               </tr>

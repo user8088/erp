@@ -4,7 +4,15 @@ import { useEffect, useState, useCallback } from "react";
 import { staffApi } from "../../lib/apiClient";
 import type { StaffMember, Paginated } from "../../lib/types";
 
-export function useStaffList() {
+export interface StaffFilters {
+  q?: string;
+  status?: string;
+  department?: string;
+  designation?: string;
+  is_erp_user?: boolean;
+}
+
+export function useStaffList(filters?: StaffFilters) {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(20);
@@ -16,7 +24,11 @@ export function useStaffList() {
     setLoading(true);
     setError(null);
     try {
-      const res = await staffApi.list({ page, per_page: perPage });
+      const res = await staffApi.list({ 
+        page, 
+        per_page: perPage,
+        ...filters,
+      });
       setStaff(res.data ?? (res as unknown as Paginated<StaffMember>).data ?? []);
       setTotal(res.meta?.total ?? 0);
     } catch (e) {
@@ -29,7 +41,7 @@ export function useStaffList() {
     } finally {
       setLoading(false);
     }
-  }, [page, perPage]);
+  }, [page, perPage, filters]);
 
   useEffect(() => {
     void load();

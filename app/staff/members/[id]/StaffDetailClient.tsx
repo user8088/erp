@@ -13,6 +13,8 @@ import type {
 } from "../../../lib/types";
 import { staffApi, salaryRunsApi, attendanceApi, accountMappingsApi, accountsApi, ApiError } from "../../../lib/apiClient";
 import { useToast } from "../../../components/ui/ToastProvider";
+import { DEFAULT_PAYABLE_DAYS } from "../../../lib/staffConstants";
+import { useUser } from "@/app/components/User/UserContext";
 
 interface StaffDetailClientProps {
   id: string;
@@ -20,6 +22,8 @@ interface StaffDetailClientProps {
 
 export default function StaffDetailClient({ id }: StaffDetailClientProps) {
   const { addToast } = useToast();
+  const { hasAtLeast } = useUser();
+  const canPaySalary = hasAtLeast("staff.salary.pay", "read-write");
   const [loading, setLoading] = useState(true);
   const [showSidebar, setShowSidebar] = useState(true);
   const [saving] = useState(false);
@@ -116,11 +120,6 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
     setSalaryHistory(mapped);
   }, [runs, staff]);
 
-  const reloadRuns = async () => {
-    const runList = await salaryRunsApi.list(id, { per_page: 20 });
-    setRuns(runList.data ?? []);
-  };
-
   const handlePaySalary = async () => {
     if (!staff) return;
     setPaying(true);
@@ -158,23 +157,45 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
       // Pay salary directly using the new direct payment API
       await staffApi.paySalary(staff.id, {
         month,
-        payable_days: staff.monthly_salary ? 26 : undefined,
+        payable_days: staff.monthly_salary ? DEFAULT_PAYABLE_DAYS : undefined,
         advance_adjusted: 0,
         paid_on: new Date().toISOString().slice(0, 10),
       });
       
       addToast("Salary paid successfully.", "success");
-      await reloadRuns();
+      
+      // Reload staff data immediately
+      const updatedStaff = await staffApi.get(id);
+      setStaff(updatedStaff || null);
+      
+      // Wait a brief moment for the backend to process, then fetch salary runs
+      // Retry a few times in case the salary run isn't immediately available
+      let updatedRuns = await salaryRunsApi.list(id, { per_page: 20 });
+      let retries = 0;
+      const maxRetries = 3;
+      
+      // Check if the payment month appears in the runs
+      const hasPaymentMonth = updatedRuns.data?.some(run => run.month === month);
+      
+      // If not found, retry a few times with small delays
+      while (!hasPaymentMonth && retries < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+        updatedRuns = await salaryRunsApi.list(id, { per_page: 20 });
+        if (updatedRuns.data?.some(run => run.month === month)) {
+          break;
+        }
+        retries++;
+      }
+      
+      setRuns(updatedRuns.data ?? []);
     } catch (e) {
       console.error("Salary payment error:", e);
       
-      // Handle 409 Conflict (already paid)
+      // Handle 409 Conflict (already paid) - show the backend message directly
       if (e instanceof ApiError && e.status === 409) {
-        const errorData = e.data && typeof e.data === "object" ? (e.data as { message?: unknown }) : null;
-        const message = errorData && errorData.message
-          ? String(errorData.message)
-          : "Salary already paid for this month. Use reverse method to undo.";
-        addToast(message, "error");
+        // The ApiError.message already contains the backend message
+        // e.g., "Salary already paid for 2025-12. Use reverse method to undo."
+        addToast(e.message || "Salary is already paid for this month. Use reverse method to undo.", "error");
         return;
       }
       
@@ -193,10 +214,43 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
     return <div className="text-sm text-gray-500">Loading staff profile...</div>;
   }
 
+  if (!staff && error) {
+    return (
+      <div className="max-w-full mx-auto min-h-full">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-red-900 mb-2">Failed to Load Staff Profile</h2>
+          <p className="text-sm text-red-700 mb-4">{error}</p>
+          <button
+            onClick={async () => {
+              setError(null);
+              setLoading(true);
+              try {
+                const staffRes = await staffApi.get(id);
+                setStaff(staffRes || null);
+              } catch (e) {
+                console.error(e);
+                setError(
+                  e && typeof e === "object" && "message" in e
+                    ? String((e as { message: unknown }).message)
+                    : "Failed to load staff profile."
+                );
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!staff) {
     return (
       <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">
-        {error || "Staff not found."}
+        Staff not found.
       </div>
     );
   }
@@ -223,8 +277,9 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
             attendanceEntries={attendance}
             attendanceSummary={attendanceSummary}
             attendanceLoading={attendanceLoading}
-            onPaySalary={handlePaySalary}
+            onPaySalary={canPaySalary ? handlePaySalary : undefined}
             paying={paying}
+            canPaySalary={canPaySalary}
           />
         </div>
       </div>

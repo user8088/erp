@@ -48,10 +48,10 @@ export interface UserProfile {
 
 // Staff Management
 export interface StaffMember {
-  id: string | number;
-  code?: string;
+  id: number; // API returns numeric ID
+  code?: string | null;
   full_name: string;
-  designation: string;
+  designation: string | null;
   department?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -61,9 +61,9 @@ export interface StaffMember {
   next_pay_date?: string | null;
   last_paid_on?: string | null;
   is_erp_user?: boolean;
-  erp_user_id?: string | number | null;
+  erp_user_id?: number | null;
   user?: {
-    id: string | number;
+    id: number;
     email?: string | null;
     full_name?: string | null;
   };
@@ -486,7 +486,7 @@ export interface SupplierBalanceResponse {
 export interface Invoice {
   id: number;
   invoice_number: string;
-  invoice_type: 'supplier' | 'sale' | 'payment' | 'purchase' | 'expense';
+  invoice_type: 'supplier' | 'sale' | 'payment' | 'purchase' | 'expense' | 'staff';
   type_label?: string;
   company_id: number | null;
   reference_type: string | null;

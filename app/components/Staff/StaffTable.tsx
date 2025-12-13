@@ -2,17 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, CalendarClock, Link2, ShieldCheck } from "lucide-react";
+import { BadgeCheck, CalendarClock, Link2, ShieldCheck, Trash2, Loader2 } from "lucide-react";
 import type { StaffMember } from "../../lib/types";
+import { STAFF_STATUS_COLORS } from "../../lib/staffConstants";
 
 interface StaffTableProps {
   staff: StaffMember[];
   loading?: boolean;
+  onDelete?: (id: number) => Promise<void>;
+  deletingIds?: Set<number>;
+  canDelete?: boolean;
 }
 
-export default function StaffTable({ staff, loading }: StaffTableProps) {
+export default function StaffTable({ staff, loading, onDelete, deletingIds = new Set(), canDelete = false }: StaffTableProps) {
   const router = useRouter();
-  const [selectedRows, setSelectedRows] = useState<Set<string | number>>(
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(
     new Set()
   );
   const [selectAll, setSelectAll] = useState(false);
@@ -26,7 +30,7 @@ export default function StaffTable({ staff, loading }: StaffTableProps) {
     setSelectAll(!selectAll);
   };
 
-  const handleSelectRow = (id: string | number) => {
+  const handleSelectRow = (id: number) => {
     const next = new Set(selectedRows);
     if (next.has(id)) {
       next.delete(id);
@@ -71,6 +75,11 @@ export default function StaffTable({ staff, loading }: StaffTableProps) {
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">
               ERP User
             </th>
+            {canDelete && onDelete && (
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">
+                Actions
+              </th>
+            )}
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
@@ -81,12 +90,7 @@ export default function StaffTable({ staff, loading }: StaffTableProps) {
                 : member.status === "on_leave"
                 ? "On Leave"
                 : "Inactive";
-            const statusColor =
-              member.status === "active"
-                ? "bg-green-100 text-green-800"
-                : member.status === "on_leave"
-                ? "bg-yellow-100 text-yellow-800"
-                : "bg-red-100 text-red-800";
+            const statusColor = STAFF_STATUS_COLORS[member.status];
             const phone = member.phone ?? "-";
             const dept = member.department ? ` • ${member.department}` : "";
 
@@ -202,6 +206,28 @@ export default function StaffTable({ staff, loading }: StaffTableProps) {
                     </button>
                   )}
                 </td>
+                {canDelete && onDelete && (
+                  <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (confirm(`Are you sure you want to delete ${member.full_name}? This action cannot be undone.`)) {
+                          await onDelete(member.id);
+                        }
+                      }}
+                      disabled={deletingIds.has(member.id)}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      title="Delete staff member"
+                    >
+                      {deletingIds.has(member.id) ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </button>
+                  </td>
+                )}
               </tr>
             );
           })}

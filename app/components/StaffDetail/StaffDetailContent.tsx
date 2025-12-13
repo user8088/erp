@@ -30,6 +30,7 @@ interface StaffDetailContentProps {
   attendanceLoading?: boolean;
   onPaySalary?: () => Promise<void> | void;
   paying?: boolean;
+  canPaySalary?: boolean;
 }
 
 export default function StaffDetailContent({
@@ -41,6 +42,7 @@ export default function StaffDetailContent({
   attendanceLoading,
   onPaySalary,
   paying,
+  canPaySalary = false,
 }: StaffDetailContentProps) {
   const [activeTab, setActiveTab] = useState("staff-details");
   const { addToast } = useToast();
@@ -82,7 +84,7 @@ export default function StaffDetailContent({
                   <InfoCard title="Contact" lines={[staff.phone || "Not provided", staff.email || "No email"]} />
                   <InfoCard
                     title="Department & Role"
-                    lines={[staff.designation, staff.department || "Not assigned"]}
+                    lines={[staff.designation || "Not assigned", staff.department || "Not assigned"]}
                   />
                   <InfoCard
                     title="Employment"
@@ -216,20 +218,26 @@ export default function StaffDetailContent({
                   <button className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                     Schedule Early Pay
                   </button>
-                  <button
-                    className="px-4 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-60"
-                    disabled={paying}
-                    onClick={async () => {
-                      try {
-                        await onPaySalary?.();
-                      } catch (e) {
-                        console.error(e);
-                        addToast("Failed to pay salary.", "error");
-                      }
-                    }}
-                  >
-                    {paying ? "Paying..." : "Pay Salary"}
-                  </button>
+                  {canPaySalary && onPaySalary ? (
+                    <button
+                      className="px-4 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-60"
+                      disabled={paying}
+                      onClick={async () => {
+                        try {
+                          await onPaySalary();
+                        } catch (e) {
+                          console.error(e);
+                          addToast("Failed to pay salary.", "error");
+                        }
+                      }}
+                    >
+                      {paying ? "Paying..." : "Pay Salary"}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-gray-500" title="You don't have permission to pay salaries">
+                      Pay Salary (No Permission)
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="overflow-x-auto border border-gray-100 rounded-lg">
@@ -254,46 +262,54 @@ export default function StaffDetailContent({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
-                    {salaryHistory.map((salary) => (
-                      <tr key={salary.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          {salary.month}
-                        </td>
-                        <td className="px-4 py-3">
-                          <StatusPill status={salary.status} />
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          <div className="flex flex-col">
-                            <span>
-                              Due {salary.due_date} •{" "}
-                              {`PKR ${salary.amount.toLocaleString()}`}
-                            </span>
-                            {salary.paid_on && (
-                              <span className="text-xs text-gray-500">
-                                Paid on {salary.paid_on}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {salary.invoice_number ? (
-                            <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-100 text-green-700 rounded-md text-xs">
-                              <Receipt className="w-3 h-3" />
-                              {salary.invoice_number}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-500">
-                              Auto-generate on payment
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {salary.advance_adjusted
-                            ? `PKR ${salary.advance_adjusted.toLocaleString()}`
-                            : "—"}
+                    {salaryHistory.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                          No salary records found. Pay a salary to see it here.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      salaryHistory.map((salary) => (
+                        <tr key={salary.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {salary.month}
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusPill status={salary.status} />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            <div className="flex flex-col">
+                              <span>
+                                Due {salary.due_date} •{" "}
+                                {`PKR ${salary.amount.toLocaleString()}`}
+                              </span>
+                              {salary.paid_on && (
+                                <span className="text-xs text-gray-500">
+                                  Paid on {salary.paid_on}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            {salary.invoice_number ? (
+                              <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-100 text-green-700 rounded-md text-xs">
+                                <Receipt className="w-3 h-3" />
+                                {salary.invoice_number}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-500">
+                                Auto-generate on payment
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            {salary.advance_adjusted
+                              ? `PKR ${salary.advance_adjusted.toLocaleString()}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
