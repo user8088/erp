@@ -691,7 +691,7 @@ export interface CustomerAdvance {
 
 export interface AccountMapping {
   id: number;
-  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount';
+  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment';
   account_id: number;
   account?: Account;
   company_id?: number | null;

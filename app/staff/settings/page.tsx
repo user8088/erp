@@ -67,7 +67,6 @@ export default function StaffSettingsPage() {
     const fetchMappings = async () => {
       setLoadingMappings(true);
       try {
-        const response = await accountMappingsApi.getAccountMappings();
         const statusResponse = await accountMappingsApi.getAccountMappingStatus();
         
         if (statusResponse.data) {
@@ -133,7 +132,7 @@ export default function StaffSettingsPage() {
         const accountId = mappings[mappingType.type];
         if (accountId) {
           await accountMappingsApi.createAccountMapping({
-            mapping_type: mappingType.type as any,
+            mapping_type: mappingType.type as 'staff_salary_expense' | 'staff_salary_payment',
             account_id: accountId,
             company_id: 1,
           });
