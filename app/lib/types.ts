@@ -600,27 +600,7 @@ export interface VehicleMaintenanceStatistics {
 }
 
 export interface VehicleDeliveryOrder extends Sale {
-  sale_number: string;
-  sale_type: "delivery";
-  customer_id: number;
-  total_delivery_charges: number;
-  total_amount: number;
-  status: "draft" | "completed" | "cancelled";
-  delivery_address: string | null;
-  expected_delivery_date: string | null;
-  created_at: string;
-  customer?: {
-    id: number;
-    name: string;
-    email: string;
-  };
-  items?: Array<{
-    id: number;
-    item_id: number;
-    quantity: number;
-    unit_price: number;
-    delivery_charge: number;
-  }>;
+  sale_type: "delivery"; // Narrow the type to only "delivery"
 }
 
 export interface SaleItem {
