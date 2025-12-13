@@ -1361,6 +1361,10 @@ export const salesApi = {
       message: string;
     }>(`/sales/${id}/mark-delivered`);
   },
+
+  async deleteSale(id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/sales/${id}`);
+  },
 };
 
 // Customer Payments API
@@ -1477,6 +1481,198 @@ export const customerPaymentSummaryApi = {
     return await apiClient.get<{ payment_summary: CustomerPaymentSummary }>(
       `/customers/${customerId}/payment-summary`
     );
+  },
+};
+
+// Vehicle Management API
+export interface GetVehiclesParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  status?: "active" | "inactive";
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
+  include_stats?: boolean;
+}
+
+export interface CreateOrUpdateVehiclePayload {
+  name: string;
+  registration_number: string;
+  type?: string | null;
+  notes?: string | null;
+  status?: "active" | "inactive";
+}
+
+export interface CreateOrUpdateMaintenancePayload {
+  type: string;
+  description?: string | null;
+  amount: number;
+  maintenance_date: string; // YYYY-MM-DD
+  notes?: string | null;
+}
+
+export interface GetVehicleMaintenanceParams {
+  page?: number;
+  per_page?: number;
+  type?: string;
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
+}
+
+export interface GetVehicleOrdersParams {
+  page?: number;
+  per_page?: number;
+  status?: "draft" | "completed" | "cancelled";
+}
+
+export const vehiclesApi = {
+  async getVehicles(params: GetVehiclesParams = {}): Promise<Paginated<Vehicle>> {
+    const queryParams = new URLSearchParams();
+    
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.search) queryParams.append("search", params.search);
+    if (params.status) queryParams.append("status", params.status);
+    if (params.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params.sort_order) queryParams.append("sort_order", params.sort_order);
+    if (params.include_stats !== undefined) queryParams.append("include_stats", String(params.include_stats));
+
+    const response = await apiClient.get<{
+      data: Vehicle[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+        from: number;
+        to: number;
+      };
+    }>(`/vehicles?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  async getVehicle(id: number, include_stats?: boolean): Promise<{ vehicle: Vehicle }> {
+    const queryParams = new URLSearchParams();
+    if (include_stats !== undefined) queryParams.append("include_stats", String(include_stats));
+    const queryString = queryParams.toString();
+    return await apiClient.get<{ vehicle: Vehicle }>(`/vehicles/${id}${queryString ? `?${queryString}` : ""}`);
+  },
+
+  async createVehicle(payload: CreateOrUpdateVehiclePayload): Promise<{ vehicle: Vehicle; message: string }> {
+    return await apiClient.post<{ vehicle: Vehicle; message: string }>("/vehicles", payload);
+  },
+
+  async updateVehicle(id: number, payload: Partial<CreateOrUpdateVehiclePayload>): Promise<{ vehicle: Vehicle; message: string }> {
+    return await apiClient.put<{ vehicle: Vehicle; message: string }>(`/vehicles/${id}`, payload);
+  },
+
+  async deleteVehicle(id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/vehicles/${id}`);
+  },
+
+  async getVehicleProfitabilityStats(id: number): Promise<{
+    vehicle_id: number;
+    vehicle_name: string;
+    registration_number: string;
+    statistics: VehicleProfitabilityStats;
+  }> {
+    return await apiClient.get<{
+      vehicle_id: number;
+      vehicle_name: string;
+      registration_number: string;
+      statistics: VehicleProfitabilityStats;
+    }>(`/vehicles/${id}/profitability-stats`);
+  },
+
+  async getVehicleOrders(id: number, params: GetVehicleOrdersParams = {}): Promise<Paginated<VehicleDeliveryOrder>> {
+    const queryParams = new URLSearchParams();
+    
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.status) queryParams.append("status", params.status);
+
+    const response = await apiClient.get<{
+      data: VehicleDeliveryOrder[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+        from: number;
+        to: number;
+      };
+    }>(`/vehicles/${id}/orders?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  async getVehicleMaintenance(vehicleId: number, params: GetVehicleMaintenanceParams = {}): Promise<Paginated<VehicleMaintenance>> {
+    const queryParams = new URLSearchParams();
+    
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.type) queryParams.append("type", params.type);
+    if (params.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params.sort_order) queryParams.append("sort_order", params.sort_order);
+
+    const response = await apiClient.get<{
+      data: VehicleMaintenance[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+        from: number;
+        to: number;
+      };
+    }>(`/vehicles/${vehicleId}/maintenance?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  async getMaintenanceRecord(vehicleId: number, id: number): Promise<{ maintenance: VehicleMaintenance }> {
+    return await apiClient.get<{ maintenance: VehicleMaintenance }>(`/vehicles/${vehicleId}/maintenance/${id}`);
+  },
+
+  async createMaintenanceRecord(vehicleId: number, payload: CreateOrUpdateMaintenancePayload): Promise<{ maintenance: VehicleMaintenance; message: string }> {
+    return await apiClient.post<{ maintenance: VehicleMaintenance; message: string }>(`/vehicles/${vehicleId}/maintenance`, payload);
+  },
+
+  async updateMaintenanceRecord(vehicleId: number, id: number, payload: Partial<CreateOrUpdateMaintenancePayload>): Promise<{ maintenance: VehicleMaintenance; message: string }> {
+    return await apiClient.put<{ maintenance: VehicleMaintenance; message: string }>(`/vehicles/${vehicleId}/maintenance/${id}`, payload);
+  },
+
+  async deleteMaintenanceRecord(vehicleId: number, id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/vehicles/${vehicleId}/maintenance/${id}`);
+  },
+
+  async getMaintenanceStatistics(vehicleId: number): Promise<VehicleMaintenanceStatistics> {
+    return await apiClient.get<VehicleMaintenanceStatistics>(`/vehicles/${vehicleId}/maintenance-statistics`);
   },
 };
 

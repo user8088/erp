@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, ApiError, type ProcessSalePayload } from "../../lib/apiClient";
+import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, vehiclesApi, ApiError, type ProcessSalePayload } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
 import type { ItemStock, Customer, Account, Vehicle, Sale } from "../../lib/types";
 import { Package, ShoppingCart, User, Search, Plus, Minus, Trash2, Truck, Loader2 } from "lucide-react";
@@ -72,17 +72,21 @@ export default function PointOfSalePage() {
     }
   }, [addToast]);
 
-  // Fetch vehicles (placeholder - can be connected to API later)
+  // Fetch vehicles
   const fetchVehicles = useCallback(async () => {
-    // TODO: Replace with actual API call when vehicles API is available
-    // For now, using mock data
-    const now = new Date().toISOString();
-    const mockVehicles: Vehicle[] = [
-      { id: 1, name: "Truck-001", registration_number: "ABC-123", created_at: now, updated_at: now },
-      { id: 2, name: "Van-002", registration_number: "XYZ-456", created_at: now, updated_at: now },
-      { id: 3, name: "Pickup-003", registration_number: "DEF-789", created_at: now, updated_at: now },
-    ];
-    setVehicles(mockVehicles);
+    try {
+      const response = await vehiclesApi.getVehicles({
+        status: "active",
+        per_page: 1000,
+        sort_by: "name",
+        sort_order: "asc",
+      });
+      setVehicles(response.data);
+    } catch (error) {
+      console.error("Failed to fetch vehicles:", error);
+      // Don't show error toast, just continue without vehicles
+      setVehicles([]);
+    }
   }, []);
 
   // Fetch payment accounts (Cash, Bank accounts)

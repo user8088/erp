@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { salesApi, customersApi, ApiError } from "../../lib/apiClient";
 import type { Sale, Customer } from "../../lib/types";
 import { useToast } from "../../components/ui/ToastProvider";
-import { FileText, Search, Filter, Calendar, Truck, CheckCircle2, Loader2 } from "lucide-react";
+import { Search, Truck, CheckCircle2, Loader2, Trash2 } from "lucide-react";
 
 // Simple date formatter
 const formatDate = (dateString: string) => {
@@ -76,6 +76,7 @@ export default function SalesOrdersPage() {
     search: '',
   });
   const [markingDelivered, setMarkingDelivered] = useState<number | null>(null);
+  const [deletingSale, setDeletingSale] = useState<number | null>(null);
 
   // Fetch customers for filter dropdown
   const fetchCustomers = useCallback(async () => {
@@ -135,6 +136,57 @@ export default function SalesOrdersPage() {
   useEffect(() => {
     fetchSalesOrders();
   }, [fetchSalesOrders]);
+
+  // Delete sale
+  const handleDeleteSale = async (saleId: number) => {
+    if (!confirm("Are you sure you want to delete this sale order? This action cannot be undone.")) {
+      return;
+    }
+
+    setDeletingSale(saleId);
+    try {
+      await salesApi.deleteSale(saleId);
+      addToast("Sale order deleted successfully", "success");
+      await fetchSalesOrders(); // Refresh the list
+    } catch (error) {
+      console.error("Failed to delete sale:", error);
+      
+      if (error instanceof ApiError) {
+        // Handle validation errors (422) with field-specific messages
+        if (error.status === 422 || error.status === 400) {
+          const errorData = error.data as { message?: string; errors?: Record<string, string[]> };
+          
+          if (errorData.errors) {
+            // Show all validation errors
+            const errorMessages = Object.values(errorData.errors).flat();
+            if (errorMessages.length > 0) {
+              addToast(errorMessages[0], "error");
+              if (errorMessages.length > 1) {
+                console.warn("Additional validation errors:", errorMessages.slice(1));
+              }
+            } else {
+              addToast(errorData.message || "Validation failed", "error");
+            }
+          } else {
+            // Business logic error
+            addToast(errorData.message || "Failed to delete sale order", "error");
+          }
+        } else if (error.status === 404) {
+          addToast("Sale order not found", "error");
+        } else if (error.status === 403) {
+          addToast("You don't have permission to delete sales", "error");
+        } else if (error.status === 401) {
+          addToast("Please log in to continue", "error");
+        } else {
+          addToast(error.message || "Failed to delete sale order", "error");
+        }
+      } else {
+        addToast("Failed to delete sale order. Please try again.", "error");
+      }
+    } finally {
+      setDeletingSale(null);
+    }
+  };
 
   // Mark sale as delivered
   const handleMarkAsDelivered = async (saleId: number) => {
@@ -250,7 +302,7 @@ export default function SalesOrdersPage() {
           <div>
             <select
               value={filters.status}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
+              onChange={(e) => setFilters({ ...filters, status: e.target.value as '' | 'draft' | 'completed' | 'cancelled' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="">All Status</option>
@@ -264,7 +316,7 @@ export default function SalesOrdersPage() {
           <div>
             <select
               value={filters.payment_status}
-              onChange={(e) => setFilters({ ...filters, payment_status: e.target.value as any })}
+              onChange={(e) => setFilters({ ...filters, payment_status: e.target.value as '' | 'paid' | 'unpaid' | 'partial' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="">All Payment Status</option>
@@ -380,34 +432,51 @@ export default function SalesOrdersPage() {
                         PKR {sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-center">
-                        {sale.status === 'completed' ? (
-                          <span className="text-xs text-green-600 font-medium">Delivered</span>
-                        ) : sale.status === 'cancelled' ? (
-                          <span className="text-xs text-red-600 font-medium">Cancelled</span>
-                        ) : sale.sale_type === 'delivery' && sale.status === 'draft' ? (
+                        <div className="flex items-center justify-center gap-2">
+                          {sale.status === 'completed' ? (
+                            <span className="text-xs text-green-600 font-medium">Delivered</span>
+                          ) : sale.status === 'cancelled' ? (
+                            <span className="text-xs text-red-600 font-medium">Cancelled</span>
+                          ) : sale.sale_type === 'delivery' && sale.status === 'draft' ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMarkAsDelivered(sale.id);
+                              }}
+                              disabled={markingDelivered === sale.id || deletingSale === sale.id}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-orange-500 rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                              {markingDelivered === sale.id ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Marking...
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Mark as Delivered
+                                </>
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-500">—</span>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleMarkAsDelivered(sale.id);
+                              handleDeleteSale(sale.id);
                             }}
-                            disabled={markingDelivered === sale.id}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-orange-500 rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            disabled={deletingSale === sale.id || markingDelivered === sale.id}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                            title="Delete sale order"
                           >
-                            {markingDelivered === sale.id ? (
-                              <>
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                Marking...
-                              </>
+                            {deletingSale === sale.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
-                              <>
-                                <CheckCircle2 className="w-3 h-3" />
-                                Mark as Delivered
-                              </>
+                              <Trash2 className="w-4 h-4" />
                             )}
                           </button>
-                        ) : (
-                          <span className="text-xs text-gray-500">—</span>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}

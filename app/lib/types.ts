@@ -553,9 +553,74 @@ export interface Invoice {
 export interface Vehicle {
   id: number;
   name: string;
-  registration_number?: string | null;
+  registration_number: string;
+  type: string | null;
+  notes: string | null;
+  status: "active" | "inactive";
   created_at: string;
   updated_at: string;
+  profitability_stats?: VehicleProfitabilityStats;
+  total_orders?: number;
+}
+
+export interface VehicleProfitabilityStats {
+  total_delivery_charges: number;
+  total_maintenance_costs: number;
+  net_profit: number;
+  profit_margin_percentage: number;
+  total_orders: number;
+}
+
+export interface VehicleMaintenance {
+  id: number;
+  vehicle_id: number;
+  type: string;
+  description: string | null;
+  amount: number;
+  maintenance_date: string; // YYYY-MM-DD
+  notes: string | null;
+  created_by: number;
+  creator?: {
+    id: number;
+    full_name: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VehicleMaintenanceStatistics {
+  vehicle_id: number;
+  vehicle_name: string;
+  total_maintenance_costs: number;
+  maintenance_by_type: Record<string, {
+    count: number;
+    total_amount: number;
+  }>;
+  total_records: number;
+}
+
+export interface VehicleDeliveryOrder extends Sale {
+  sale_number: string;
+  sale_type: "delivery";
+  customer_id: number;
+  total_delivery_charges: number;
+  total_amount: number;
+  status: "draft" | "completed" | "cancelled";
+  delivery_address: string | null;
+  expected_delivery_date: string | null;
+  created_at: string;
+  customer?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  items?: Array<{
+    id: number;
+    item_id: number;
+    quantity: number;
+    unit_price: number;
+    delivery_charge: number;
+  }>;
 }
 
 export interface SaleItem {
