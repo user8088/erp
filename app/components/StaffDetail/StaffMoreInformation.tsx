@@ -4,6 +4,12 @@ import { useState } from "react";
 import { Upload, X, FileImage } from "lucide-react";
 import type { StaffMember } from "../../lib/types";
 
+interface AttachmentRow {
+  id: string;
+  label: string;
+  fileName: string;
+}
+
 interface StaffMoreInformationProps {
   staff: StaffMember;
 }
