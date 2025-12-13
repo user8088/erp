@@ -27,7 +27,7 @@ export default function StaffDetailsForm({ staff, onChange }: StaffDetailsFormPr
         />
         <Field
           label="Designation"
-          value={local.designation}
+          value={local.designation ?? ""}
           onChange={(v) => update("designation", v)}
         />
         <Field
