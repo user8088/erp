@@ -130,6 +130,7 @@ import type {
   StaffSalaryStructure,
   AttendanceEntry,
   StaffSalaryRun,
+  Vehicle,
 } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
