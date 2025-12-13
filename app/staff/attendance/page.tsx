@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, XCircle, Coffee, AlertTriangle } from "lucide-react";
 import type { AttendanceEntry, AttendanceStatus } from "../../lib/types";
-import { attendanceApi } from "../../lib/apiClient";
+import { attendanceApi, staffApi } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
 
 const statusLabels: Record<AttendanceStatus, string> = {
@@ -38,14 +38,66 @@ export default function AttendancePage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await attendanceApi.list({ date: targetDate, summary: true, per_page: 500 });
-      setEntries(res.data ?? []);
-      setSummary({
-        present: res.summary?.present ?? 0,
-        absent: res.summary?.absent ?? 0,
-        paid_leave: res.summary?.paid_leave ?? 0,
-        unpaid_leave: res.summary?.unpaid_leave ?? 0,
+      const res = await attendanceApi.list({
+        date: targetDate,
+        summary: true,
+        per_page: 500,
+        person_type: "staff",
       });
+
+      const attendanceRows = res.data ?? [];
+
+      // Always fetch all active staff to show everyone, then merge with attendance records
+      const staffRes = await staffApi.list({ status: "active", per_page: 500 });
+      const allStaff = staffRes.data ?? [];
+      
+      // Create a map of attendance records by person_id
+      const attendanceMap = new Map(
+        attendanceRows.map((entry) => [entry.person_id, entry])
+      );
+      
+      // Create entries for all active staff, using attendance data if it exists
+      const rows: AttendanceEntry[] = allStaff.map((staff) => {
+        const attendanceEntry = attendanceMap.get(staff.id);
+        if (attendanceEntry) {
+          // Staff has attendance record - use it and enrich with staff info
+          return {
+            ...attendanceEntry,
+            date: attendanceEntry.date || targetDate, // Ensure date is set correctly
+            name: attendanceEntry.name || staff.full_name,
+            designation: attendanceEntry.designation || staff.designation || null,
+          };
+        } else {
+          // Staff has no attendance record - create placeholder entry
+          return {
+            id: `staff-${staff.id}`,
+            person_id: staff.id,
+            person_type: "staff" as const,
+            name: staff.full_name,
+            designation: staff.designation,
+            date: targetDate,
+            status: "present" as AttendanceStatus,
+            note: "",
+          };
+        }
+      });
+
+      setEntries(rows);
+      setSummary(
+        attendanceRows.length
+          ? {
+              present: res.summary?.present ?? 0,
+              absent: res.summary?.absent ?? 0,
+              paid_leave: res.summary?.paid_leave ?? 0,
+              unpaid_leave: res.summary?.unpaid_leave ?? 0,
+            }
+          : {
+              present: 0,
+              absent: 0,
+              paid_leave: 0,
+              unpaid_leave: 0,
+            }
+      );
     } catch (e) {
       console.error(e);
       setError(
@@ -59,19 +111,31 @@ export default function AttendancePage() {
   };
 
   useEffect(() => {
+    // Clear entries immediately when date changes to prevent stale data
+    setEntries([]);
+    setSummary({
+      present: 0,
+      absent: 0,
+      paid_leave: 0,
+      unpaid_leave: 0,
+    });
     void load(date);
   }, [date]);
 
   const updateStatus = async (entry: AttendanceEntry, status: AttendanceStatus) => {
     try {
-      // If entry has id, PATCH; otherwise bulk upsert single row
-      if (entry.id) {
-        await attendanceApi.update(entry.id, { status });
-      } else {
+      // Check if this is a placeholder entry (id is a string starting with "staff-")
+      const isPlaceholder = typeof entry.id === "string" && entry.id.startsWith("staff-");
+      
+      if (isPlaceholder || !entry.id) {
+        // Placeholder entry or no ID - use bulk upsert to create the record
         await attendanceApi.bulkUpsert({
           date,
           entries: [{ person_id: entry.person_id, person_type: entry.person_type, status, note: entry.note ?? "" }],
         });
+      } else {
+        // Real attendance record - update it
+        await attendanceApi.update(entry.id, { status });
       }
       await load(date);
     } catch (e) {
@@ -82,20 +146,28 @@ export default function AttendancePage() {
 
   const updateNote = async (entry: AttendanceEntry, note: string) => {
     try {
-      if (entry.id) {
-        await attendanceApi.update(entry.id, { note });
-      } else {
+      // Check if this is a placeholder entry (id is a string starting with "staff-")
+      const isPlaceholder = typeof entry.id === "string" && entry.id.startsWith("staff-");
+      
+      if (isPlaceholder || !entry.id) {
+        // Placeholder entry or no ID - use bulk upsert to create the record
         await attendanceApi.bulkUpsert({
           date,
           entries: [{ person_id: entry.person_id, person_type: entry.person_type, status: entry.status, note }],
         });
+      } else {
+        // Real attendance record - update it
+        await attendanceApi.update(entry.id, { note });
       }
+      // Optimistically update the UI
       setEntries((prev) =>
-        prev.map((e) => (e.person_id === entry.person_id ? { ...e, note } : e))
+        prev.map((e) => (e.person_id === entry.person_id && e.date === entry.date ? { ...e, note } : e))
       );
     } catch (e) {
       console.error(e);
       addToast("Failed to save note.", "error");
+      // Reload on error to sync with server
+      await load(date);
     }
   };
 
@@ -193,27 +265,32 @@ export default function AttendancePage() {
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {entries.map((entry) => (
-              <tr key={entry.id} className="hover:bg-gray-50">
+              <tr key={entry.id ?? `staff-${entry.person_id}`} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-gray-900 font-medium">{entry.name}</td>
                 <td className="px-4 py-3 text-gray-700">{entry.designation ?? "-"}</td>
                 <td className="px-4 py-3 text-gray-700 capitalize">{entry.person_type}</td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-2">
                     {(["present", "absent", "paid_leave", "unpaid_leave"] as AttendanceStatus[]).map(
-                      (status) => (
-                        <button
-                          key={status}
-                          type="button"
-                          onClick={() => updateStatus(entry, status)}
-                          className={`px-3 py-1.5 text-xs rounded-full border ${
-                            entry.status === status
-                              ? `${statusStyles[status]} border-transparent`
-                              : "border-gray-300 text-gray-700 bg-white"
-                          }`}
-                        >
-                          {statusLabels[status]}
-                        </button>
-                      )
+                      (status) => {
+                        // Check if this is a placeholder entry (no real attendance record yet)
+                        const isPlaceholder = typeof entry.id === "string" && entry.id.startsWith("staff-");
+                        const isSelected = !isPlaceholder && entry.status === status;
+                        return (
+                          <button
+                            key={status}
+                            type="button"
+                            onClick={() => updateStatus(entry, status)}
+                            className={`px-3 py-1.5 text-xs rounded-full border ${
+                              isSelected
+                                ? `${statusStyles[status]} border-transparent`
+                                : "border-gray-300 text-gray-700 bg-white"
+                            }`}
+                          >
+                            {statusLabels[status]}
+                          </button>
+                        );
+                      }
                     )}
                   </div>
                 </td>

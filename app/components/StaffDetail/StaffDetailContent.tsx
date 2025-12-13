@@ -13,13 +13,21 @@ import {
 import StaffDetailTabs from "./StaffDetailTabs";
 import StaffDetailsForm from "./StaffDetailsForm";
 import StaffMoreInformation from "./StaffMoreInformation";
-import type { StaffAdvance, StaffMember, StaffSalary } from "../../lib/types";
+import type {
+  AttendanceEntry,
+  StaffAdvance,
+  StaffMember,
+  StaffSalary,
+} from "../../lib/types";
 import { useToast } from "../ui/ToastProvider";
 
 interface StaffDetailContentProps {
   staff: StaffMember;
   salaryHistory: StaffSalary[];
   advances: StaffAdvance[];
+  attendanceEntries: AttendanceEntry[];
+  attendanceSummary?: Record<string, number> | null;
+  attendanceLoading?: boolean;
   onPaySalary?: () => Promise<void> | void;
   paying?: boolean;
 }
@@ -28,11 +36,26 @@ export default function StaffDetailContent({
   staff,
   salaryHistory,
   advances,
+  attendanceEntries,
+  attendanceSummary,
+  attendanceLoading,
   onPaySalary,
   paying,
 }: StaffDetailContentProps) {
   const [activeTab, setActiveTab] = useState("staff-details");
   const { addToast } = useToast();
+
+  const attendanceTotals = {
+    present: attendanceSummary?.present ?? 0,
+    absent: attendanceSummary?.absent ?? 0,
+    paid_leave: attendanceSummary?.paid_leave ?? 0,
+    unpaid_leave: attendanceSummary?.unpaid_leave ?? 0,
+    total: attendanceSummary?.total_entries ?? attendanceEntries.length ?? 0,
+  };
+
+  const latestAdvanceAdjustment = [...salaryHistory]
+    .filter((s) => typeof s.advance_adjusted === "number")
+    .sort((a, b) => String(b.month).localeCompare(String(a.month)))[0];
 
   return (
     <div className="flex-1">
@@ -153,9 +176,14 @@ export default function StaffDetailContent({
                 icon={<Calendar className="w-8 h-8 text-blue-400" />}
               />
               <SummaryCard
-                title="Advance Balance"
-                value="PKR 35,000"
-                subtitle="Will auto-adjust in next salary"
+              title="Advance Adjusted"
+              value={
+                latestAdvanceAdjustment?.advance_adjusted !== undefined &&
+                latestAdvanceAdjustment?.advance_adjusted !== null
+                  ? `PKR ${latestAdvanceAdjustment.advance_adjusted.toLocaleString()}`
+                  : "—"
+              }
+              subtitle="Last paid run advance adjustment"
                 icon={<HandCoins className="w-8 h-8 text-amber-400" />}
               />
             </div>
@@ -344,25 +372,81 @@ export default function StaffDetailContent({
         )}
 
         {activeTab === "attendance" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <SummaryCard
-              title="Attendance"
-              value="24 / 26"
-              subtitle="Present this month"
-              icon={<Clock className="w-8 h-8 text-green-400" />}
-            />
-            <SummaryCard
-              title="Late Arrivals"
-              value="2"
-              subtitle="Needs attention"
-              icon={<Clock className="w-8 h-8 text-amber-400" />}
-            />
-            <SummaryCard
-              title="Leaves"
-              value="1"
-              subtitle="Approved"
-              icon={<Calendar className="w-8 h-8 text-blue-400" />}
-            />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <SummaryCard
+                title="Present"
+                value={attendanceLoading ? "..." : `${attendanceTotals.present}`}
+                subtitle="Marked present this period"
+                icon={<Clock className="w-8 h-8 text-green-400" />}
+              />
+              <SummaryCard
+                title="Absent"
+                value={attendanceLoading ? "..." : `${attendanceTotals.absent}`}
+                subtitle="Unexcused absence"
+                icon={<Clock className="w-8 h-8 text-red-400" />}
+              />
+              <SummaryCard
+                title="Paid Leave"
+                value={attendanceLoading ? "..." : `${attendanceTotals.paid_leave}`}
+                subtitle="Approved paid leave"
+                icon={<Calendar className="w-8 h-8 text-blue-400" />}
+              />
+              <SummaryCard
+                title="Unpaid Leave"
+                value={attendanceLoading ? "..." : `${attendanceTotals.unpaid_leave}`}
+                subtitle="Unpaid or pending leave"
+                icon={<Calendar className="w-8 h-8 text-amber-400" />}
+              />
+            </div>
+
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">Attendance</h2>
+                  <p className="text-sm text-gray-500">
+                    Current month records for this staff member.
+                  </p>
+                </div>
+              </div>
+
+              {attendanceLoading ? (
+                <p className="text-sm text-gray-500">Loading attendance...</p>
+              ) : attendanceEntries.length === 0 ? (
+                <p className="text-sm text-gray-500">No attendance entries found.</p>
+              ) : (
+                <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                  <table className="w-full min-w-[640px]">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                          Date
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                          Note
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {attendanceEntries.map((entry) => (
+                        <tr key={entry.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">{entry.date}</td>
+                          <td className="px-4 py-3">
+                            <AttendanceStatusPill status={entry.status} />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            {entry.note || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -428,6 +512,30 @@ function StatusPill({ status }: { status: StaffSalary["status"] }) {
         : status === "due"
         ? "Due"
         : "Paid"}
+    </span>
+  );
+}
+
+function AttendanceStatusPill({ status }: { status: AttendanceEntry["status"] }) {
+  const map = {
+    present: "bg-green-100 text-green-700",
+    absent: "bg-red-100 text-red-700",
+    paid_leave: "bg-blue-100 text-blue-700",
+    unpaid_leave: "bg-amber-100 text-amber-800",
+  } as const;
+  const labels: Record<AttendanceEntry["status"], string> = {
+    present: "Present",
+    absent: "Absent",
+    paid_leave: "Paid leave",
+    unpaid_leave: "Unpaid leave",
+  };
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+        map[status]
+      }`}
+    >
+      {labels[status]}
     </span>
   );
 }

@@ -3,10 +3,10 @@ import Link from "next/link";
 
 const shortcuts = [
   { label: "Staff Members", href: "/staff/members" },
-  { label: "Salary Structures", href: "/staff/salary" },
   { label: "Attendance", href: "/staff/attendance" },
   { label: "Staff Invoices", href: "/staff/invoices" },
   { label: "Users", href: "/staff/users" },
+  { label: "Settings", href: "/staff/settings" },
   { label: "Permission Manager", href: "/staff/permission-manager" },
 ];
 

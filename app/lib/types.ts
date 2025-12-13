@@ -100,6 +100,9 @@ export interface SalaryComponent {
   amount: number;
 }
 
+/**
+ * @deprecated Salary structures are no longer used. Use direct payment API (staffApi.paySalary) instead.
+ */
 export interface StaffSalaryStructure {
   id: string | number;
   name: string;

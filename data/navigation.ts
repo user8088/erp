@@ -15,6 +15,7 @@ import {
   Box,
   FolderOpen,
   HandCoins,
+  Settings2,
 } from "lucide-react";
 
 export interface NavItem {
@@ -177,6 +178,12 @@ export const navigationData: NavItem[] = [
         label: "Tag Manager",
         icon: Tag,
         href: "/staff/tags",
+      },
+      {
+        id: "staff-settings",
+        label: "Settings",
+        icon: Settings2,
+        href: "/staff/settings",
       },
     ],
     isExpanded: false

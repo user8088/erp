@@ -284,35 +284,59 @@ export const staffApi = {
   update(id: string | number, payload: Partial<StaffMember>) {
     return apiClient.patch<{ staff: StaffMember }>(`/staff/${id}`, payload);
   },
+  paySalary(staffId: string | number, payload: {
+    month: string; // YYYY-MM format
+    override_basic?: number;
+    override_allowances?: Array<{ label: string; amount: number }>;
+    override_deductions?: Array<{ label: string; amount: number }>;
+    payable_days?: number;
+    advance_adjusted?: number;
+    paid_on?: string;
+    notes?: string;
+    payment_metadata?: Record<string, unknown>;
+  }) {
+    return apiClient.post<{
+      data: {
+        staff: { id: number; code: string; full_name: string };
+        invoice: { id: number; invoice_number: string; invoice_type: string; amount: number; status: string };
+        month: string;
+        amount: number;
+        calculation: {
+          basic: number;
+          gross: number;
+          per_day_rate: number;
+          payable_days: number;
+          present_days: number;
+          paid_leave_days: number;
+          unpaid_leave_days: number;
+          absent_days: number;
+          unpaid_deduction: number;
+          net_before_advance: number;
+          advance_adjusted: number;
+          net_payable: number;
+        };
+      };
+      message: string;
+    }>(`/staff/${staffId}/pay-salary`, payload);
+  },
+  reverseSalary(staffId: string | number, payload: {
+    month: string; // YYYY-MM format
+    reason?: string;
+  }) {
+    return apiClient.post<{
+      data: {
+        staff: { id: number; code: string; full_name: string };
+        invoice: { id: number; invoice_number: string; status: string };
+        month: string;
+        reversed: boolean;
+      };
+      message: string;
+    }>(`/staff/${staffId}/reverse-salary`, payload);
+  },
 };
 
-export const salaryStructuresApi = {
-  list(params?: { pay_frequency?: string; name?: string; page?: number; per_page?: number }) {
-    const query = new URLSearchParams();
-    if (params?.pay_frequency) query.set("pay_frequency", params.pay_frequency);
-    if (params?.name) query.set("name", params.name);
-    if (params?.page) query.set("page", String(params.page));
-    if (params?.per_page) query.set("per_page", String(params.per_page));
-    const qs = query.toString();
-    const path = `/staff/salary-structures${qs ? `?${qs}` : ""}`;
-    return apiClient.get<Paginated<StaffSalaryStructure>>(path);
-  },
-  create(payload: Omit<StaffSalaryStructure, "id">) {
-    return apiClient.post<{ salary_structure: StaffSalaryStructure }>(
-      "/staff/salary-structures",
-      payload
-    );
-  },
-  update(id: string | number, payload: Partial<Omit<StaffSalaryStructure, "id">>) {
-    return apiClient.patch<{ salary_structure: StaffSalaryStructure }>(
-      `/staff/salary-structures/${id}`,
-      payload
-    );
-  },
-  remove(id: string | number) {
-    return apiClient.delete<{ message: string }>(`/staff/salary-structures/${id}`);
-  },
-};
+// Salary Structures API removed - use direct payment API instead
+// @deprecated - Salary structures are no longer used. Use staffApi.paySalary() for direct payments.
 
 export const attendanceApi = {
   list(params: {
@@ -360,6 +384,7 @@ export const attendanceApi = {
   },
 };
 
+// @deprecated - Use staffApi.paySalary() for new payments. Kept for backward compatibility to read salary history.
 export const salaryRunsApi = {
   list(staffId: string | number, params?: { month?: string; status?: string; page?: number; per_page?: number }) {
     const query = new URLSearchParams();
@@ -371,7 +396,8 @@ export const salaryRunsApi = {
     return apiClient.get<Paginated<StaffSalaryRun>>(path);
   },
   create(staffId: string | number, payload: Partial<StaffSalaryRun> & { month: string; salary_structure_id?: string | number; override_basic?: number; override_allowances?: Array<{ label: string; amount: number }>; override_deductions?: Array<{ label: string; amount: number }>; payable_days?: number }) {
-    return apiClient.post<{ salary_run: StaffSalaryRun }>(
+    // API returns salary_run object directly (not nested) per Staff-apis.md
+    return apiClient.post<StaffSalaryRun>(
       `/staff/${staffId}/salary-runs`,
       payload
     );
@@ -1401,7 +1427,7 @@ export interface GetAccountMappingsParams {
 }
 
 export interface CreateAccountMappingPayload {
-  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount';
+  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment';
   account_id: number;
   company_id?: number | null;
 }
