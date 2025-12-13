@@ -135,6 +135,11 @@ import type {
   VehicleMaintenance,
   VehicleMaintenanceStatistics,
   VehicleDeliveryOrder,
+  RentalCategory,
+  RentalItem,
+  RentalAgreement,
+  RentalPayment,
+  RentalReturn,
 } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
@@ -1678,6 +1683,249 @@ export const vehiclesApi = {
 
   async getMaintenanceStatistics(vehicleId: number): Promise<VehicleMaintenanceStatistics> {
     return await apiClient.get<VehicleMaintenanceStatistics>(`/vehicles/${vehicleId}/maintenance-statistics`);
+  },
+};
+
+// Rental Management API
+
+export interface GetRentalCategoriesParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  status?: "active" | "inactive";
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
+}
+
+export interface CreateOrUpdateRentalCategoryPayload {
+  name: string;
+  slug?: string | null;
+  serial_alias?: string | null;
+  description?: string | null;
+  status?: "active" | "inactive";
+}
+
+export interface GetRentalItemsParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  category_id?: number;
+  status?: "available" | "rented" | "maintenance";
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
+}
+
+export interface CreateOrUpdateRentalItemPayload {
+  rental_category_id: number;
+  name: string;
+  sku?: string | null;
+  quantity_total: number;
+  quantity_available?: number | null;
+  rental_price_total: number;
+  rental_period_type: "daily" | "weekly" | "monthly" | "custom";
+  rental_period_length: number;
+  auto_divide_rent?: boolean;
+  rent_per_period?: number | null;
+  security_deposit_amount?: number | null;
+  status?: "available" | "rented" | "maintenance";
+}
+
+export interface GetRentalAgreementsParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  customer_id?: number;
+  status?: "active" | "completed" | "returned" | "overdue";
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
+}
+
+export interface CreateRentalAgreementPayload {
+  customer_id: number;
+  rental_item_id: number;
+  quantity_rented: number;
+  rental_start_date: string;
+  rental_end_date?: string | null;
+  rental_period_type: "daily" | "weekly" | "monthly" | "custom";
+  rental_period_length: number;
+  total_rent_amount: number;
+  rent_per_period: number;
+  security_deposit_amount?: number | null;
+}
+
+export interface RecordRentalPaymentPayload {
+  payment_id: number;
+  amount_paid: number;
+  payment_date?: string | null;
+  payment_account_id: number;
+  notes?: string | null;
+}
+
+export interface ProcessRentalReturnPayload {
+  rental_agreement_id: number;
+  return_date: string;
+  return_condition: "returned_safely" | "damaged" | "lost";
+  damage_charge_amount?: number | null;
+  security_deposit_refunded?: number | null;
+  damage_description?: string | null;
+  refund_account_id?: number | null;
+  notes?: string | null;
+}
+
+export const rentalApi = {
+  // Categories
+  async getCategories(params: GetRentalCategoriesParams = {}): Promise<Paginated<RentalCategory>> {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.search) queryParams.append("search", params.search);
+    if (params.status) queryParams.append("status", params.status);
+    if (params.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params.sort_order) queryParams.append("sort_order", params.sort_order);
+
+    const response = await apiClient.get<{
+      data: RentalCategory[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+        from: number;
+        to: number;
+      };
+    }>(`/rentals/categories?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  async getCategory(id: number): Promise<{ category: RentalCategory }> {
+    return await apiClient.get<{ category: RentalCategory }>(`/rentals/categories/${id}`);
+  },
+
+  async createCategory(payload: CreateOrUpdateRentalCategoryPayload): Promise<{ category: RentalCategory; message: string }> {
+    return await apiClient.post<{ category: RentalCategory; message: string }>("/rentals/categories", payload);
+  },
+
+  async updateCategory(id: number, payload: Partial<CreateOrUpdateRentalCategoryPayload>): Promise<{ category: RentalCategory; message: string }> {
+    return await apiClient.patch<{ category: RentalCategory; message: string }>(`/rentals/categories/${id}`, payload);
+  },
+
+  async deleteCategory(id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/rentals/categories/${id}`);
+  },
+
+  async bulkDeleteCategories(ids: number[]): Promise<{ message: string; deleted_count: number; failed_ids: number[] }> {
+    return await apiClient.post<{ message: string; deleted_count: number; failed_ids: number[] }>("/rentals/categories/bulk-delete", { ids });
+  },
+
+  // Items
+  async getItems(params: GetRentalItemsParams = {}): Promise<Paginated<RentalItem>> {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.search) queryParams.append("search", params.search);
+    if (params.category_id) queryParams.append("category_id", String(params.category_id));
+    if (params.status) queryParams.append("status", params.status);
+    if (params.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params.sort_order) queryParams.append("sort_order", params.sort_order);
+
+    const response = await apiClient.get<{
+      data: RentalItem[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+        from: number;
+        to: number;
+      };
+    }>(`/rentals/items?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  async getItem(id: number): Promise<{ item: RentalItem }> {
+    return await apiClient.get<{ item: RentalItem }>(`/rentals/items/${id}`);
+  },
+
+  async createItem(payload: CreateOrUpdateRentalItemPayload): Promise<{ item: RentalItem; message: string }> {
+    return await apiClient.post<{ item: RentalItem; message: string }>("/rentals/items", payload);
+  },
+
+  async updateItem(id: number, payload: Partial<CreateOrUpdateRentalItemPayload>): Promise<{ item: RentalItem; message: string }> {
+    return await apiClient.patch<{ item: RentalItem; message: string }>(`/rentals/items/${id}`, payload);
+  },
+
+  async deleteItem(id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/rentals/items/${id}`);
+  },
+
+  // Agreements
+  async getAgreements(params: GetRentalAgreementsParams = {}): Promise<Paginated<RentalAgreement>> {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.search) queryParams.append("search", params.search);
+    if (params.customer_id) queryParams.append("customer_id", String(params.customer_id));
+    if (params.status) queryParams.append("status", params.status);
+    if (params.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params.sort_order) queryParams.append("sort_order", params.sort_order);
+
+    const response = await apiClient.get<{
+      data: RentalAgreement[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+        from: number;
+        to: number;
+      };
+    }>(`/rentals/agreements?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  async getAgreement(id: number): Promise<{ agreement: RentalAgreement }> {
+    return await apiClient.get<{ agreement: RentalAgreement }>(`/rentals/agreements/${id}`);
+  },
+
+  async createAgreement(payload: CreateRentalAgreementPayload): Promise<{ agreement: RentalAgreement; message: string }> {
+    return await apiClient.post<{ agreement: RentalAgreement; message: string }>("/rentals/agreements", payload);
+  },
+
+  // Payments
+  async recordPayment(agreementId: number, payload: RecordRentalPaymentPayload): Promise<{ payment: RentalPayment; message: string }> {
+    return await apiClient.post<{ payment: RentalPayment; message: string }>(`/rentals/agreements/${agreementId}/payments`, payload);
+  },
+
+  // Returns
+  async processReturn(payload: ProcessRentalReturnPayload): Promise<{ return: RentalReturn; agreement: Partial<RentalAgreement>; message: string }> {
+    return await apiClient.post<{ return: RentalReturn; agreement: Partial<RentalAgreement>; message: string }>("/rentals/returns", payload);
   },
 };
 

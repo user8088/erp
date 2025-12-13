@@ -199,13 +199,37 @@ export const navigationData: NavItem[] = [
     id: "rental",
     label: "Rental",
     icon: Key,
-    href: "/rental",
+    href: "/rental/items",
     children: [
       {
-        id: "rental-invoices",
-        label: "Rental Invoices",
+        id: "rental-items",
+        label: "Rental Items",
+        icon: Box,
+        href: "/rental/items",
+      },
+      {
+        id: "rental-categories",
+        label: "Rental Categories",
+        icon: FolderOpen,
+        href: "/rental/categories",
+      },
+      {
+        id: "rental-agreements",
+        label: "Active Rentals",
         icon: FileText,
-        href: "/rental/invoices",
+        href: "/rental/agreements",
+      },
+      {
+        id: "rental-payments",
+        label: "Rental Payments",
+        icon: DollarSign,
+        href: "/rental/payments",
+      },
+      {
+        id: "rental-returns",
+        label: "Returned Items",
+        icon: Package,
+        href: "/rental/returns",
       },
     ],
     isExpanded: false

@@ -724,4 +724,99 @@ export interface CustomerPaymentSummary {
   advance_transactions: CustomerAdvance[];
 }
 
+// Rental Management Types
+
+export interface RentalCategory {
+  id: number;
+  name: string;
+  slug: string;
+  serial_alias: string;
+  description?: string | null;
+  status: "active" | "inactive";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RentalItem {
+  id: number;
+  rental_category_id: number;
+  rental_category?: RentalCategory;
+  name: string;
+  sku: string;
+  quantity_total: number;
+  quantity_available: number;
+  rental_price_total: number;
+  rental_period_type: "daily" | "weekly" | "monthly" | "custom";
+  rental_period_length: number;
+  auto_divide_rent: boolean;
+  rent_per_period: number;
+  security_deposit_amount: number;
+  status: "available" | "rented" | "maintenance";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RentalPaymentScheduleItem {
+  period: number;
+  due_date: string;
+  amount_due: number;
+  payment_status: "paid" | "late" | "unpaid";
+}
+
+export interface RentalAgreement {
+  id: number;
+  agreement_number: string;
+  customer_id: number;
+  customer?: Customer;
+  rental_item_id: number;
+  rental_item?: RentalItem;
+  quantity_rented: number;
+  rental_start_date: string;
+  rental_end_date: string;
+  rental_period_type: "daily" | "weekly" | "monthly" | "custom";
+  rental_period_length: number;
+  total_rent_amount: number;
+  rent_per_period: number;
+  security_deposit_amount: number;
+  security_deposit_collected: number;
+  payment_schedule: RentalPaymentScheduleItem[];
+  rental_status: "active" | "completed" | "returned" | "overdue";
+  outstanding_balance: number;
+  payments?: RentalPayment[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RentalPayment {
+  id: number;
+  rental_agreement_id: number;
+  rental_agreement?: RentalAgreement;
+  due_date: string;
+  amount_due: number;
+  amount_paid: number;
+  payment_date?: string | null;
+  payment_status: "paid" | "late" | "unpaid";
+  period_identifier: string;
+  journal_entry_id?: number | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RentalReturn {
+  id: number;
+  rental_agreement_id: number;
+  rental_agreement?: RentalAgreement;
+  return_date: string;
+  return_condition: "returned_safely" | "damaged" | "lost";
+  damage_charge_amount: number;
+  security_deposit_refunded: number;
+  security_deposit_retained: number;
+  damage_description?: string | null;
+  return_journal_entry_id?: number | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 
