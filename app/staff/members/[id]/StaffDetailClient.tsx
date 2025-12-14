@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import StaffDetailHeader from "../../../components/StaffDetail/StaffDetailHeader";
 import StaffDetailContent from "../../../components/StaffDetail/StaffDetailContent";
 import StaffDetailSidebar from "../../../components/StaffDetail/StaffDetailSidebar";
+import AttendanceDeductionModal from "../../../components/StaffDetail/AttendanceDeductionModal";
 import type {
   AttendanceEntry,
   StaffAdvance,
@@ -41,6 +42,7 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [advances, setAdvances] = useState<StaffAdvance[]>([]);
   const [reversing, setReversing] = useState(false);
+  const [showDeductionModal, setShowDeductionModal] = useState(false);
 
   const currentMonthRange = useMemo(() => {
     const now = new Date();
@@ -160,7 +162,17 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
 
   const handlePaySalary = async () => {
     if (!staff) return;
+    
+    // Show modal to adjust attendance deduction
+    setShowDeductionModal(true);
+  };
+
+  const handleDeductionModalConfirm = async (manualAttendanceDeduction: number | null) => {
+    if (!staff) return;
+    
     setPaying(true);
+    setShowDeductionModal(false);
+    
     try {
       const month = new Date().toISOString().slice(0, 7);
       
@@ -200,6 +212,7 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
       await staffApi.paySalary(staff.id, {
         month,
         payable_days: staff.monthly_salary ? DEFAULT_PAYABLE_DAYS : undefined,
+        manual_attendance_deduction: manualAttendanceDeduction ?? undefined,
         deduct_advances: shouldDeductAdvances, // Automatically deduct if advance balance exists
         paid_on: new Date().toISOString().slice(0, 10),
       });
@@ -258,6 +271,9 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
       }
       
       setRuns(updatedRuns.data ?? []);
+      
+      // Reload advances to see updated balance
+      await loadAdvances();
     } catch (e) {
       console.error("Salary payment error:", e);
       
@@ -409,6 +425,21 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
           />
         </div>
       </div>
+
+      {/* Attendance Deduction Modal */}
+      {staff && (
+        <AttendanceDeductionModal
+          isOpen={showDeductionModal}
+          onClose={() => setShowDeductionModal(false)}
+          onConfirm={handleDeductionModalConfirm}
+          staff={staff}
+          attendanceEntries={attendance}
+          attendanceSummary={attendanceSummary}
+          month={new Date().toISOString().slice(0, 7)}
+          monthlySalary={staff.monthly_salary || 0}
+          payableDays={DEFAULT_PAYABLE_DAYS}
+        />
+      )}
     </div>
   );
 }

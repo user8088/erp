@@ -1034,6 +1034,7 @@ await updateStaff(staffId, {
 | `override_deductions.*.label` | string | Yes (if override_deductions provided) | Max 255 characters |
 | `override_deductions.*.amount` | numeric | Yes (if override_deductions provided) | Must be >= 0 |
 | `payable_days` | integer | No | Must be >= 1 |
+| `manual_attendance_deduction` | numeric | No | Manual override for attendance deduction (absent + unpaid leave). If provided, overrides automatic per-day-rate calculation. Must be >= 0 |
 | `notes` | string | No | Optional notes |
 
 **Response:** `201 Created`
@@ -1052,6 +1053,8 @@ await updateStaff(staffId, {
   "unpaid_leave_days": 0,
   "absent_days": 0,
   "advance_adjusted": 0.00,
+  "attendance_deduction": 200.00,
+  "net_before_advance": 5800.00,
   "net_payable": 5800.00,
   "due_date": "2024-02-01",
   "paid_on": null,
@@ -1103,8 +1106,9 @@ await updateStaff(staffId, {
 | `paid_on` | date | No | Payment date |
 | `notes` | string | No | Optional notes |
 | `payment_metadata` | object | No | JSON object for payment metadata |
-| `advance_adjusted` | numeric | No | Must be >= 0 (manual override) |
+| `advance_adjusted` | numeric | No | Must be >= 0 (manual override - only used if `deduct_advances` is false) |
 | `deduct_advances` | boolean | No | If `true`, automatically deducts available advance balance from salary |
+| `manual_attendance_deduction` | numeric | No | Manual override for attendance deduction (absent + unpaid leave). If provided, overrides automatic per-day-rate calculation. Must be >= 0 |
 
 **Response:**
 
@@ -1122,6 +1126,8 @@ await updateStaff(staffId, {
   "unpaid_leave_days": 0,
   "absent_days": 0,
   "advance_adjusted": 200.00,
+  "attendance_deduction": 386.67,
+  "net_before_advance": 5413.33,
   "net_payable": 5213.33,
   "due_date": "2024-02-01",
   "paid_on": "2024-02-01",
@@ -1232,6 +1238,7 @@ await updateStaff(staffId, {
     }
   ],
   "payable_days": 26,
+  "manual_attendance_deduction": 1500.00,
   "advance_adjusted": 0,
   "deduct_advances": false,
   "paid_on": "2025-12-31",
@@ -1257,6 +1264,7 @@ await updateStaff(staffId, {
 | `override_deductions.*.label` | string | Yes (if override_deductions provided) | Label text |
 | `override_deductions.*.amount` | numeric | Yes (if override_deductions provided) | Must be >= 0 |
 | `payable_days` | integer | No | Must be 1-31 (default: 26) |
+| `manual_attendance_deduction` | numeric | No | Manual override for attendance deduction (absent + unpaid leave). If provided, overrides automatic per-day-rate calculation. Must be >= 0 |
 | `advance_adjusted` | numeric | No | Must be >= 0 (manual override - only used if `deduct_advances` is false) |
 | `deduct_advances` | boolean | No | If `true`, automatically deducts available advance balance from salary |
 | `paid_on` | date | No | Payment date (default: today) |
@@ -1306,11 +1314,45 @@ await updateStaff(staffId, {
 **Behavior:**
 - Calculates salary based on basic, allowances, and deductions
 - Automatically fetches attendance for the month
-- Applies deductions for absent and unpaid leave days
+- **Attendance Deduction Calculation:**
+  - **Automatic (default)**: If `manual_attendance_deduction` is not provided, the system calculates:
+    - `Per Day Rate = Gross Salary ÷ Payable Days`
+    - `Attendance Deduction = Per Day Rate × (Absent Days + Unpaid Leave Days)`
+  - **Manual Override**: If `manual_attendance_deduction` is provided, that amount is used directly, overriding the automatic calculation
 - Creates journal entries automatically (debit: salary expense, credit: payment account)
 - Creates an invoice for record-keeping
 - **Automatically updates staff payment status** - sets `last_paid_on`, `last_paid_month`, `is_paid_for_current_month`, and `next_pay_date` fields (next_pay_date = 1 month after payment date)
 - **Prevents duplicate payments** - throws error if salary already paid for that month
+
+**Manual Attendance Deduction Example:**
+
+If you want to apply a custom penalty percentage instead of the automatic per-day rate calculation:
+
+```json
+{
+  "month": "2025-12",
+  "override_basic": 30000,
+  "payable_days": 26,
+  "manual_attendance_deduction": 1500.00,  // Custom penalty amount
+  "deduct_advances": true
+}
+```
+
+**Calculation Breakdown:**
+- **Gross Salary**: Basic + Allowances - Deductions
+- **Per Day Rate**: Gross ÷ Payable Days (for reference, not used if manual deduction provided)
+- **Attendance Deduction**: 
+  - Manual override (if `manual_attendance_deduction` provided)
+  - OR Automatic: Per Day Rate × (Absent Days + Unpaid Leave Days)
+- **Net Before Advance**: Gross - Attendance Deduction
+- **Net Payable**: Net Before Advance - Advance Adjusted
+
+**Response Fields:**
+- `attendance_deduction`: The actual deduction amount used (manual or automatic)
+- `net_before_advance`: Salary after attendance deductions but before advance adjustments
+- `net_payable`: Final amount to be paid
+- `metadata.calculation.manual_attendance_deduction`: Boolean indicating if manual deduction was used
+- `metadata.calculation.unpaid_deduction`: The calculated attendance deduction amount
 
 **Error Responses:**
 

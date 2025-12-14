@@ -321,6 +321,7 @@ export const staffApi = {
     override_allowances?: Array<{ label: string; amount: number }>;
     override_deductions?: Array<{ label: string; amount: number }>;
     payable_days?: number;
+    manual_attendance_deduction?: number;
     advance_adjusted?: number;
     deduct_advances?: boolean;
     paid_on?: string;
