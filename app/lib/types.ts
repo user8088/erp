@@ -717,9 +717,28 @@ export interface CustomerAdvance {
   updated_at: string;
 }
 
+export type AccountMappingType = 
+  | 'pos_cash' 
+  | 'pos_bank' 
+  | 'pos_ar' 
+  | 'pos_advance' 
+  | 'pos_sales_revenue' 
+  | 'pos_delivery_revenue' 
+  | 'pos_discount' 
+  | 'staff_salary_expense' 
+  | 'staff_salary_payment' 
+  | 'staff_advance' 
+  | 'rental_cash' 
+  | 'rental_bank' 
+  | 'rental_ar' 
+  | 'rental_assets' 
+  | 'rental_security_deposits' 
+  | 'rental_income' 
+  | 'rental_damage_income';
+
 export interface AccountMapping {
   id: number;
-  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment' | 'staff_advance' | 'rental_cash' | 'rental_bank' | 'rental_ar' | 'rental_assets' | 'rental_security_deposits' | 'rental_income' | 'rental_damage_income';
+  mapping_type: AccountMappingType;
   account_id: number;
   account?: Account;
   company_id?: number | null;

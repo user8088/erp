@@ -124,6 +124,7 @@ import type {
   CustomerPayment,
   CustomerAdvance,
   AccountMapping,
+  AccountMappingType,
   AccountMappingStatus,
   CustomerPaymentSummary,
   StaffMember,
@@ -1545,7 +1546,7 @@ export interface GetAccountMappingsParams {
 }
 
 export interface CreateAccountMappingPayload {
-  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment' | 'staff_advance';
+  mapping_type: AccountMappingType;
   account_id: number;
   company_id?: number | null;
 }
