@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { X, DollarSign, Package } from "lucide-react";
 import type { RentalAgreement } from "../../../lib/types";
 import PaymentStatusBadge from "../Shared/PaymentStatusBadge";
 
@@ -9,12 +9,16 @@ interface RentalAgreementDetailModalProps {
   onClose: () => void;
   agreement: RentalAgreement;
   onRefresh?: () => void;
+  onRecordPayment?: (agreement: RentalAgreement) => void;
+  onReturnRental?: (agreement: RentalAgreement) => void;
 }
 
 export default function RentalAgreementDetailModal({
   isOpen,
   onClose,
   agreement,
+  onRecordPayment,
+  onReturnRental,
 }: RentalAgreementDetailModalProps) {
   if (!isOpen) return null;
 
@@ -180,7 +184,33 @@ export default function RentalAgreementDetailModal({
             </div>
           )}
         </div>
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
+        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {onRecordPayment && agreement.rental_status === "active" && (
+              <button
+                onClick={() => {
+                  onRecordPayment(agreement);
+                  onClose();
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition-colors"
+              >
+                <DollarSign className="w-4 h-4" />
+                Record Payment
+              </button>
+            )}
+            {onReturnRental && (agreement.rental_status === "active" || agreement.rental_status === "overdue" || agreement.rental_status === "completed") && (
+              <button
+                onClick={() => {
+                  onReturnRental(agreement);
+                  onClose();
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700 transition-colors"
+              >
+                <Package className="w-4 h-4" />
+                Return Rental
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-white transition-colors"

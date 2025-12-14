@@ -45,7 +45,7 @@ export default function ReturnRentalModal({
         setRefundAccountId(mappings.bankAccount.id);
       } else if (refundAccounts.length > 0) {
         setRefundAccountId(refundAccounts[0].id);
-      }
+          }
 
       // Calculate default refund
       const defaultRefund = agreement.security_deposit_amount - parseFloat(damageChargeAmount || "0");
@@ -121,18 +121,18 @@ export default function ReturnRentalModal({
             return;
           }
           if ("errors" in errorData) {
-            const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
-            const firstError = Object.values(backendErrors)[0]?.[0];
-            if (firstError) {
+          const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
+          const firstError = Object.values(backendErrors)[0]?.[0];
+          if (firstError) {
               if (firstError.toLowerCase().includes("account") || firstError.toLowerCase().includes("mapping")) {
                 addToast(
                   `${firstError} Please configure accounts in Rental Settings.`,
                   "error"
                 );
               } else {
-                addToast(firstError, "error");
+            addToast(firstError, "error");
               }
-              return;
+            return;
             }
           }
         }
@@ -276,9 +276,9 @@ export default function ReturnRentalModal({
                 </option>
               ) : (
                 refundAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.number ? `${account.number} - ` : ""}{account.name}
-                  </option>
+                <option key={account.id} value={account.id}>
+                  {account.number ? `${account.number} - ` : ""}{account.name}
+                </option>
                 ))
               )}
             </select>

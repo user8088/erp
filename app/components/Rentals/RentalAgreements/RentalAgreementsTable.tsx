@@ -137,7 +137,7 @@ export default function RentalAgreementsTable({
                         <DollarSign className="w-4 h-4" />
                       </button>
                     )}
-                    {onReturnRental && (agreement.rental_status === "active" || agreement.rental_status === "overdue") && (
+                    {onReturnRental && (agreement.rental_status === "active" || agreement.rental_status === "overdue" || agreement.rental_status === "completed") && (
                       <button
                         onClick={() => onReturnRental(agreement)}
                         className="p-1.5 text-orange-600 hover:bg-orange-50 rounded transition-colors"

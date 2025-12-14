@@ -201,6 +201,8 @@ export default function RentalAgreementsPage() {
             onClose={handleCloseModals}
             agreement={selectedAgreement}
             onRefresh={handleRefresh}
+            onRecordPayment={handleRecordPayment}
+            onReturnRental={handleReturnRental}
           />
           <RecordPaymentModal
             isOpen={showPaymentModal}
