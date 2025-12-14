@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { RentalAgreement } from "../../../lib/types";
-import { rentalApi, accountsApi } from "../../../lib/apiClient";
+import { rentalApi } from "../../../lib/apiClient";
 import { useToast } from "../../ui/ToastProvider";
-import type { Account } from "../../../lib/types";
+import { useRentalAccountMappings } from "../Shared/useRentalAccountMappings";
 
 interface ReturnRentalModalProps {
   isOpen: boolean;
@@ -20,9 +21,9 @@ export default function ReturnRentalModal({
   agreement,
   onReturnProcessed,
 }: ReturnRentalModalProps) {
+  const router = useRouter();
   const { addToast } = useToast();
-  const [refundAccounts, setRefundAccounts] = useState<Account[]>([]);
-  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const { mappings, loading: loadingMappings, getRefundAccounts, isConfigured } = useRentalAccountMappings();
   const [returnDate, setReturnDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [returnCondition, setReturnCondition] = useState<"returned_safely" | "damaged" | "lost">("returned_safely");
   const [damageChargeAmount, setDamageChargeAmount] = useState<string>("0");
@@ -33,39 +34,24 @@ export default function ReturnRentalModal({
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const refundAccounts = getRefundAccounts();
+
   useEffect(() => {
     if (isOpen) {
-      // Load refund accounts (cash/bank accounts)
-      const loadAccounts = async () => {
-        setLoadingAccounts(true);
-        try {
-          const accounts = await accountsApi.getAccountsTree(1, false);
-          const cashBankAccounts = accounts.filter(
-            (acc: Account) => 
-              acc.root_type === "asset" && 
-              !acc.is_group &&
-              (acc.name.toLowerCase().includes("cash") || 
-               acc.name.toLowerCase().includes("bank") ||
-               acc.name.toLowerCase().includes("jazzcash") ||
-               acc.name.toLowerCase().includes("easypaisa"))
-          );
-          setRefundAccounts(cashBankAccounts);
-          if (cashBankAccounts.length > 0) {
-            setRefundAccountId(cashBankAccounts[0].id);
-          }
-        } catch (e) {
-          console.error("Failed to load refund accounts:", e);
-        } finally {
-          setLoadingAccounts(false);
-        }
-      };
-      void loadAccounts();
+      // Set default refund account from mappings
+      if (mappings.cashAccount) {
+        setRefundAccountId(mappings.cashAccount.id);
+      } else if (mappings.bankAccount) {
+        setRefundAccountId(mappings.bankAccount.id);
+      } else if (refundAccounts.length > 0) {
+        setRefundAccountId(refundAccounts[0].id);
+      }
 
       // Calculate default refund
       const defaultRefund = agreement.security_deposit_amount - parseFloat(damageChargeAmount || "0");
       setSecurityDepositRefunded(String(Math.max(0, defaultRefund)));
     }
-  }, [isOpen, agreement]);
+  }, [isOpen, agreement, mappings, refundAccounts, damageChargeAmount]);
 
   // Recalculate refund when damage charge changes
   useEffect(() => {
@@ -80,6 +66,22 @@ export default function ReturnRentalModal({
 
     if (!refundAccountId) {
       setErrors({ account: "Please select a refund account." });
+      return;
+    }
+
+    // Check if refund accounts are configured
+    if (!isConfigured.cash && !isConfigured.bank) {
+      setErrors({ 
+        account: "Refund accounts are not configured. Please configure rental cash or bank account in Rental Settings." 
+      });
+      return;
+    }
+
+    // Check if required accounts are configured
+    if (!isConfigured.securityDeposits || !isConfigured.income) {
+      setErrors({ 
+        account: "Required accounts are not configured. Please configure security deposits and rental income accounts in Rental Settings." 
+      });
       return;
     }
 
@@ -104,17 +106,39 @@ export default function ReturnRentalModal({
       
       if (e && typeof e === "object" && "data" in e) {
         const errorData = (e as { data: unknown }).data;
-        if (errorData && typeof errorData === "object" && "errors" in errorData) {
-          const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
-          const firstError = Object.values(backendErrors)[0]?.[0];
-          if (firstError) {
-            addToast(firstError, "error");
+        if (errorData && typeof errorData === "object") {
+          // Check for specific error messages
+          if ("message" in errorData && typeof errorData.message === "string") {
+            const message = errorData.message.toLowerCase();
+            if (message.includes("account") || message.includes("mapping") || message.includes("security") || message.includes("income")) {
+              addToast(
+                `${errorData.message} Please configure accounts in Rental Settings.`,
+                "error"
+              );
+              return;
+            }
+            addToast(errorData.message, "error");
             return;
+          }
+          if ("errors" in errorData) {
+            const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
+            const firstError = Object.values(backendErrors)[0]?.[0];
+            if (firstError) {
+              if (firstError.toLowerCase().includes("account") || firstError.toLowerCase().includes("mapping")) {
+                addToast(
+                  `${firstError} Please configure accounts in Rental Settings.`,
+                  "error"
+                );
+              } else {
+                addToast(firstError, "error");
+              }
+              return;
+            }
           }
         }
       }
       
-      addToast("Failed to process rental return.", "error");
+      addToast("Failed to process rental return. Please check that all required account mappings are configured in Rental Settings.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -240,20 +264,41 @@ export default function ReturnRentalModal({
             <select
               value={refundAccountId || ""}
               onChange={(e) => setRefundAccountId(Number(e.target.value))}
-              disabled={loadingAccounts}
+              disabled={loadingMappings}
               className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                 errors.account ? "border-red-500" : "border-gray-300"
               }`}
             >
               <option value="">Select refund account</option>
-              {refundAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.number ? `${account.number} - ` : ""}{account.name}
+              {refundAccounts.length === 0 ? (
+                <option value="" disabled>
+                  {loadingMappings ? "Loading accounts..." : "No refund accounts configured. Please configure in Rental Settings."}
                 </option>
-              ))}
+              ) : (
+                refundAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.number ? `${account.number} - ` : ""}{account.name}
+                  </option>
+                ))
+              )}
             </select>
             {errors.account && (
               <p className="mt-1 text-sm text-red-600">{errors.account}</p>
+            )}
+            {refundAccounts.length === 0 && !loadingMappings && (
+              <p className="mt-1 text-xs text-orange-600">
+                No refund accounts configured.{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    router.push("/rental/settings");
+                  }}
+                  className="underline hover:text-orange-700"
+                >
+                  Configure in Rental Settings
+                </button>
+              </p>
             )}
           </div>
 

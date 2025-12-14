@@ -231,6 +231,12 @@ export const navigationData: NavItem[] = [
         icon: Package,
         href: "/rental/returns",
       },
+      {
+        id: "rental-settings",
+        label: "Settings",
+        icon: Settings2,
+        href: "/rental/settings",
+      },
     ],
     isExpanded: false
   }

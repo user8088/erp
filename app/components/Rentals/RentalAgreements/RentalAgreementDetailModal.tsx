@@ -91,6 +91,11 @@ export default function RentalAgreementDetailModal({
               <div>
                 <label className="text-sm font-medium text-gray-500">Security Deposit</label>
                 <p className="text-sm text-gray-900 mt-1">{formatCurrency(agreement.security_deposit_amount)}</p>
+                {agreement.security_deposit_collected_date && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Collected: {formatDate(agreement.security_deposit_collected_date)}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Outstanding Balance</label>
@@ -143,6 +148,7 @@ export default function RentalAgreementDetailModal({
                       <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Amount Due</th>
                       <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Amount Paid</th>
                       <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Payment Date</th>
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Payment Method</th>
                       <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Status</th>
                     </tr>
                   </thead>
@@ -155,6 +161,13 @@ export default function RentalAgreementDetailModal({
                         <td className="px-4 py-2 text-sm text-green-600">{formatCurrency(payment.amount_paid)}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">
                           {payment.payment_date ? formatDate(payment.payment_date) : "—"}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-600">
+                          {payment.payment_method ? (
+                            <span className="capitalize">{payment.payment_method.replace("_", " ")}</span>
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         <td className="px-4 py-2">
                           <PaymentStatusBadge status={payment.payment_status} />

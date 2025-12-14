@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { rentalApi, customersApi, type CreateRentalAgreementPayload } from "../../../lib/apiClient";
 import { useToast } from "../../../components/ui/ToastProvider";
 import { invalidateRentalAgreementsCache } from "../../../components/Rentals/RentalAgreements/useRentalAgreementsList";
+import { useRentalAccountMappings } from "../../../components/Rentals/Shared/useRentalAccountMappings";
+import RentalAccountingStatusBanner from "../../../components/Rentals/Shared/RentalAccountingStatusBanner";
 import type { Customer, RentalItem } from "../../../lib/types";
 
 export default function NewRentalAgreementPage() {
@@ -35,6 +37,11 @@ export default function NewRentalAgreementPage() {
   const [selectedItem, setSelectedItem] = useState<RentalItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [collectSecurityDeposit, setCollectSecurityDeposit] = useState(false);
+  const [securityDepositPaymentAccountId, setSecurityDepositPaymentAccountId] = useState<number | null>(null);
+  
+  const { mappings, getPaymentAccounts, isConfigured } = useRentalAccountMappings();
+  const paymentAccounts = getPaymentAccounts();
 
   // Load customers
   useEffect(() => {
@@ -119,6 +126,15 @@ export default function NewRentalAgreementPage() {
     }
   }, [formData.rental_start_date, formData.rental_period_length, formData.rental_period_type]);
 
+  // Set default payment account when available
+  useEffect(() => {
+    if (mappings.cashAccount && !securityDepositPaymentAccountId) {
+      setSecurityDepositPaymentAccountId(mappings.cashAccount.id);
+    } else if (mappings.bankAccount && !securityDepositPaymentAccountId) {
+      setSecurityDepositPaymentAccountId(mappings.bankAccount.id);
+    }
+  }, [mappings, securityDepositPaymentAccountId]);
+
   const validateStep = (stepNum: number): boolean => {
     const newErrors: Record<string, string> = {};
     
@@ -136,6 +152,15 @@ export default function NewRentalAgreementPage() {
     }
     if (stepNum === 3 && !formData.rental_start_date) {
       newErrors.rental_start_date = "Start date is required.";
+    }
+    if (stepNum === 4 && collectSecurityDeposit && !securityDepositPaymentAccountId) {
+      newErrors.security_deposit_account = "Please select a payment account for security deposit.";
+    }
+    if (stepNum === 4 && formData.security_deposit_amount && !isConfigured.securityDeposits) {
+      newErrors.security_deposit_config = "Security deposits account is not configured. Please configure in Rental Settings.";
+    }
+    if (stepNum === 4 && !isConfigured.ar) {
+      newErrors.ar_config = "Accounts Receivable account is not configured. Please configure in Rental Settings.";
     }
 
     setErrors(newErrors);
@@ -169,6 +194,8 @@ export default function NewRentalAgreementPage() {
         total_rent_amount: parseFloat(formData.total_rent_amount),
         rent_per_period: parseFloat(formData.rent_per_period),
         security_deposit_amount: formData.security_deposit_amount ? parseFloat(formData.security_deposit_amount) : undefined,
+        collect_security_deposit: collectSecurityDeposit,
+        security_deposit_payment_account_id: collectSecurityDeposit && securityDepositPaymentAccountId ? securityDepositPaymentAccountId : undefined,
       };
 
       await rentalApi.createAgreement(payload);
@@ -182,17 +209,38 @@ export default function NewRentalAgreementPage() {
       
       if (e && typeof e === "object" && "data" in e) {
         const errorData = (e as { data: unknown }).data;
-        if (errorData && typeof errorData === "object" && "errors" in errorData) {
-          const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
-          const firstError = Object.values(backendErrors)[0]?.[0];
-          if (firstError) {
-            addToast(firstError, "error");
+        if (errorData && typeof errorData === "object") {
+          if ("message" in errorData && typeof errorData.message === "string") {
+            const message = errorData.message.toLowerCase();
+            if (message.includes("account") || message.includes("mapping") || message.includes("receivable")) {
+              addToast(
+                `${errorData.message} Please configure accounts in Rental Settings.`,
+                "error"
+              );
+              return;
+            }
+            addToast(errorData.message, "error");
             return;
+          }
+          if ("errors" in errorData) {
+            const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
+            const firstError = Object.values(backendErrors)[0]?.[0];
+            if (firstError) {
+              if (firstError.toLowerCase().includes("account") || firstError.toLowerCase().includes("mapping")) {
+                addToast(
+                  `${firstError} Please configure accounts in Rental Settings.`,
+                  "error"
+                );
+              } else {
+                addToast(firstError, "error");
+              }
+              return;
+            }
           }
         }
       }
       
-      addToast("Failed to create rental agreement.", "error");
+      addToast("Failed to create rental agreement. Please check that all required account mappings are configured in Rental Settings.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -209,6 +257,8 @@ export default function NewRentalAgreementPage() {
 
   return (
     <div className="max-w-3xl mx-auto min-h-full py-8">
+      <RentalAccountingStatusBanner />
+      
       <div className="mb-6 pb-4 border-b border-gray-200">
         <h1 className="text-xl font-semibold text-gray-900">Create New Rental Agreement</h1>
         <div className="mt-4 flex items-center gap-2">
@@ -460,6 +510,83 @@ export default function NewRentalAgreementPage() {
                 )}
               </div>
             </div>
+            
+            {/* Security Deposit Collection */}
+            {formData.security_deposit_amount && parseFloat(formData.security_deposit_amount) > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h3 className="text-base font-semibold text-gray-900 mb-4">Security Deposit Collection</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="collect-security-deposit"
+                      checked={collectSecurityDeposit}
+                      onChange={(e) => setCollectSecurityDeposit(e.target.checked)}
+                      className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                    />
+                    <label htmlFor="collect-security-deposit" className="ml-2 text-sm font-medium text-gray-700">
+                      Collect security deposit now
+                    </label>
+                  </div>
+                  
+                  {collectSecurityDeposit && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Payment Account <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={securityDepositPaymentAccountId || ""}
+                        onChange={(e) => setSecurityDepositPaymentAccountId(Number(e.target.value))}
+                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                          errors.security_deposit_account ? "border-red-500" : "border-gray-300"
+                        }`}
+                      >
+                        <option value="">Select payment account</option>
+                        {paymentAccounts.length === 0 ? (
+                          <option value="" disabled>
+                            No payment accounts configured. Please configure in Rental Settings.
+                          </option>
+                        ) : (
+                          paymentAccounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.number ? `${account.number} - ` : ""}{account.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      {errors.security_deposit_account && (
+                        <p className="mt-1 text-sm text-red-600">{errors.security_deposit_account}</p>
+                      )}
+                      {paymentAccounts.length === 0 && (
+                        <p className="mt-1 text-xs text-orange-600">
+                          <a href="/rental/settings" className="underline hover:text-orange-700">
+                            Configure payment accounts in Rental Settings
+                          </a>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  
+                  {errors.security_deposit_config && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                      <p className="text-sm text-red-800">{errors.security_deposit_config}</p>
+                      <a href="/rental/settings" className="text-sm text-red-600 underline mt-1 inline-block">
+                        Go to Rental Settings
+                      </a>
+                    </div>
+                  )}
+                  
+                  {errors.ar_config && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                      <p className="text-sm text-red-800">{errors.ar_config}</p>
+                      <a href="/rental/settings" className="text-sm text-red-600 underline mt-1 inline-block">
+                        Go to Rental Settings
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

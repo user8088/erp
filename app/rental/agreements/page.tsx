@@ -7,6 +7,7 @@ import RentalAgreementsTable from "../../components/Rentals/RentalAgreements/Ren
 import RentalAgreementDetailModal from "../../components/Rentals/RentalAgreements/RentalAgreementDetailModal";
 import RecordPaymentModal from "../../components/Rentals/RentalAgreements/RecordPaymentModal";
 import ReturnRentalModal from "../../components/Rentals/RentalAgreements/ReturnRentalModal";
+import RentalAccountingStatusBanner from "../../components/Rentals/Shared/RentalAccountingStatusBanner";
 import type { RentalAgreement } from "../../lib/types";
 import { useRouter } from "next/navigation";
 
@@ -133,6 +134,8 @@ export default function RentalAgreementsPage() {
           </div>
         </div>
       )}
+
+      <RentalAccountingStatusBanner />
 
       {error && (
         <div className="mb-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">

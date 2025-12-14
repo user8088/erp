@@ -1855,6 +1855,8 @@ export interface CreateRentalAgreementPayload {
   total_rent_amount: number;
   rent_per_period: number;
   security_deposit_amount?: number | null;
+  collect_security_deposit?: boolean;
+  security_deposit_payment_account_id?: number | null;
 }
 
 export interface RecordRentalPaymentPayload {
@@ -1862,6 +1864,7 @@ export interface RecordRentalPaymentPayload {
   amount_paid: number;
   payment_date?: string | null;
   payment_account_id: number;
+  payment_method?: "cash" | "bank_transfer" | "cheque" | "card" | "other" | null;
   notes?: string | null;
 }
 

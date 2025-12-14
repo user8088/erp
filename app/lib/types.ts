@@ -719,7 +719,7 @@ export interface CustomerAdvance {
 
 export interface AccountMapping {
   id: number;
-  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment' | 'staff_advance';
+  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment' | 'staff_advance' | 'rental_cash' | 'rental_bank' | 'rental_ar' | 'rental_assets' | 'rental_security_deposits' | 'rental_income' | 'rental_damage_income';
   account_id: number;
   account?: Account;
   company_id?: number | null;
@@ -807,6 +807,8 @@ export interface RentalAgreement {
   rent_per_period: number;
   security_deposit_amount: number;
   security_deposit_collected: number;
+  security_deposit_payment_account_id?: number | null;
+  security_deposit_collected_date?: string | null;
   payment_schedule: RentalPaymentScheduleItem[];
   rental_status: "active" | "completed" | "returned" | "overdue";
   outstanding_balance: number;
@@ -824,6 +826,7 @@ export interface RentalPayment {
   amount_paid: number;
   payment_date?: string | null;
   payment_status: "paid" | "late" | "unpaid";
+  payment_method?: "cash" | "bank_transfer" | "cheque" | "card" | "other" | null;
   period_identifier: string;
   journal_entry_id?: number | null;
   notes?: string | null;
