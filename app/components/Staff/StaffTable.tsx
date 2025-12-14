@@ -153,8 +153,14 @@ export default function StaffTable({ staff, loading, onDelete, deletingIds = new
                     ? `PKR ${member.monthly_salary.toLocaleString()}`
                     : "—"}
                   <div className="text-xs text-gray-500">
-                    {member.last_paid_on
+                    {member.is_paid_for_current_month
+                      ? member.last_paid_on
+                        ? `Last paid ${member.last_paid_on}`
+                        : "Paid for current month"
+                      : member.last_paid_on
                       ? `Last paid ${member.last_paid_on}`
+                      : member.last_paid_month
+                      ? `Last paid ${member.last_paid_month}`
                       : "Not paid yet"}
                   </div>
                 </td>

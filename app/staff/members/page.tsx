@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import StaffActionBar from "../../components/Staff/StaffActionBar";
 import StaffFilterBar from "../../components/Staff/StaffFilterBar";
 import StaffTable from "../../components/Staff/StaffTable";
@@ -12,6 +13,8 @@ import { useUser } from "../../components/User/UserContext";
 export default function StaffMembersPage() {
   const { addToast } = useToast();
   const { hasAtLeast } = useUser();
+  const pathname = usePathname();
+  const prevPathnameRef = useRef<string | null>(null);
   
   const canManageStaff = hasAtLeast("module.staff", "read-write");
   const canViewStaff = hasAtLeast("module.staff", "read");
@@ -19,6 +22,56 @@ export default function StaffMembersPage() {
   const { staff, loading, error, reload } = useStaffList(filters);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+
+  // Refresh when navigating to this page (ensures data is fresh)
+  useEffect(() => {
+    if (pathname === "/staff/members") {
+      const prevPathname = prevPathnameRef.current;
+      
+      // If we're coming from a detail page, refresh to get updated data
+      if (prevPathname && prevPathname.startsWith("/staff/members/")) {
+        void reload();
+      }
+      
+      prevPathnameRef.current = pathname;
+    }
+  }, [pathname, reload]);
+
+  // Listen for storage events to refresh when salary is paid on detail page
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "staff-salary-paid" && e.newValue) {
+        // Delay reload slightly to ensure backend has updated
+        setTimeout(() => {
+          void reload();
+        }, 500);
+      }
+    };
+
+    // Also check on mount if salary was recently paid
+    const checkForRecentPayment = () => {
+      const paidFlag = localStorage.getItem("staff-salary-paid");
+      if (paidFlag) {
+        const [, timestamp] = paidFlag.split("-");
+        const timeSincePayment = Date.now() - Number(timestamp);
+        // If payment was within last 30 seconds, refresh
+        if (timeSincePayment < 30000) {
+          setTimeout(() => {
+            void reload();
+          }, 500);
+        }
+        // Clear the flag
+        localStorage.removeItem("staff-salary-paid");
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    checkForRecentPayment();
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, [reload]);
 
   return (
     <div className="max-w-full mx-auto min-h-full">

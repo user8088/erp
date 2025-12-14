@@ -130,6 +130,7 @@ import type {
   StaffSalaryStructure,
   AttendanceEntry,
   StaffSalaryRun,
+  StaffAdvance,
   User,
   Vehicle,
   VehicleProfitabilityStats,
@@ -321,6 +322,7 @@ export const staffApi = {
     override_deductions?: Array<{ label: string; amount: number }>;
     payable_days?: number;
     advance_adjusted?: number;
+    deduct_advances?: boolean;
     paid_on?: string;
     notes?: string;
     payment_metadata?: Record<string, unknown>;
@@ -362,6 +364,40 @@ export const staffApi = {
       };
       message: string;
     }>(`/staff/${staffId}/reverse-salary`, payload);
+  },
+  listAdvances(staffId: string | number, params?: {
+    transaction_type?: "given" | "deducted" | "refunded";
+    from_date?: string;
+    to_date?: string;
+    page?: number;
+    per_page?: number;
+  }): Promise<Paginated<StaffAdvance>> {
+    const queryParams = new URLSearchParams();
+    if (params?.transaction_type) queryParams.append("transaction_type", params.transaction_type);
+    if (params?.from_date) queryParams.append("from_date", params.from_date);
+    if (params?.to_date) queryParams.append("to_date", params.to_date);
+    if (params?.page) queryParams.append("page", String(params.page));
+    if (params?.per_page) queryParams.append("per_page", String(params.per_page));
+
+    const queryString = queryParams.toString();
+    const url = `/staff/${staffId}/advances${queryString ? `?${queryString}` : ""}`;
+    
+    return apiClient.get<Paginated<StaffAdvance>>(url);
+  },
+
+  getAdvanceBalance(staffId: string | number): Promise<{ staff_id: number; balance: number }> {
+    return apiClient.get<{ staff_id: number; balance: number }>(`/staff/${staffId}/advances/balance`);
+  },
+
+  giveAdvance(staffId: string | number, payload: {
+    amount: number;
+    transaction_date?: string; // YYYY-MM-DD format (default: today)
+    notes?: string | null;
+  }) {
+    return apiClient.post<{
+      data: StaffAdvance;
+      message: string;
+    }>(`/staff/${staffId}/advances`, payload);
   },
 };
 
@@ -445,7 +481,7 @@ export const attendanceApi = {
   bulkUpsert(payload: { date: string; entries: Array<Omit<AttendanceEntry, "id" | "date" | "name" | "designation"> & { note?: string }> }) {
     return apiClient.post<{ data: AttendanceEntry[] }>("/attendance/bulk", payload);
   },
-  update(id: string | number, payload: Partial<Pick<AttendanceEntry, "status" | "note">>) {
+  update(id: string | number, payload: Partial<Pick<AttendanceEntry, "status" | "note"> & { date?: string }>) {
     return apiClient.patch<{ attendance: AttendanceEntry }>(`/attendance/${id}`, payload);
   },
   markAll(payload: {
@@ -1508,7 +1544,7 @@ export interface GetAccountMappingsParams {
 }
 
 export interface CreateAccountMappingPayload {
-  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment';
+  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment' | 'staff_advance';
   account_id: number;
   company_id?: number | null;
 }

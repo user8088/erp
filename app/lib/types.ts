@@ -60,6 +60,9 @@ export interface StaffMember {
   monthly_salary?: number | null;
   next_pay_date?: string | null;
   last_paid_on?: string | null;
+  last_paid_month?: string | null;
+  is_paid_for_current_month?: boolean;
+  advance_balance?: number;
   is_erp_user?: boolean;
   erp_user_id?: number | null;
   user?: {
@@ -85,11 +88,34 @@ export interface StaffSalary {
 export interface StaffAdvance {
   id: string | number;
   staff_id: string | number;
+  salary_run_id: string | number | null;
+  invoice_id: string | number | null;
+  journal_entry_id: string | number | null;
   amount: number;
   balance: number;
-  status: "open" | "settled";
-  issued_on: string;
-  remarks?: string | null;
+  transaction_type: "given" | "deducted" | "refunded";
+  reference: string | null;
+  transaction_date: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  staff?: {
+    id: string | number;
+    code?: string;
+    full_name: string;
+  };
+  invoice?: {
+    id: string | number;
+    invoice_number: string;
+  } | null;
+  salary_run?: {
+    id: string | number;
+    month: string;
+  } | null;
+  journal_entry?: {
+    id: string | number;
+    reference_number: string;
+  } | null;
 }
 
 export type PayFrequency = "monthly" | "biweekly" | "weekly";
@@ -691,7 +717,7 @@ export interface CustomerAdvance {
 
 export interface AccountMapping {
   id: number;
-  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment';
+  mapping_type: 'pos_cash' | 'pos_bank' | 'pos_ar' | 'pos_advance' | 'pos_sales_revenue' | 'pos_delivery_revenue' | 'pos_discount' | 'staff_salary_expense' | 'staff_salary_payment' | 'staff_advance';
   account_id: number;
   account?: Account;
   company_id?: number | null;

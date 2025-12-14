@@ -76,7 +76,8 @@ export default function AttendancePage() {
             designation: attendanceEntry.designation || staff.designation || null,
           };
         } else {
-          // Staff has no attendance record - create placeholder entry
+          // Staff has no attendance record - create placeholder entry with no status
+          // Don't default to "present" as that's misleading - show as unmarked
           return {
             id: `staff-${staff.id}`,
             person_id: staff.id,
@@ -84,7 +85,7 @@ export default function AttendancePage() {
             name: staff.full_name,
             designation: staff.designation,
             date: targetDate,
-            status: "present" as AttendanceStatus,
+            status: "present" as AttendanceStatus, // Keep for type safety, but UI will treat as unmarked
             note: "",
           };
         }
@@ -146,12 +147,14 @@ export default function AttendancePage() {
       }
 
       // Use composite ID format directly - API supports it and will auto-create if needed
+      // IMPORTANT: Always pass the date parameter to ensure we're marking the correct date
       const compositeId = entry.person_type === "staff" 
         ? `staff-${entry.person_id}` 
         : `user-${entry.person_id}`;
       
       await attendanceApi.update(compositeId, { 
-        status
+        status,
+        date: entry.date || date // Use entry date if available, otherwise use current selected date
       });
       await load(date);
     } catch (e) {
@@ -163,12 +166,14 @@ export default function AttendancePage() {
   const updateNote = async (entry: AttendanceEntry, note: string) => {
     try {
       // Use composite ID format directly - API supports it and will auto-create if needed
+      // IMPORTANT: Always pass the date parameter to ensure we're updating the correct date
       const compositeId = entry.person_type === "staff" 
         ? `staff-${entry.person_id}` 
         : `user-${entry.person_id}`;
       
       await attendanceApi.update(compositeId, { 
-        note
+        note,
+        date: entry.date || date // Use entry date if available, otherwise use current selected date
       });
       // Optimistically update the UI
       setEntries((prev) =>
@@ -184,15 +189,18 @@ export default function AttendancePage() {
 
   const bulkSet = async (status: AttendanceStatus) => {
     try {
+      // Only mark attendance for active staff members
       await attendanceApi.markAll({
         date,
         status,
         person_type: "staff",
+        staff_status: "active", // Only mark active staff members
       });
+      addToast(`All active staff marked as ${statusLabels[status]}`, "success");
       await load(date);
     } catch (e) {
       console.error(e);
-      addToast("Failed to bulk update.", "error");
+      addToast("Failed to bulk update attendance.", "error");
     }
   };
 
@@ -297,7 +305,9 @@ export default function AttendancePage() {
                     {(["present", "absent", "paid_leave", "unpaid_leave"] as AttendanceStatus[]).map(
                       (status) => {
                         // Check if this is a placeholder entry (no real attendance record yet)
-                        const isPlaceholder = typeof entry.id === "string" && entry.id.startsWith("staff-");
+                        // Placeholder entries have composite IDs like "staff-{id}" (string) while real entries have numeric IDs
+                        const isPlaceholder = typeof entry.id === "string" && entry.id.startsWith("staff-") && !entry.id.match(/^\d+$/);
+                        // Only mark as selected if it's NOT a placeholder and the status matches
                         const isSelected = !isPlaceholder && entry.status === status;
                         return (
                           <button
@@ -305,12 +315,14 @@ export default function AttendancePage() {
                             type="button"
                             onClick={() => canManageAttendance && updateStatus(entry, status)}
                             disabled={!canManageAttendance}
-                            className={`px-3 py-1.5 text-xs rounded-full border ${
+                            className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
                               isSelected
-                                ? `${statusStyles[status]} border-transparent`
-                                : "border-gray-300 text-gray-700 bg-white"
-                            } ${!canManageAttendance ? "opacity-50 cursor-not-allowed" : ""}`}
-                            title={!canManageAttendance ? "You don't have permission to manage attendance" : ""}
+                                ? `${statusStyles[status]} border-transparent font-medium`
+                                : isPlaceholder
+                                ? "border-gray-200 text-gray-400 bg-gray-50 hover:border-gray-300 hover:text-gray-500"
+                                : "border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+                            } ${!canManageAttendance ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                            title={!canManageAttendance ? "You don't have permission to manage attendance" : isPlaceholder ? "Click to mark attendance" : ""}
                           >
                             {statusLabels[status]}
                           </button>

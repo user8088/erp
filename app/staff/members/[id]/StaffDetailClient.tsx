@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import StaffDetailHeader from "../../../components/StaffDetail/StaffDetailHeader";
 import StaffDetailContent from "../../../components/StaffDetail/StaffDetailContent";
 import StaffDetailSidebar from "../../../components/StaffDetail/StaffDetailSidebar";
@@ -26,7 +26,8 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
   const canPaySalary = hasAtLeast("staff.salary.pay", "read-write");
   const [loading, setLoading] = useState(true);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [saving] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveVersion, setSaveVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const [staff, setStaff] = useState<StaffMember | null>(null);
@@ -38,9 +39,8 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
     null
   );
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-
-  // Advances backend not available yet; keep empty to avoid dummy rows.
-  const advances: StaffAdvance[] = [];
+  const [advances, setAdvances] = useState<StaffAdvance[]>([]);
+  const [reversing, setReversing] = useState(false);
 
   const currentMonthRange = useMemo(() => {
     const now = new Date();
@@ -51,6 +51,16 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
     const end = `${year}-${month}-${String(endDate).padStart(2, "0")}`;
     return { start, end };
   }, []);
+
+  const loadAdvances = useCallback(async () => {
+    try {
+      const advancesRes = await staffApi.listAdvances(id, { per_page: 100 });
+      setAdvances(advancesRes.data ?? []);
+    } catch (e) {
+      console.error("Failed to load advances:", e);
+      setAdvances([]);
+    }
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +91,11 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
           setAttendance(attendanceRes.data ?? []);
           setAttendanceSummary(attendanceRes.summary ?? null);
         }
+
+        // Load advances
+        if (!cancelled) {
+          await loadAdvances();
+        }
       } catch (e) {
         console.error(e);
         if (!cancelled) {
@@ -101,7 +116,30 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
     return () => {
       cancelled = true;
     };
-  }, [id, currentMonthRange]);
+  }, [id, currentMonthRange, loadAdvances]);
+
+  // Reload advances when component becomes visible (e.g., returning from advance creation)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && staff) {
+        loadAdvances();
+      }
+    };
+    
+    const handleFocus = () => {
+      if (staff) {
+        loadAdvances();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [id, staff, loadAdvances]);
 
   useEffect(() => {
     if (!staff) return;
@@ -154,37 +192,69 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
         throw new Error(`Cannot pay salary: Payment account has insufficient balance (PKR ${accountBalance.toLocaleString()}). Estimated required: PKR ${estimatedSalaryAmount.toLocaleString()}.`);
       }
       
+      // Check if staff has advance balance
+      const advanceBalance = staff.advance_balance || 0;
+      const shouldDeductAdvances = advanceBalance > 0;
+      
       // Pay salary directly using the new direct payment API
       await staffApi.paySalary(staff.id, {
         month,
         payable_days: staff.monthly_salary ? DEFAULT_PAYABLE_DAYS : undefined,
-        advance_adjusted: 0,
+        deduct_advances: shouldDeductAdvances, // Automatically deduct if advance balance exists
         paid_on: new Date().toISOString().slice(0, 10),
       });
       
       addToast("Salary paid successfully.", "success");
       
-      // Reload staff data immediately
-      const updatedStaff = await staffApi.get(id);
+      // Notify the list page to refresh when user navigates back
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("staff-salary-paid", `${staff.id}-${Date.now()}`);
+      }
+      
+      // Reload staff data with retry to ensure payment status is updated
+      // Backend automatically updates last_paid_on, last_paid_month, and is_paid_for_current_month
+      let staffRetries = 0;
+      const maxStaffRetries = 5;
+      let updatedStaff = await staffApi.get(id);
+      
+      // Retry if payment status fields are not yet updated (backend might need a moment)
+      // Check for either last_paid_on or is_paid_for_current_month to confirm update
+      while (
+        !updatedStaff?.last_paid_on && 
+        !updatedStaff?.is_paid_for_current_month && 
+        !updatedStaff?.last_paid_month &&
+        staffRetries < maxStaffRetries
+      ) {
+        await new Promise(resolve => setTimeout(resolve, 300)); // Wait 300ms
+        updatedStaff = await staffApi.get(id);
+        if (updatedStaff?.last_paid_on || updatedStaff?.is_paid_for_current_month || updatedStaff?.last_paid_month) {
+          break;
+        }
+        staffRetries++;
+      }
+      
       setStaff(updatedStaff || null);
+
+      // Backend automatically calculates and updates next_pay_date (1 month after payment date)
+      // No need to manually calculate or update it - it's already done by the backend
       
       // Wait a brief moment for the backend to process, then fetch salary runs
       // Retry a few times in case the salary run isn't immediately available
       let updatedRuns = await salaryRunsApi.list(id, { per_page: 20 });
-      let retries = 0;
-      const maxRetries = 3;
+      let runsRetries = 0;
+      const maxRunsRetries = 3;
       
       // Check if the payment month appears in the runs
       const hasPaymentMonth = updatedRuns.data?.some(run => run.month === month);
       
       // If not found, retry a few times with small delays
-      while (!hasPaymentMonth && retries < maxRetries) {
+      while (!hasPaymentMonth && runsRetries < maxRunsRetries) {
         await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
         updatedRuns = await salaryRunsApi.list(id, { per_page: 20 });
         if (updatedRuns.data?.some(run => run.month === month)) {
           break;
         }
-        retries++;
+        runsRetries++;
       }
       
       setRuns(updatedRuns.data ?? []);
@@ -207,6 +277,52 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
       addToast(errorMessage, "error");
     } finally {
       setPaying(false);
+    }
+  };
+
+  const handleReverseSalary = async () => {
+    if (!staff) return;
+    
+    const lastPaidMonth = staff.last_paid_month;
+    
+    if (!lastPaidMonth) {
+      addToast("No salary payment found to reverse.", "error");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to reverse the salary payment for ${lastPaidMonth}? This will undo the payment and allow you to pay again with advance deduction.`)) {
+      return;
+    }
+
+    setReversing(true);
+    try {
+      await staffApi.reverseSalary(staff.id, {
+        month: lastPaidMonth,
+        reason: "Reversing to test advance deduction",
+      });
+
+      addToast("Salary payment reversed successfully. You can now pay again with advance deduction.", "success");
+
+      // Reload staff data
+      const updatedStaff = await staffApi.get(id);
+      setStaff(updatedStaff || null);
+
+      // Reload salary runs
+      const updatedRuns = await salaryRunsApi.list(id, { per_page: 20 });
+      setRuns(updatedRuns.data ?? []);
+
+      // Reload advances to see updated balance
+      await loadAdvances();
+    } catch (e) {
+      console.error("Salary reversal error:", e);
+      const errorMessage = e instanceof ApiError
+        ? e.message
+        : e && typeof e === "object" && "message" in e 
+          ? String((e as { message: unknown }).message)
+          : "Failed to reverse salary payment. Check console for details.";
+      addToast(errorMessage, "error");
+    } finally {
+      setReversing(false);
     }
   };
 
@@ -261,6 +377,7 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
         staff={staff}
         saving={saving}
         onToggleSidebar={() => setShowSidebar((prev) => !prev)}
+        onSave={() => setSaveVersion((v) => v + 1)}
       />
       <div className="flex gap-6 mt-4">
         {showSidebar && <StaffDetailSidebar />}
@@ -280,6 +397,15 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
             onPaySalary={canPaySalary ? handlePaySalary : undefined}
             paying={paying}
             canPaySalary={canPaySalary}
+            reversing={reversing}
+            onReverseSalary={canPaySalary ? handleReverseSalary : undefined}
+            saveSignal={saveVersion}
+            onStaffUpdated={(updatedStaff) => {
+              if (updatedStaff && updatedStaff.id) {
+                setStaff(updatedStaff);
+              }
+            }}
+            onSavingChange={setSaving}
           />
         </div>
       </div>

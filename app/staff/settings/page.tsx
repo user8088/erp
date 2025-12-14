@@ -22,6 +22,13 @@ const MAPPING_TYPES = [
     required: true,
     accountType: 'asset'
   },
+  { 
+    type: 'staff_advance', 
+    label: 'Staff Advance Account', 
+    description: 'Account to debit when advance is given (Asset account - tracks money owed by staff)',
+    required: true,
+    accountType: 'asset'
+  },
 ] as const;
 
 export default function StaffSettingsPage() {
@@ -132,7 +139,7 @@ export default function StaffSettingsPage() {
         const accountId = mappings[mappingType.type];
         if (accountId) {
           await accountMappingsApi.createAccountMapping({
-            mapping_type: mappingType.type as 'staff_salary_expense' | 'staff_salary_payment',
+            mapping_type: mappingType.type as 'staff_salary_expense' | 'staff_salary_payment' | 'staff_advance',
             account_id: accountId,
             company_id: 1,
           });

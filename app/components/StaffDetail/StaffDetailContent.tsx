@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Calendar,
   Receipt,
@@ -31,6 +32,11 @@ interface StaffDetailContentProps {
   onPaySalary?: () => Promise<void> | void;
   paying?: boolean;
   canPaySalary?: boolean;
+  reversing?: boolean;
+  onReverseSalary?: () => void;
+  saveSignal?: number;
+  onStaffUpdated?: (staff: StaffMember) => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 export default function StaffDetailContent({
@@ -43,7 +49,13 @@ export default function StaffDetailContent({
   onPaySalary,
   paying,
   canPaySalary = false,
+  reversing,
+  onReverseSalary,
+  saveSignal,
+  onStaffUpdated,
+  onSavingChange,
 }: StaffDetailContentProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("staff-details");
   const { addToast } = useToast();
 
@@ -65,7 +77,12 @@ export default function StaffDetailContent({
       <div className="mt-4">
         {activeTab === "staff-details" && (
           <>
-            <StaffDetailsForm staff={staff} />
+            <StaffDetailsForm 
+              staff={staff}
+              saveSignal={saveSignal}
+              onStaffUpdated={onStaffUpdated}
+              onSavingChange={onSavingChange}
+            />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
               <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-6">
                 <div className="flex items-start justify-between">
@@ -160,7 +177,7 @@ export default function StaffDetailContent({
 
         {activeTab === "salary" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <SummaryCard
                 title="Monthly Salary"
                 value={
@@ -178,15 +195,25 @@ export default function StaffDetailContent({
                 icon={<Calendar className="w-8 h-8 text-blue-400" />}
               />
               <SummaryCard
-              title="Advance Adjusted"
-              value={
-                latestAdvanceAdjustment?.advance_adjusted !== undefined &&
-                latestAdvanceAdjustment?.advance_adjusted !== null
-                  ? `PKR ${latestAdvanceAdjustment.advance_adjusted.toLocaleString()}`
-                  : "—"
-              }
-              subtitle="Last paid run advance adjustment"
+                title="Current Advance Balance"
+                value={
+                  staff.advance_balance !== undefined && staff.advance_balance !== null
+                    ? `PKR ${staff.advance_balance.toLocaleString()}`
+                    : "PKR 0"
+                }
+                subtitle="Total outstanding advance amount"
                 icon={<HandCoins className="w-8 h-8 text-amber-400" />}
+              />
+              <SummaryCard
+                title="Advance Adjusted"
+                value={
+                  latestAdvanceAdjustment?.advance_adjusted !== undefined &&
+                  latestAdvanceAdjustment?.advance_adjusted !== null
+                    ? `PKR ${latestAdvanceAdjustment.advance_adjusted.toLocaleString()}`
+                    : "PKR 0"
+                }
+                subtitle="Last paid run advance adjustment"
+                icon={<HandCoins className="w-8 h-8 text-purple-400" />}
               />
             </div>
 
@@ -215,13 +242,26 @@ export default function StaffDetailContent({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                    Schedule Early Pay
-                  </button>
+                  {staff.is_paid_for_current_month && canPaySalary && onReverseSalary ? (
+                    <button
+                      className="px-3 py-2 border border-red-300 text-red-700 rounded-md text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-60"
+                      disabled={reversing}
+                      onClick={async () => {
+                        try {
+                          await onReverseSalary();
+                        } catch (e) {
+                          console.error(e);
+                          addToast("Failed to reverse salary.", "error");
+                        }
+                      }}
+                    >
+                      {reversing ? "Reversing..." : "Reverse Salary"}
+                    </button>
+                  ) : null}
                   {canPaySalary && onPaySalary ? (
                     <button
                       className="px-4 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-60"
-                      disabled={paying}
+                      disabled={paying || reversing}
                       onClick={async () => {
                         try {
                           await onPaySalary();
@@ -231,7 +271,9 @@ export default function StaffDetailContent({
                         }
                       }}
                     >
-                      {paying ? "Paying..." : "Pay Salary"}
+                      {paying ? "Paying..." : staff.advance_balance && staff.advance_balance > 0 
+                        ? `Pay Salary (Deduct PKR ${staff.advance_balance.toLocaleString()} advance)`
+                        : "Pay Salary"}
                     </button>
                   ) : (
                     <span className="text-xs text-gray-500" title="You don't have permission to pay salaries">
@@ -303,7 +345,7 @@ export default function StaffDetailContent({
                             )}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700">
-                            {salary.advance_adjusted
+                            {salary.advance_adjusted !== undefined && salary.advance_adjusted !== null
                               ? `PKR ${salary.advance_adjusted.toLocaleString()}`
                               : "—"}
                           </td>
@@ -328,7 +370,10 @@ export default function StaffDetailContent({
                   Issue advances and let them auto-adjust in salary.
                 </p>
               </div>
-              <button className="px-4 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">
+              <button
+                onClick={() => router.push(`/staff/advance/new?staff_id=${staff.id}`)}
+                className="px-4 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors"
+              >
                 Issue Advance
               </button>
             </div>
@@ -354,33 +399,57 @@ export default function StaffDetailContent({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {advances.map((advance) => (
-                    <tr key={advance.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {advance.issued_on}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
-                        PKR {advance.amount.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
-                        PKR {advance.balance.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            advance.status === "open"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-green-100 text-green-700"
-                          }`}
-                        >
-                          {advance.status === "open" ? "Open" : "Settled"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {advance.remarks ?? "—"}
+                  {advances.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                        No advances found.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    advances.map((advance) => {
+                      const isOpen = advance.balance > 0;
+                      const statusLabel = isOpen ? "Open" : "Settled";
+                      const transactionTypeLabel = 
+                        advance.transaction_type === "given" ? "Given" :
+                        advance.transaction_type === "deducted" ? "Deducted" :
+                        "Refunded";
+                      
+                      return (
+                        <tr key={advance.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {new Date(advance.transaction_date).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            <div className="flex flex-col">
+                              <span className="font-medium">
+                                PKR {Math.abs(advance.amount).toLocaleString()}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {transactionTypeLabel}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            PKR {advance.balance.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                isOpen
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-green-100 text-green-700"
+                              }`}
+                            >
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {advance.notes ?? "—"}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
