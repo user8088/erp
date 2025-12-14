@@ -65,6 +65,8 @@ export interface StaffMember {
   advance_balance?: number;
   is_erp_user?: boolean;
   erp_user_id?: number | null;
+  tags?: string[];
+  metadata?: Record<string, unknown> | null;
   user?: {
     id: number;
     email?: string | null;

@@ -178,18 +178,21 @@ export default function StaffTable({ staff, loading, onDelete, deletingIds = new
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                  {member.is_erp_user ? (
+                  {member.is_erp_user || member.erp_user_id || member.user?.id ? (
                     <div className="flex items-center gap-2">
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-100">
                         <ShieldCheck className="w-3 h-3" />
                         ERP User
                       </span>
-                      {member.erp_user_id && (
+                      {(member.erp_user_id || member.user?.id) && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            router.push(`/staff/users/${member.erp_user_id}`);
+                            const userId = member.erp_user_id || member.user?.id;
+                            if (userId) {
+                              router.push(`/staff/users/${userId}`);
+                            }
                           }}
                           className="text-xs text-orange-600 hover:text-orange-700 inline-flex items-center gap-1"
                         >

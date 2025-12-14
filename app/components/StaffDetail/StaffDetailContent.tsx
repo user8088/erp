@@ -14,6 +14,7 @@ import {
 import StaffDetailTabs from "./StaffDetailTabs";
 import StaffDetailsForm from "./StaffDetailsForm";
 import StaffMoreInformation from "./StaffMoreInformation";
+import StaffSettingsTab from "./StaffSettingsTab";
 import type {
   AttendanceEntry,
   StaffAdvance,
@@ -540,15 +541,11 @@ export default function StaffDetailContent({
         )}
 
         {activeTab === "settings" && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-2">
-              Settings
-            </h2>
-            <p className="text-sm text-gray-500">
-              Configure salary cycle, allowances, deductions, and permissions
-              from here.
-            </p>
-          </div>
+          <StaffSettingsTab
+            staff={staff}
+            onStaffUpdated={onStaffUpdated}
+            onSavingChange={onSavingChange}
+          />
         )}
       </div>
     </div>

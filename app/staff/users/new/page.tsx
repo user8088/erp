@@ -55,7 +55,7 @@ export default function NewUserPage() {
     const loadRoles = async () => {
       setLoadingRoles(true);
       try {
-        const res = await apiClient.get<Paginated<Role>>("/roles", { per_page: 100 });
+        const res = await apiClient.get<Paginated<Role>>("/roles?per_page=100");
         setRoles(res.data || []);
       } catch (e) {
         console.error("Failed to load roles:", e);
