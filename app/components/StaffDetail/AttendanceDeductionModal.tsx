@@ -7,11 +7,11 @@ import type { StaffMember, AttendanceEntry } from "../../lib/types";
 interface AttendanceDeductionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (manualDeduction: number | null) => void;
+  onConfirm: (month: string, manualDeduction: number | null) => void;
   staff: StaffMember;
   attendanceEntries: AttendanceEntry[];
   attendanceSummary: Record<string, number> | null;
-  month: string; // YYYY-MM format
+  initialMonth?: string; // YYYY-MM format, defaults to current month
   monthlySalary: number;
   payableDays?: number;
 }
@@ -23,17 +23,20 @@ export default function AttendanceDeductionModal({
   staff,
   attendanceEntries,
   attendanceSummary,
-  month,
+  initialMonth,
   monthlySalary,
   payableDays = 26,
 }: AttendanceDeductionModalProps) {
+  const [selectedMonth, setSelectedMonth] = useState(
+    initialMonth || new Date().toISOString().slice(0, 7)
+  );
   const [useManualDeduction, setUseManualDeduction] = useState(false);
   const [manualDeduction, setManualDeduction] = useState("");
 
-  // Calculate attendance breakdown for the month
+  // Calculate attendance breakdown for the selected month
   const attendanceBreakdown = useMemo(() => {
     const monthEntries = attendanceEntries.filter(
-      (entry) => entry.date.startsWith(month)
+      (entry) => entry.date.startsWith(selectedMonth)
     );
 
     const absentDays = monthEntries.filter((e) => e.status === "absent").length;
@@ -54,7 +57,7 @@ export default function AttendanceDeductionModal({
       unpaid_leave: unpaidLeaveDays,
       total: monthEntries.length,
     };
-  }, [attendanceEntries, month]);
+  }, [attendanceEntries, selectedMonth]);
 
   // Use summary if available, otherwise use calculated breakdown
   const effectiveSummary = attendanceSummary || {
@@ -82,18 +85,44 @@ export default function AttendanceDeductionModal({
 
   useEffect(() => {
     if (isOpen) {
+      const defaultMonth = initialMonth || new Date().toISOString().slice(0, 7);
+      if (selectedMonth !== defaultMonth) {
+        setSelectedMonth(defaultMonth);
+      }
       setUseManualDeduction(false);
       setManualDeduction("");
     }
-  }, [isOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialMonth]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const deduction = useManualDeduction
       ? (manualDeduction ? Number(manualDeduction) : null)
       : null;
-    onConfirm(deduction);
+    onConfirm(selectedMonth, deduction);
   };
+
+  // Format month for display
+  const formatMonth = (monthStr: string) => {
+    const [year, month] = monthStr.split("-");
+    const date = new Date(Number(year), Number(month) - 1, 1);
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  };
+
+  // Check if month is in the past, current, or future
+  const getMonthStatus = (monthStr: string) => {
+    const [year, month] = monthStr.split("-");
+    const selectedDate = new Date(Number(year), Number(month) - 1, 1);
+    const currentDate = new Date();
+    const currentMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    
+    if (selectedDate < currentMonth) return "past";
+    if (selectedDate.getTime() === currentMonth.getTime()) return "current";
+    return "future";
+  };
+
+  const monthStatus = getMonthStatus(selectedMonth);
 
   if (!isOpen) return null;
 
@@ -108,10 +137,10 @@ export default function AttendanceDeductionModal({
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
-                Adjust Attendance Deduction
+                Pay Salary
               </h2>
               <p className="text-sm text-gray-500">
-                {staff.full_name} - {month}
+                {staff.full_name}
               </p>
             </div>
           </div>
@@ -125,6 +154,43 @@ export default function AttendanceDeductionModal({
 
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Month Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Salary Month <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-gray-600">
+                Selected: <strong>{formatMonth(selectedMonth)}</strong>
+              </span>
+              {monthStatus === "past" && (
+                <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
+                  Backdated Payment
+                </span>
+              )}
+              {monthStatus === "current" && (
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                  Current Month
+                </span>
+              )}
+              {monthStatus === "future" && (
+                <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                  Advance Payment
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              You can pay salary for any month - past (backdated), current, or future (advance).
+            </p>
+          </div>
+
           {/* Attendance Summary */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">

@@ -167,14 +167,13 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
     setShowDeductionModal(true);
   };
 
-  const handleDeductionModalConfirm = async (manualAttendanceDeduction: number | null) => {
+  const handleDeductionModalConfirm = async (month: string, manualAttendanceDeduction: number | null) => {
     if (!staff) return;
     
     setPaying(true);
     setShowDeductionModal(false);
     
     try {
-      const month = new Date().toISOString().slice(0, 7);
       
       // Get the payment account mapping
       const mappingsResponse = await accountMappingsApi.getAccountMappings({
@@ -435,7 +434,7 @@ export default function StaffDetailClient({ id }: StaffDetailClientProps) {
           staff={staff}
           attendanceEntries={attendance}
           attendanceSummary={attendanceSummary}
-          month={new Date().toISOString().slice(0, 7)}
+          initialMonth={new Date().toISOString().slice(0, 7)}
           monthlySalary={staff.monthly_salary || 0}
           payableDays={DEFAULT_PAYABLE_DAYS}
         />

@@ -1024,7 +1024,7 @@ await updateStaff(staffId, {
 
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
-| `month` | string | Yes | Date format: Y-m |
+| `month` | string | Yes | Date format: Y-m. Can be any month - past, current, or future (e.g., "2024-06", "2025-12", "2026-03") |
 | `salary_structure_id` | integer | No | Must exist in salary_structures table |
 | `override_basic` | numeric | No | Must be >= 0 |
 | `override_allowances` | array | No | Array of allowance objects |
@@ -1208,6 +1208,8 @@ await updateStaff(staffId, {
 
 **Description:** Pay salary directly without creating a salary run. This is the **recommended approach** as it simplifies the payment flow. Calculates salary, creates journal entries, and records payment in one step.
 
+**Note:** You can pay salary for **any month** - past months (for backdated payments), current month, or future months (for advance payments). Simply specify the desired month in `Y-m` format (e.g., "2025-11" for November 2025, "2024-06" for June 2024, "2026-03" for March 2026).
+
 **Authentication:** Required (`auth:sanctum`)
 
 **Authorization:** Requires `module:module.staff,read-write` and `permission:staff.salary.pay,read-write` permissions
@@ -1309,11 +1311,43 @@ await updateStaff(staffId, {
 }
 ```
 
+**Paying Salary for Different Months:**
+
+You can pay salary for **any month** regardless of when the staff member joined or what the current date is:
+
+- **Past Months (Backdated Payments):** Pay for months that have already passed. Example: If it's December 2025, you can pay for November 2025, October 2025, or any previous month.
+- **Current Month:** Pay for the current month (most common use case).
+- **Future Months (Advance Payments):** Pay for months that haven't occurred yet. Example: Pay January 2026 salary in advance.
+
+**Examples:**
+```json
+// Pay for last month (backdated)
+{
+  "month": "2025-11",
+  "override_basic": 30000,
+  "paid_on": "2025-12-15"
+}
+
+// Pay for current month
+{
+  "month": "2025-12",
+  "override_basic": 30000,
+  "paid_on": "2025-12-31"
+}
+
+// Pay for next month (advance)
+{
+  "month": "2026-01",
+  "override_basic": 30000,
+  "paid_on": "2025-12-25"
+}
+```
+
 **Note:** After a successful payment, the staff member's `last_paid_on`, `last_paid_month`, `is_paid_for_current_month`, and `next_pay_date` fields are automatically updated. `next_pay_date` is calculated as 1 month after the payment date. You can fetch the updated staff information using `GET /api/staff/{staffId}` to see the updated payment status.
 
 **Behavior:**
-- Calculates salary based on basic, allowances, and deductions
-- Automatically fetches attendance for the month
+- Calculates salary based on basic, allowances, and deductions for the specified month
+- Automatically fetches attendance records for the specified month (if available)
 - **Attendance Deduction Calculation:**
   - **Automatic (default)**: If `manual_attendance_deduction` is not provided, the system calculates:
     - `Per Day Rate = Gross Salary ÷ Payable Days`

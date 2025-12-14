@@ -166,15 +166,6 @@ export default function StaffDetailContent({
           </>
         )}
 
-        {activeTab === "roles-permissions" && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <p className="text-sm text-gray-600">
-              Roles & permissions mirror the ERP user experience. Map staff to ERP user
-              roles to manage access.
-            </p>
-          </div>
-        )}
-
         {activeTab === "salary" && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -311,10 +302,18 @@ export default function StaffDetailContent({
                         </td>
                       </tr>
                     ) : (
-                      salaryHistory.map((salary) => (
+                      salaryHistory.map((salary) => {
+                        // Format month from "2025-12" to "December 2025"
+                        const formatMonth = (monthStr: string) => {
+                          const [year, month] = monthStr.split("-");
+                          const date = new Date(Number(year), Number(month) - 1, 1);
+                          return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                        };
+
+                        return (
                         <tr key={salary.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {salary.month}
+                            {formatMonth(salary.month)}
                           </td>
                           <td className="px-4 py-3">
                             <StatusPill status={salary.status} />
@@ -350,7 +349,8 @@ export default function StaffDetailContent({
                               : "—"}
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

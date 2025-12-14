@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiClient, staffApi, ApiError } from "../../../lib/apiClient";
-import type { User } from "../../../lib/types";
+import type { User, Role, Paginated } from "../../../lib/types";
 import { useToast } from "../../../components/ui/ToastProvider";
 
 export default function NewUserPage() {
@@ -25,6 +25,9 @@ export default function NewUserPage() {
   });
   const [saving, setSaving] = useState(false);
   const [staffInfo, setStaffInfo] = useState<{ name: string; email?: string } | null>(null);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
+  const [loadingRoles, setLoadingRoles] = useState(false);
 
   useEffect(() => {
     if (staffId) {
@@ -47,6 +50,23 @@ export default function NewUserPage() {
     }
   }, [staffId]);
 
+  // Load available roles
+  useEffect(() => {
+    const loadRoles = async () => {
+      setLoadingRoles(true);
+      try {
+        const res = await apiClient.get<Paginated<Role>>("/roles", { per_page: 100 });
+        setRoles(res.data || []);
+      } catch (e) {
+        console.error("Failed to load roles:", e);
+        addToast("Failed to load roles.", "error");
+      } finally {
+        setLoadingRoles(false);
+      }
+    };
+    void loadRoles();
+  }, [addToast]);
+
   const validateEmail = (email: string): boolean => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   };
@@ -57,6 +77,11 @@ export default function NewUserPage() {
     // Validation
     if (!formData.email || !formData.firstName || !formData.password) {
       addToast("Email, First Name and Password are required.", "error");
+      return;
+    }
+
+    if (staffId && selectedRoleIds.length === 0) {
+      addToast("Please select at least one role.", "error");
       return;
     }
 
@@ -84,7 +109,7 @@ export default function NewUserPage() {
           password: formData.password,
           password_confirmation: formData.passwordConfirmation,
           full_name: [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" "),
-          role_ids: [],
+          role_ids: selectedRoleIds,
           phone: undefined,
         });
         addToast("ERP user created and linked to staff member successfully.", "success");
@@ -255,6 +280,49 @@ export default function NewUserPage() {
             />
           </div>
         </div>
+
+        {/* Role Selection - Only show when creating user from staff */}
+        {staffId && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Roles <span className="text-red-500">*</span>
+            </label>
+            {loadingRoles ? (
+              <p className="text-sm text-gray-500">Loading roles...</p>
+            ) : roles.length === 0 ? (
+              <p className="text-sm text-gray-500">No roles available. Please create roles first.</p>
+            ) : (
+              <div className="border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto bg-gray-50">
+                <div className="space-y-2">
+                  {roles.map((role) => (
+                    <label
+                      key={role.id}
+                      className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-2 rounded"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedRoleIds.includes(Number(role.id))}
+                        onChange={(e) => {
+                          const roleId = Number(role.id);
+                          if (e.target.checked) {
+                            setSelectedRoleIds([...selectedRoleIds, roleId]);
+                          } else {
+                            setSelectedRoleIds(selectedRoleIds.filter((id) => id !== roleId));
+                          }
+                        }}
+                        className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                      />
+                      <span className="text-sm text-gray-700">{role.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {selectedRoleIds.length === 0 && !loadingRoles && roles.length > 0 && (
+              <p className="text-xs text-red-500 mt-1">Please select at least one role</p>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-3 pt-2">
           <button

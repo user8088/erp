@@ -11,7 +11,6 @@ export default function StaffDetailTabs({
 }: StaffDetailTabsProps) {
   const tabs = [
     { id: "staff-details", label: "Staff Details" },
-    { id: "roles-permissions", label: "Roles & Permissions" },
     { id: "attendance", label: "Attendance" },
     { id: "salary", label: "Salary & Invoices" },
     { id: "advances", label: "Advances" },
