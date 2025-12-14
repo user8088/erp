@@ -103,7 +103,7 @@ export default function ReceivablesShortcuts() {
     { label: "Customer Invoices", href: "/customer/invoices" },
     { label: "Rental Agreements", href: "/rental/agreements" },
     { label: "Point of Sale", href: "/selling/point-of-sale" },
-    { label: "Customers", href: "/customers" },
+    { label: "Customers", href: "/customer" },
     { label: "Journal Entry", href: "/journal-entry/new" },
     { label: "Accounts Receivable", onClick: handleAccountsReceivableClick, isAccountsReceivable: true },
   ];

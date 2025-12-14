@@ -44,7 +44,7 @@ export default function SellingQuickAccess() {
         : "—", 
       badgeColor: "bg-orange-100 text-orange-700" 
     },
-    { label: "Customers", href: "/customers" },
+    { label: "Customers", href: "/customer" },
   ];
   return (
     <section className="mb-8">

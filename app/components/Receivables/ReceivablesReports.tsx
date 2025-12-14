@@ -12,7 +12,7 @@ const reports = {
   Invoicing: [
     { label: "Sale Invoices", href: "/selling/sale-invoices" },
     { label: "Customer Invoices", href: "/customer/invoices" },
-    { label: "Customers", href: "/customers" },
+    { label: "Customers", href: "/customer" },
   ],
   Rentals: [
     { label: "Rental Agreements", href: "/rental/agreements" },
