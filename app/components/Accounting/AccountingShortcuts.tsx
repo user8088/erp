@@ -3,15 +3,10 @@ import Link from "next/link";
 
 const shortcuts = [
   { label: "Chart of Accounts", href: "/chart-of-accounts" },
-  { label: "Sales Invoice", href: "/sales-invoice" },
-  { label: "Purchase Invoice", href: "/purchase-invoice" },
-  { label: "Journal Entry", href: "/journal-entry" },
-  { label: "Payment Entry", href: "/payment-entry" },
-  { label: "Accounts Receivable", href: "/accounts-receivable" },
-  { label: "General Ledger", href: "/general-ledger" },
-  { label: "Trial Balance", href: "/trial-balance" },
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Learn Accounting", href: "/learn-accounting" },
+  { label: "Journal Entry", href: "/journal-entry/new" },
+  { label: "Accounts Receivable", href: "/accounting/receivables" },
+  { label: "Accounts Payable", href: "/accounting/payables" },
+  { label: "Financial Reports", href: "/accounting/financial-reports" },
 ];
 
 export default function AccountingShortcuts() {

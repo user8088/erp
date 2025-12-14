@@ -2,23 +2,20 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 const reports = {
-  "Accounting Masters": [
-    { label: "Company", href: "/company" },
+  "Accounting": [
     { label: "Chart of Accounts", href: "/chart-of-accounts" },
-    { label: "Accounts Settings", href: "/accounts-settings" },
-    { label: "Fiscal Year", href: "/fiscal-year" },
+    { label: "Accounts Receivable", href: "/accounting/receivables" },
+    { label: "Accounts Payable", href: "/accounting/payables" },
+    { label: "Financial Reports", href: "/accounting/financial-reports" },
   ],
-  Payments: [
-    { label: "Payment Entry", href: "/payment-entry" },
-    { label: "Journal Entry", href: "/journal-entry" },
-    { label: "Journal Entry Template", href: "/journal-entry-template" },
-    { label: "Terms and Conditions", href: "/terms-and-conditions" },
+  "Journal Entries": [
+    { label: "New Journal Entry", href: "/journal-entry/new" },
   ],
-  "Tax Masters": [
-    { label: "Sales Taxes and Charges Template", href: "/sales-taxes-template" },
-    { label: "Purchase Taxes and Charges Template", href: "/purchase-taxes-template" },
-    { label: "Item Tax Template", href: "/item-tax-template" },
-    { label: "Tax Category", href: "/tax-category" },
+  "Invoices": [
+    { label: "Sale Invoices", href: "/selling/sale-invoices" },
+    { label: "Purchase Invoices", href: "/buying/purchase-invoices" },
+    { label: "Customer Invoices", href: "/customer/invoices" },
+    { label: "Supplier Invoices", href: "/supplier/invoices" },
   ],
 };
 
@@ -28,9 +25,9 @@ export default function AccountingReports() {
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Reports & Masters</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Accounting Masters</h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Accounting</h3>
           <ul className="space-y-1.5">
-            {reports["Accounting Masters"].map((item) => (
+            {reports["Accounting"].map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}
@@ -44,9 +41,9 @@ export default function AccountingReports() {
           </ul>
         </div>
         <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Payments</h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Journal Entries</h3>
           <ul className="space-y-1.5">
-            {reports.Payments.map((item) => (
+            {reports["Journal Entries"].map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}
@@ -60,9 +57,9 @@ export default function AccountingReports() {
           </ul>
         </div>
         <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Tax Masters</h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Invoices</h3>
           <ul className="space-y-1.5">
-            {reports["Tax Masters"].map((item) => (
+            {reports["Invoices"].map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}

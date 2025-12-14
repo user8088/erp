@@ -109,6 +109,12 @@ export const navigationData: NavItem[] = [
         icon: FileText,
         href: "/selling/sale-invoices",
       },
+      {
+        id: "selling-settings",
+        label: "Settings",
+        icon: Settings2,
+        href: "/selling/settings",
+      },
     ],
     isExpanded: false
   },

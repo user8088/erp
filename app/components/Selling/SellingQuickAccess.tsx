@@ -31,8 +31,9 @@ export default function SellingQuickAccess() {
   }, []);
 
   const shortcuts = [
+    { label: "Sale Invoices", href: "/selling/sale-invoices" },
+    { label: "Customer Invoices", href: "/customer/invoices" },
     { label: "Point of Sale", href: "/selling/point-of-sale" },
-    { label: "Item", href: "/item", badge: "10 Available", badgeColor: "bg-gray-100 text-gray-700" },
     { 
       label: "Sales Order", 
       href: "/selling/sales-orders", 
@@ -43,14 +44,12 @@ export default function SellingQuickAccess() {
         : "—", 
       badgeColor: "bg-orange-100 text-orange-700" 
     },
-    { label: "Sales Analytics", href: "/sales-analytics" },
-    { label: "Dashboard", href: "/dashboard" },
-    { label: "Learn Sales Management", href: "/learn-sales-management" },
+    { label: "Customers", href: "/customers" },
   ];
   return (
     <section className="mb-8">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Access</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
         {shortcuts.map((shortcut) => (
           <Link
             key={shortcut.href}

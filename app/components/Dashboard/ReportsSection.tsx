@@ -4,21 +4,21 @@ import Link from "next/link";
 const reports = {
   accounting: [
     { label: "Chart of Accounts", href: "/chart-of-accounts" },
-    { label: "Company", href: "/company" },
-    { label: "Customer", href: "/customer" },
-    { label: "Supplier", href: "/supplier" },
+    { label: "Journal Entry", href: "/journal-entry/new" },
+    { label: "Accounts Receivable", href: "/accounting/receivables" },
+    { label: "Accounts Payable", href: "/accounting/payables" },
+    { label: "Financial Reports", href: "/accounting/financial-reports" },
   ],
   stock: [
-    { label: "Item", href: "/item" },
-    { label: "Warehouse", href: "/warehouse" },
-    { label: "Brand", href: "/brand" },
-    { label: "Unit of Measure (UOM)", href: "/uom" },
-    { label: "Stock Reconciliation", href: "/stock-reconciliation" },
+    { label: "Item", href: "/items" },
+    { label: "Categories", href: "/categories" },
+    { label: "Purchase Orders", href: "/stock/purchase-orders/new" },
+    { label: "Stock Management", href: "/stock" },
   ],
-  crm: [
-    { label: "Lead", href: "/lead" },
-    { label: "Customer Group", href: "/customer-group" },
-    { label: "Territory", href: "/territory" },
+  selling: [
+    { label: "Sale Invoices", href: "/selling/sale-invoices" },
+    { label: "Sales Orders", href: "/selling/sales-orders" },
+    { label: "Point of Sale", href: "/selling/point-of-sale" },
   ],
 };
 
@@ -60,9 +60,9 @@ export default function ReportsSection() {
           </ul>
         </div>
         <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-3">CRM</h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Selling</h3>
           <ul className="space-y-1.5">
-            {reports.crm.map((item) => (
+            {reports.selling.map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}

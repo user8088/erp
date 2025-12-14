@@ -2,11 +2,14 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 const shortcuts = [
-  { label: "Item", href: "/item" },
+  { label: "Item", href: "/items" },
   { label: "Customer", href: "/customer" },
-  { label: "Supplier", href: "/supplier" },
-  { label: "Sales Invoice", href: "/sales-invoice" },
-  { label: "Leaderboard", href: "/leaderboard" },
+  { label: "Supplier", href: "/suppliers" },
+  { label: "Sale Invoice", href: "/selling/sale-invoices" },
+  { label: "Purchase Invoice", href: "/buying/purchase-invoices" },
+  { label: "Point of Sale", href: "/selling/point-of-sale" },
+  { label: "Staff Members", href: "/staff/members" },
+  { label: "Rental Agreements", href: "/rental/agreements" },
 ];
 
 export default function ShortcutsSection() {
