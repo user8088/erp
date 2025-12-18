@@ -8,7 +8,7 @@ const reports = {
     { label: "Point of Sale", href: "/selling/point-of-sale" },
   ],
   Customers: [
-    { label: "Customers", href: "/customer" },
+    { label: "Customers", href: "/customers" },
   ],
 };
 
