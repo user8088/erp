@@ -28,6 +28,7 @@ export default function VehicleDetailsForm({
     type: "",
     notes: "",
     status: "active" as "active" | "inactive",
+    maintenance_cost: "",
   });
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function VehicleDetailsForm({
         type: vehicle.type || "",
         notes: vehicle.notes || "",
         status: vehicle.status,
+        maintenance_cost: vehicle.maintenance_cost?.toString() || "",
       });
     }
   }, [vehicle]);
@@ -58,6 +60,7 @@ export default function VehicleDetailsForm({
         type: formData.type || null,
         notes: formData.notes || null,
         status: formData.status,
+        maintenance_cost: formData.maintenance_cost ? Number(formData.maintenance_cost) : undefined,
       };
       const res = await vehiclesApi.updateVehicle(Number(vehicleId), payload);
       onVehicleUpdated(res.vehicle);
@@ -145,6 +148,24 @@ export default function VehicleDetailsForm({
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Maintenance Cost Per Delivery <span className="text-gray-400 font-normal">(Optional)</span>
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formData.maintenance_cost}
+              onChange={(e) => setFormData({ ...formData, maintenance_cost: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="e.g., 300 (fuel cost per delivery)"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This cost will be automatically applied to all delivery orders for this vehicle and included in profitability calculations.
+            </p>
           </div>
         </div>
 

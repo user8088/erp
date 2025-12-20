@@ -89,13 +89,11 @@ export default function NewRentalAgreementPage() {
         const quantity = parseFloat(formData.quantity_rented || "0");
         const rentPerPeriod = item.rent_per_period * quantity;
         const totalRent = rentPerPeriod * parseInt(formData.rental_period_length || "1");
-        const securityDeposit = item.security_deposit_amount * quantity;
 
         setFormData(prev => ({
           ...prev,
           rent_per_period: rentPerPeriod.toFixed(2),
           total_rent_amount: totalRent.toFixed(2),
-          security_deposit_amount: securityDeposit.toFixed(2),
         }));
       }
     }
@@ -367,9 +365,6 @@ export default function NewRentalAgreementPage() {
                 <p className="text-sm text-gray-600">
                   <strong>Available Quantity:</strong> {selectedItem.quantity_available}
                 </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Security Deposit:</strong> {formatCurrency(selectedItem.security_deposit_amount)}
-                </p>
               </div>
             )}
             <div>
@@ -458,6 +453,29 @@ export default function NewRentalAgreementPage() {
                 onChange={(e) => setFormData({ ...formData, rental_end_date: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Security Deposit Amount
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.security_deposit_amount}
+                onChange={(e) => setFormData({ ...formData, security_deposit_amount: e.target.value })}
+
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                  errors.security_deposit_amount ? "border-red-500" : "border-gray-300"
+                }`}
+                placeholder="0.00"
+              />
+              {errors.security_deposit_amount && (
+                <p className="mt-1 text-sm text-red-600">{errors.security_deposit_amount}</p>
+              )}
+              <p className="mt-1 text-xs text-gray-500">
+                Enter the total security deposit amount for this rental agreement (optional)
+              </p>
             </div>
           </div>
         )}

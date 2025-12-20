@@ -307,6 +307,8 @@ export default function PointOfSalePage() {
         customer_id: selectedCustomer.id,
         vehicle_id: saleType === "delivery" ? selectedVehicle?.id || null : null,
         delivery_address: saleType === "delivery" ? selectedCustomer.address || null : null,
+        // IMPORTANT: maintenance cost is defined on the vehicle profile, not per order in POS.
+        // Backend should use the vehicle's configured maintenance cost when calculating profitability.
         items: saleItems,
       });
 
@@ -606,31 +608,34 @@ export default function PointOfSalePage() {
               </div>
             </div>
 
-            {/* Vehicle Selection (Only for Delivery Sale) */}
+            {/* Vehicle Selection & Maintenance Cost (Only for Delivery Sale) */}
             {saleType === "delivery" && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Transport Vehicle <span className="text-gray-400 font-normal">(Optional)</span>
-                </label>
-                <div className="relative">
-                  <Truck className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <select
-                    value={selectedVehicle?.id || ""}
-                    onChange={(e) => {
-                      const vehicle = vehicles.find((v) => v.id === Number(e.target.value));
-                      setSelectedVehicle(vehicle || null);
-                    }}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="">Select Vehicle (Optional)</option>
-                    {vehicles.map((vehicle) => (
-                      <option key={vehicle.id} value={vehicle.id}>
-                        {vehicle.name} {vehicle.registration_number ? `(${vehicle.registration_number})` : ""}
-                      </option>
-                    ))}
-                  </select>
+              <div className="mb-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Transport Vehicle <span className="text-gray-400 font-normal">(Optional)</span>
+                  </label>
+                  <div className="relative">
+                    <Truck className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <select
+                      value={selectedVehicle?.id || ""}
+                      onChange={(e) => {
+                        const vehicle = vehicles.find((v) => v.id === Number(e.target.value));
+                        setSelectedVehicle(vehicle || null);
+                      }}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="">Select Vehicle (Optional)</option>
+                      {vehicles.map((vehicle) => (
+                        <option key={vehicle.id} value={vehicle.id}>
+                          {vehicle.name} {vehicle.registration_number ? `(${vehicle.registration_number})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">You can set this later if needed</p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">You can set this later if needed</p>
+
               </div>
             )}
 

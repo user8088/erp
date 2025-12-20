@@ -1400,6 +1400,9 @@ export interface CreateSalePayload {
   vehicle_id?: number | null;
   delivery_address?: string | null;
   expected_delivery_date?: string | null;
+  // Optional maintenance cost for this delivery run (e.g., fuel cost).
+  // Backend defaults to 0 when omitted.
+  maintenance_cost?: number;
   items: Array<{
     item_id: number;
     quantity: number;
@@ -1616,6 +1619,7 @@ export interface CreateOrUpdateVehiclePayload {
   type?: string | null;
   notes?: string | null;
   status?: "active" | "inactive";
+  maintenance_cost?: number; // Maintenance cost per delivery run (e.g., fuel cost)
 }
 
 export interface CreateOrUpdateMaintenancePayload {

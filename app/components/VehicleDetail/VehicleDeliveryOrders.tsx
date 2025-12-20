@@ -87,6 +87,7 @@ export default function VehicleDeliveryOrders({ vehicleId, vehicle }: VehicleDel
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Customer</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Delivery Address</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Delivery Charges</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Maintenance Cost</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Total Amount</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
                 </tr>
@@ -105,6 +106,7 @@ export default function VehicleDeliveryOrders({ vehicleId, vehicle }: VehicleDel
                       {order.delivery_address || "—"}
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{formatCurrency(order.total_delivery_charges)}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-red-600">{formatCurrency(order.maintenance_cost || 0)}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{formatCurrency(order.total_amount)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>

@@ -78,7 +78,11 @@ export default function VehicleProfitability({ vehicleId, vehicle }: VehicleProf
             <TrendingDown className="w-5 h-5 text-red-600" />
           </div>
           <p className="text-2xl font-semibold text-red-600">{formatCurrency(stats.total_maintenance_costs)}</p>
-          <p className="text-xs text-gray-500 mt-1">Maintenance expenses</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {stats.per_delivery_maintenance_cost !== undefined 
+              ? `Per-delivery: ${formatCurrency(stats.per_delivery_maintenance_cost)} × ${stats.total_orders} orders`
+              : 'From maintenance records (fuel, repairs, services)'}
+          </p>
         </div>
 
         <div className={`bg-white rounded-lg border-2 p-6 ${isProfitable ? 'border-green-200' : 'border-red-200'}`}>
@@ -109,10 +113,23 @@ export default function VehicleProfitability({ vehicleId, vehicle }: VehicleProf
             <span className="text-sm text-gray-600">Total Delivery Charges</span>
             <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.total_delivery_charges)}</span>
           </div>
+          {stats.per_delivery_maintenance_cost !== undefined && (
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-sm text-gray-600">Per-Delivery Maintenance Cost</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {formatCurrency(stats.per_delivery_maintenance_cost)}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
             <span className="text-sm text-gray-600">Total Maintenance Costs</span>
             <span className="text-sm font-semibold text-red-600">{formatCurrency(stats.total_maintenance_costs)}</span>
           </div>
+          {stats.per_delivery_maintenance_cost !== undefined && (
+            <div className="text-xs text-gray-500 mt-1 mb-2 italic">
+              Per-delivery cost ({formatCurrency(stats.per_delivery_maintenance_cost)}) × {stats.total_orders} orders
+            </div>
+          )}
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
             <span className="text-sm text-gray-600">Net Profit</span>
             <span className={`text-sm font-semibold ${isProfitable ? 'text-green-600' : 'text-red-600'}`}>

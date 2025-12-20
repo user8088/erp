@@ -38,24 +38,42 @@ export default function RecordPaymentModal({
   const paymentAccounts = getPaymentAccounts();
   const agreementToUse = fullAgreement || agreement;
 
-  // Fetch full agreement details when modal opens to get payments
+  // Fetch full agreement details when modal opens to get latest payments
+  // Note: If agreement already has payments array (from list response), we can use those initially
+  // but still fetch to ensure we have the latest payment data
   useEffect(() => {
     if (isOpen && agreement.id) {
-      const fetchFullAgreement = async () => {
-        setLoadingAgreement(true);
-        try {
-          const response = await rentalApi.getAgreement(agreement.id);
-          setFullAgreement(response.agreement);
-        } catch (error) {
-          console.error("Failed to fetch agreement details:", error);
-          // Continue with the agreement we have
-        } finally {
-          setLoadingAgreement(false);
-        }
-      };
-      void fetchFullAgreement();
+      // If agreement already has payments, use them initially (no loading state)
+      if (agreement.payments && agreement.payments.length > 0) {
+        // We have payments, but still fetch to get latest data in background
+        const fetchFullAgreement = async () => {
+          try {
+            const response = await rentalApi.getAgreement(agreement.id);
+            setFullAgreement(response.agreement);
+          } catch (error) {
+            console.error("Failed to fetch agreement details:", error);
+            // Continue with the agreement we have (which already has payments)
+          }
+        };
+        void fetchFullAgreement();
+      } else {
+        // No payments in prop, need to fetch
+        const fetchFullAgreement = async () => {
+          setLoadingAgreement(true);
+          try {
+            const response = await rentalApi.getAgreement(agreement.id);
+            setFullAgreement(response.agreement);
+          } catch (error) {
+            console.error("Failed to fetch agreement details:", error);
+            // Continue with the agreement we have
+          } finally {
+            setLoadingAgreement(false);
+          }
+        };
+        void fetchFullAgreement();
+      }
     }
-  }, [isOpen, agreement.id]);
+  }, [isOpen, agreement.id, agreement.payments]);
 
   useEffect(() => {
     if (isOpen && agreementToUse) {

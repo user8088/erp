@@ -345,7 +345,7 @@ This document provides comprehensive documentation for all rental management API
       "rental_period_length": 3,
       "auto_divide_rent": true,
       "rent_per_period": 16666.67,
-      "security_deposit_amount": 10000.00,
+      "security_deposit_amount": null,
       "status": "available",
       "created_at": "2025-12-13T10:00:00.000000Z",
       "updated_at": "2025-12-13T10:00:00.000000Z"
@@ -430,7 +430,6 @@ This document provides comprehensive documentation for all rental management API
   "rental_period_type": "monthly",
   "rental_period_length": 3,
   "auto_divide_rent": true,
-  "security_deposit_amount": 10000.00,
   "status": "available"
 }
 ```
@@ -538,7 +537,7 @@ This document provides comprehensive documentation for all rental management API
     "rental_period_length": 3,
     "auto_divide_rent": true,
     "rent_per_period": 16666.67,
-    "security_deposit_amount": 10000.00,
+    "security_deposit_amount": null,
     "status": "maintenance",
     "created_at": "2025-12-13T10:00:00.000000Z",
     "updated_at": "2025-12-13T14:00:00.000000Z"
@@ -786,7 +785,9 @@ This document provides comprehensive documentation for all rental management API
   "rental_period_length": 3,
   "total_rent_amount": 100000.00,
   "rent_per_period": 33333.33,
-  "security_deposit_amount": 20000.00
+  "security_deposit_amount": 20000.00,
+  "collect_security_deposit": true,
+  "security_deposit_payment_account_id": 15
 }
 ```
 
@@ -810,7 +811,8 @@ This document provides comprehensive documentation for all rental management API
 - If `rental_end_date` is not provided, it's calculated based on `rental_start_date`, `rental_period_type`, and `rental_period_length`
 - Payment schedule is auto-generated with one payment per period
 - Available quantity of rental item is decreased by `quantity_rented`
-- If security deposit is provided, it should be recorded via accounting service (requires payment account to be specified separately)
+- **Security deposit is set directly in the agreement** - it is NOT calculated from the rental item's `security_deposit_amount` field
+- If `collect_security_deposit` is `true` and `security_deposit_amount > 0`, a journal entry is created: DR Cash/Bank, CR Security Deposits
 - Rental item must have status `available` and sufficient `quantity_available`
 
 **Response:** `201 Created`
@@ -1288,8 +1290,10 @@ The due dates are calculated by adding periods to the start date:
 
 ### Security Deposit Handling
 
-1. **Collection** (when agreement is created):
-   - DR Cash/Bank
+**Important Change:** Security deposits are now set at the **agreement level**, not the item level. When creating a rental agreement, you provide `security_deposit_amount` directly. This allows flexibility to set different security deposits for different customers or rental periods.
+
+1. **Collection** (when agreement is created with `collect_security_deposit: true`):
+   - DR Cash/Bank (from `security_deposit_payment_account_id`)
    - CR Security Deposits (Liability)
 
 2. **Return - Safe**:
@@ -1432,4 +1436,32 @@ Timestamp fields are returned in ISO 8601 format: `YYYY-MM-DDTHH:mm:ss.uuuuuuZ`
 4. Agreement numbers and SKUs are auto-generated and unique
 5. Payment statuses are automatically calculated based on due dates and payment amounts
 6. Accounting entries are created automatically for security deposits, payments, and returns
+7. **Security deposits are set at the agreement level** - The `security_deposit_amount` field on rental items is deprecated and always `null`. Security deposits are entered directly when creating rental agreements.
+8. **Customer Rentals Tab**: Use `GET /api/rentals/agreements?customer_id={id}` to fetch all rental agreements for a specific customer. The response includes `payments` array for each agreement.
+
+---
+
+## Recent Changes (December 2025)
+
+### Security Deposit Field Migration
+
+The security deposit field has been moved from **Rental Items** to **Rental Agreements**:
+
+- ✅ **Before**: Security deposit was stored per item and calculated when creating an agreement
+- ✅ **After**: Security deposit is entered directly when creating a rental agreement
+- ✅ **Reason**: More flexible - allows different security deposits per agreement based on customer, item condition, rental period, etc.
+
+**Impact on APIs:**
+- `security_deposit_amount` on rental items is now optional/nullable and will be set to `null` if provided
+- `security_deposit_amount` on rental agreements is required/optional (entered directly, not from item)
+- No breaking changes - existing APIs continue to work
+
+### Customer Rentals Tab Support
+
+Enhanced the rental agreements listing endpoint to better support customer profile pages:
+
+- ✅ Added `payments` relationship to eager loading in `GET /api/rentals/agreements`
+- ✅ Response now includes full payment history for each agreement
+- ✅ Database index on `customer_id` ensures optimal query performance
+- ✅ Use `?customer_id={id}` parameter to filter agreements by customer
 

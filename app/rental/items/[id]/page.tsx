@@ -26,7 +26,6 @@ export default function RentalItemDetailPage() {
     rental_period_length: "1",
     auto_divide_rent: false,
     rent_per_period: "",
-    security_deposit_amount: "",
     status: "available" as "available" | "rented" | "maintenance",
   });
   
@@ -50,7 +49,6 @@ export default function RentalItemDetailPage() {
           rental_period_length: String(res.item.rental_period_length),
           auto_divide_rent: res.item.auto_divide_rent,
           rent_per_period: String(res.item.rent_per_period),
-          security_deposit_amount: String(res.item.security_deposit_amount || ""),
           status: res.item.status,
         });
       } catch (e) {
@@ -138,7 +136,6 @@ export default function RentalItemDetailPage() {
         rental_period_length: parseInt(formData.rental_period_length),
         auto_divide_rent: formData.auto_divide_rent,
         rent_per_period: formData.rent_per_period ? parseFloat(formData.rent_per_period) : undefined,
-        security_deposit_amount: formData.security_deposit_amount ? parseFloat(formData.security_deposit_amount) : undefined,
         status: formData.status,
       };
 
@@ -376,21 +373,6 @@ export default function RentalItemDetailPage() {
               />
             </div>
           )}
-
-          {/* Security Deposit */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Security Deposit Amount
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={formData.security_deposit_amount}
-              onChange={handleChange("security_deposit_amount")}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
-          </div>
 
           {/* Status */}
           <div>

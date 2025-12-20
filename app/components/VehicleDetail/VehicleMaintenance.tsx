@@ -135,6 +135,11 @@ export default function VehicleMaintenance({ vehicleId, vehicle }: VehicleMainte
       {statistics && (
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Maintenance Statistics</h3>
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-xs text-blue-800">
+              <strong>Note:</strong> These maintenance records are used in vehicle profitability calculations. The total maintenance costs shown here will appear in the Profitability tab.
+            </p>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <p className="text-sm text-gray-600">Total Maintenance Costs</p>

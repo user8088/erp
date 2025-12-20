@@ -585,6 +585,7 @@ export interface Vehicle {
   type: string | null;
   notes: string | null;
   status: "active" | "inactive";
+  maintenance_cost?: number; // Maintenance cost per delivery run (e.g., fuel cost)
   created_at: string;
   updated_at: string;
   profitability_stats?: VehicleProfitabilityStats;
@@ -593,7 +594,8 @@ export interface Vehicle {
 
 export interface VehicleProfitabilityStats {
   total_delivery_charges: number;
-  total_maintenance_costs: number;
+  per_delivery_maintenance_cost?: number; // Cost per delivery run (sum of maintenance components)
+  total_maintenance_costs: number; // per_delivery_maintenance_cost × total_orders
   net_profit: number;
   profit_margin_percentage: number;
   total_orders: number;
@@ -670,6 +672,7 @@ export interface Sale {
   vehicle?: Vehicle | null;
   delivery_address?: string | null;
   expected_delivery_date?: string | null;
+  maintenance_cost?: number; // Maintenance cost for delivery runs (e.g., fuel cost)
   status: 'draft' | 'completed' | 'cancelled';
   notes?: string | null;
   items?: SaleItem[];

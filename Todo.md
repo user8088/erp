@@ -1,328 +1,297 @@
-# Rental Backend Implementation Summary
+# Frontend Documentation: Per-Delivery Maintenance Cost Implementation
 
 ## Overview
 
-This document summarizes all backend improvements implemented for the rental system based on the requirements in `TODO.mdc`. All frontend work was already completed; this focuses solely on backend implementation.
-
-## Implementation Date
-
-December 14, 2025
-
-## Changes Implemented
-
-### 1. Account Mapping Types Support
-
-**Files Modified:**
-- `app/Sales/Http/Requests/StoreAccountMappingRequest.php`
-- `app/Sales/Services/AccountMappingService.php`
-
-**Changes:**
-- Added 7 new rental account mapping types to validation rules:
-  - `rental_cash` - Rental Cash Account
-  - `rental_bank` - Rental Bank Account
-  - `rental_ar` - Rental Accounts Receivable
-  - `rental_assets` - Rental Assets
-  - `rental_security_deposits` - Rental Security Deposits
-  - `rental_income` - Rental Income
-  - `rental_damage_income` - Rental Damage Income
-
-- Added rental mapping types to `AccountMappingService::getMappingStatus()` with appropriate labels for frontend display
-
-**Impact:** Backend now accepts and returns rental account mapping configurations, enabling the frontend settings page to work properly.
+The vehicle profitability calculation has been updated to correctly compute maintenance costs **per delivery run**. Maintenance records (Fuel, Toll Tax, Driver Allowance, etc.) represent cost components that apply to **every delivery**, so the total maintenance cost is calculated as: **per-delivery cost × number of orders**.
 
 ---
 
-### 2. Security Deposit Collection
+## Key Changes
 
-**Files Modified:**
-- `app/Rentals/Http/Requests/StoreRentalAgreementRequest.php`
-- `app/Rentals/Services/RentalAgreementService.php`
-- `app/Models/RentalAgreement.php`
-- `database/migrations/2025_12_14_082808_add_security_deposit_fields_to_rental_agreements_table.php`
+### Calculation Logic
 
-**Changes:**
-- Added validation for `collect_security_deposit` (boolean) and `security_deposit_payment_account_id` (required when collecting deposit)
-- Created database migration to add:
-  - `security_deposit_payment_account_id` (nullable foreign key to accounts)
-  - `security_deposit_collected_date` (nullable date)
-- Updated `RentalAgreement` model fillable fields and casts
-- Implemented security deposit collection logic in `RentalAgreementService::create()`:
-  - Validates payment account when deposit collection is requested
-  - Calls `RentalAccountingService::recordSecurityDeposit()` to create journal entry
-  - Stores payment account reference and collection date
+**Previous (Incorrect) Behavior:**
+- Total maintenance costs = sum of all maintenance records (cumulative)
+- This didn't scale with the number of deliveries
 
-**Accounting Entry Created:**
-- DR Cash/Bank (payment account)
-- CR Security Deposits (liability account)
+**New (Correct) Behavior:**
+- Per-delivery maintenance cost = sum of all maintenance record amounts
+- Total maintenance costs = per-delivery cost × total orders
+- This correctly scales with the number of deliveries
 
-**Impact:** Security deposits can now be collected at agreement creation with proper accounting entries.
+### Example
+
+**Vehicle Configuration:**
+- Maintenance Records:
+  - Fuel: Rs 100.00
+  - Toll Tax: Rs 100.00
+
+**Per-Delivery Cost:** Rs 200.00 (100 + 100)
+
+**Orders:** 5 delivery orders exist
+
+**Total Maintenance Costs:** Rs 200.00 × 5 = Rs 1,000.00
 
 ---
 
-### 3. Account Mapping Validation
+## API Changes
 
-**Files Modified:**
-- `app/Rentals/Services/RentalAccountingService.php`
-- `app/Rentals/Services/RentalAgreementService.php`
-- `app/Rentals/Services/RentalReturnService.php`
+### Vehicle Profitability Stats Endpoint
 
-**Changes:**
-- Created `validateAccountMappings()` helper method in `RentalAccountingService`:
-  - Checks if required account mappings exist
-  - Returns specific, actionable error messages
-  - Lists all missing mappings in a single error
+**Endpoint:** `GET /api/vehicles/{id}/profitability-stats`
 
-- Added validation before agreement creation:
-  - Validates `rental_ar` exists
-  - Validates `rental_security_deposits` if security deposit is provided
+**New Response Structure:**
 
-- Added validation before payment recording:
-  - Validates `rental_income` exists
-
-- Added validation before return processing:
-  - Validates `rental_security_deposits` exists
-  - Validates `rental_income` if damage charges are present
-
-**Error Message Format:**
-```
-"Required account mappings not configured for rentals: [Missing Types]. 
-Please configure these accounts in Rental Settings before proceeding."
+```json
+{
+  "vehicle_id": 1,
+  "vehicle_name": "Loader",
+  "registration_number": "ABC-123",
+  "statistics": {
+    "total_delivery_charges": 5000.00,
+    "per_delivery_maintenance_cost": 200.00,  // ✅ NEW FIELD
+    "total_maintenance_costs": 1000.00,
+    "net_profit": 4000.00,
+    "profit_margin_percentage": 80.00,
+    "total_orders": 5
+  }
+}
 ```
 
-**Impact:** Operations fail gracefully with clear error messages if account mappings are missing, preventing incomplete accounting entries.
+**Field Descriptions:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_delivery_charges` | number | Sum of all delivery charges from orders |
+| `per_delivery_maintenance_cost` | number | **NEW** - Sum of all maintenance record amounts (cost per delivery run) |
+| `total_maintenance_costs` | number | `per_delivery_maintenance_cost × total_orders` |
+| `net_profit` | number | `total_delivery_charges - total_maintenance_costs` |
+| `profit_margin_percentage` | number | `(net_profit / total_delivery_charges) × 100` |
+| `total_orders` | number | Count of delivery orders (draft + completed) |
 
 ---
 
-### 4. Rental Income Recognition Fix
+## Frontend Integration
 
-**Files Modified:**
-- `app/Rentals/Services/RentalAccountingService.php`
-- `app/Rentals/Services/RentalAgreementService.php`
+### TypeScript Interface Update
 
-**Changes:**
-- Fixed `recordRentalPayment()` method to properly recognize rental income
-- Changed from 2-line entry (DR Cash, CR AR) to 2-line entry (DR Cash, CR Rental Income)
-- Uses cash basis accounting - income recognized when payment is received
-- Removed accounts receivable from payment recording (simplified to cash basis)
+**File:** Update your `VehicleProfitabilityStats` interface
 
-**Accounting Entry Created:**
-- DR Cash/Bank (payment account)
-- CR Rental Income (income account)
+```typescript
+export interface VehicleProfitabilityStats {
+  vehicle_id: number;
+  vehicle_name: string;
+  registration_number: string;
+  statistics: {
+    total_delivery_charges: number;
+    per_delivery_maintenance_cost: number; // ✅ NEW: Cost per delivery run
+    total_maintenance_costs: number; // per_delivery_maintenance_cost × total_orders
+    net_profit: number;
+    profit_margin_percentage: number;
+    total_orders: number;
+  };
+}
+```
 
-**Previous Behavior:** Only created DR Cash, CR Accounts Receivable (income never recognized)
+### API Service Update
 
-**New Behavior:** Creates DR Cash, CR Rental Income (revenue properly recognized)
+**Example API Service Method:**
 
-**Impact:** Rental revenue is now properly recognized in accounting when payments are received.
-
----
-
-### 5. Payment Account Type Validation
-
-**Files Modified:**
-- `app/Rentals/Services/RentalAccountingService.php`
-
-**Changes:**
-- Created `validatePaymentAccount()` method that:
-  - Validates account exists
-  - Ensures account is not a group account
-  - Ensures account is an asset type (cash/bank accounts)
-  - Returns specific error messages for each validation failure
-
-- Applied validation to all methods that accept payment accounts:
-  - `recordSecurityDeposit()`
-  - `recordRentalIncome()` (when paid immediately)
-  - `recordRentalPayment()`
-  - `recordRentalReturn()` (for refund account)
-
-**Error Messages:**
-- "Payment account cannot be a group account. Please select a ledger account."
-- "Payment account must be a cash or bank account (asset type). The selected account is of type: [type]."
-
-**Impact:** Prevents using incorrect account types for payments, ensuring data integrity.
-
----
-
-### 6. Improved Error Messages
-
-**Files Modified:**
-- `app/Rentals/Services/RentalAccountingService.php`
-
-**Changes:**
-- Updated all exception messages to be specific and actionable
-- All error messages now:
-  - Identify which account/mapping is missing
-  - Provide guidance on where to configure it ("Please configure in Rental Settings")
-  - Use consistent formatting
-
-**Examples:**
-- Old: "Required account mappings not configured."
-- New: "Rental Security Deposits account not configured. Please configure the Security Deposits account in Rental Settings before collecting deposits."
-
-- Old: "Payment account not configured."
-- New: "Payment account not configured for security deposit collection. Please provide a payment account or configure Rental Cash Account or Rental Bank Account in Rental Settings."
-
-**Impact:** Users receive clear, actionable error messages that guide them to fix configuration issues.
-
----
-
-### 7. Model Field Additions
-
-**Files Modified:**
-- `app/Models/RentalAgreement.php`
-- `app/Models/RentalPayment.php`
-- `database/migrations/2025_12_14_082808_add_security_deposit_fields_to_rental_agreements_table.php`
-- `database/migrations/2025_12_14_083031_add_payment_method_to_rental_payments_table.php`
-
-**Changes:**
-
-**RentalAgreement Model:**
-- Added `security_deposit_payment_account_id` to fillable fields
-- Added `security_deposit_collected_date` to fillable fields and casts (as date)
-
-**RentalPayment Model:**
-- Added `payment_method` to fillable fields (for tracking payment method: cash, bank_transfer, etc.)
-
-**Database Migrations:**
-- Created migration for security deposit fields in `rental_agreements` table
-- Created migration for `payment_method` field in `rental_payments` table
-
-**Impact:** Models now support tracking security deposit collection details and payment methods for better reporting and audit trails.
-
----
-
-## Database Migrations Created
-
-1. **2025_12_14_082808_add_security_deposit_fields_to_rental_agreements_table.php**
-   - Adds `security_deposit_payment_account_id` (nullable foreign key)
-   - Adds `security_deposit_collected_date` (nullable date)
-
-2. **2025_12_14_083031_add_payment_method_to_rental_payments_table.php**
-   - Adds `payment_method` (nullable string) for tracking payment methods
-
-**To Run Migrations:**
-```bash
-php artisan migrate
+```typescript
+// vehiclesApi.ts or similar
+export const getVehicleProfitabilityStats = async (
+  vehicleId: number
+): Promise<VehicleProfitabilityStats> => {
+  const response = await fetch(`/api/vehicles/${vehicleId}/profitability-stats`, {
+    headers: {
+      'Authorization': `Bearer ${getToken()}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch vehicle profitability stats');
+  }
+  
+  return response.json();
+};
 ```
 
 ---
 
-## Testing Recommendations
+## UI Updates
 
-### Account Mapping Configuration
-- Test creating account mappings for all rental types
-- Test that mappings are returned in status endpoint
-- Test validation when mappings are missing
+### Profitability Tab Display
 
-### Agreement Creation
-- Test agreement creation with security deposit collection
-- Test agreement creation without security deposit
-- Test validation errors when required mappings are missing
-- Verify journal entries are created correctly
+Update the vehicle profitability component to show the per-delivery maintenance cost.
 
-### Payment Recording
-- Test payment recording with valid payment account
-- Test payment recording with invalid account types (should fail)
-- Verify rental income is recognized in journal entries
-- Test validation when rental_income mapping is missing
+#### Summary Cards
 
-### Return Processing
-- Test return processing with damage charges
-- Test return processing without damage charges
-- Test validation when required mappings are missing
-- Verify journal entries for security deposit refunds
+**Before:**
+- Total Delivery Charges
+- Total Maintenance Costs
+- Net Profit
+- Profit Margin
 
-### Error Handling
-- Test all error messages are clear and actionable
-- Test that operations fail gracefully when mappings are missing
-- Verify error messages guide users to Rental Settings
+**After (Recommended):**
+- Total Delivery Charges
+- **Per-Delivery Maintenance Cost** (NEW)
+- Total Maintenance Costs
+- Net Profit
+- Profit Margin
 
----
+#### Detailed Statistics Section
 
-## API Endpoints Affected
+Add display for per-delivery cost with calculation breakdown:
 
-### POST /api/rentals/agreements
-- Now accepts `collect_security_deposit` (boolean)
-- Now accepts `security_deposit_payment_account_id` (integer, required if collecting deposit)
-- Validates account mappings before creating agreement
-- Creates security deposit journal entry if deposit is collected
+```tsx
+// Example React component update
+<div className="profitability-stats">
+  <div className="stat-row">
+    <span>Total Orders</span>
+    <span>{stats.total_orders}</span>
+  </div>
+  
+  <div className="stat-row">
+    <span>Total Delivery Charges</span>
+    <span>{formatCurrency(stats.total_delivery_charges)}</span>
+  </div>
+  
+  {/* NEW: Per-Delivery Maintenance Cost */}
+  <div className="stat-row">
+    <span>Per-Delivery Maintenance Cost</span>
+    <span>{formatCurrency(stats.per_delivery_maintenance_cost || 0)}</span>
+  </div>
+  
+  {/* Updated: Total Maintenance Costs with breakdown note */}
+  <div className="stat-row">
+    <span>Total Maintenance Costs</span>
+    <span className="text-red-600">
+      {formatCurrency(stats.total_maintenance_costs)}
+    </span>
+  </div>
+  <div className="text-xs text-gray-500 italic mt-1 mb-2">
+    Per-delivery cost ({formatCurrency(stats.per_delivery_maintenance_cost || 0)}) × {stats.total_orders} orders
+  </div>
+  
+  <div className="stat-row">
+    <span>Net Profit</span>
+    <span>{formatCurrency(stats.net_profit)}</span>
+  </div>
+  
+  <div className="stat-row">
+    <span>Profit Margin</span>
+    <span>{stats.profit_margin_percentage.toFixed(2)}%</span>
+  </div>
+</div>
+```
 
-### POST /api/rentals/agreements/{id}/payments
-- Validates account mappings before recording payment
-- Validates payment account is cash/bank type
-- Creates journal entry with rental income recognition
+#### Summary Card Description
 
-### POST /api/rentals/returns
-- Validates account mappings before processing return
-- Validates refund account is cash/bank type
+Add per-delivery cost information to the maintenance costs summary card:
 
-### GET /api/account-mappings/status
-- Now returns rental mapping types with configuration status
-
-### POST /api/account-mappings
-- Now accepts rental mapping types in `mapping_type` field
-
----
-
-## Accounting Flow Summary
-
-### Agreement Creation
-1. Validates `rental_ar` mapping exists
-2. If security deposit collected:
-   - Validates `rental_security_deposits` mapping exists
-   - Creates journal entry: DR Cash/Bank, CR Security Deposits
-3. Creates payment schedule
-4. Updates rental item quantity
-
-### Payment Recording
-1. Validates `rental_income` mapping exists
-2. Validates payment account is cash/bank type
-3. Creates journal entry: DR Cash/Bank, CR Rental Income
-4. Updates payment status and agreement status
-
-### Return Processing
-1. Validates `rental_security_deposits` mapping exists
-2. If damage charges: validates `rental_income` mapping exists
-3. Validates refund account is cash/bank type
-4. Creates journal entry:
-   - DR Security Deposits (full deposit)
-   - CR Cash/Bank (refund amount)
-   - CR Rental Income or Damage Income (if damage charges)
-
----
-
-## Files Changed Summary
-
-### New Files
-- `database/migrations/2025_12_14_082808_add_security_deposit_fields_to_rental_agreements_table.php`
-- `database/migrations/2025_12_14_083031_add_payment_method_to_rental_payments_table.php`
-
-### Modified Files
-- `app/Sales/Http/Requests/StoreAccountMappingRequest.php`
-- `app/Sales/Services/AccountMappingService.php`
-- `app/Rentals/Http/Requests/StoreRentalAgreementRequest.php`
-- `app/Rentals/Services/RentalAgreementService.php`
-- `app/Rentals/Services/RentalAccountingService.php`
-- `app/Rentals/Services/RentalReturnService.php`
-- `app/Models/RentalAgreement.php`
-- `app/Models/RentalPayment.php`
+```tsx
+<div className="summary-card">
+  <h3>Total Maintenance Costs</h3>
+  <div className="amount">{formatCurrency(stats.total_maintenance_costs)}</div>
+  <p className="text-xs text-gray-500 mt-1">
+    Per-delivery: {formatCurrency(stats.per_delivery_maintenance_cost || 0)} × {stats.total_orders} orders
+  </p>
+</div>
+```
 
 ---
 
-## Next Steps
+## Calculation Examples
 
-1. **Run Migrations:** Execute the database migrations to add new fields
-2. **Configure Account Mappings:** Set up rental account mappings in Rental Settings (frontend)
-3. **Test End-to-End:** Test the complete rental flow from agreement creation to return processing
-4. **Verify Journal Entries:** Check that all journal entries are created correctly in the accounting system
-5. **Update API Documentation:** Update rental API documentation to reflect new fields and validation requirements
+### Example 1: Basic Setup
+
+**Vehicle Configuration:**
+- Maintenance Records:
+  - Fuel: Rs 100.00
+  - Toll Tax: Rs 100.00
+
+**Per-Delivery Cost:** Rs 200.00
+
+**Orders:**
+- Order 1: Delivery charges = Rs 500.00
+- Order 2: Delivery charges = Rs 600.00
+- Order 3: Delivery charges = Rs 400.00
+
+**API Response:**
+```json
+{
+  "statistics": {
+    "total_delivery_charges": 1500.00,
+    "per_delivery_maintenance_cost": 200.00,
+    "total_maintenance_costs": 600.00,  // 200 × 3
+    "net_profit": 900.00,  // 1500 - 600
+    "profit_margin_percentage": 60.00,  // (900 / 1500) × 100
+    "total_orders": 3
+  }
+}
+```
+
+### Example 2: Adding New Cost Component
+
+**Initial Setup:**
+- Fuel: Rs 100.00
+- Toll Tax: Rs 100.00
+- **Per-Delivery:** Rs 200.00
+
+**After adding "Driver Allowance: Rs 50.00":**
+- Fuel: Rs 100.00
+- Toll Tax: Rs 100.00
+- Driver Allowance: Rs 50.00
+- **New Per-Delivery:** Rs 250.00
+
+**Impact:**
+- All existing and future orders will use the new per-delivery cost of Rs 250.00
+- If 3 orders exist, total maintenance costs = 250 × 3 = Rs 750.00
+
+**Note:** This is calculated on-the-fly, so adding a new maintenance record immediately affects the profitability calculation for all orders.
 
 ---
 
-## Notes
+## Migration Notes
 
-- All accounting operations are wrapped in database transactions
-- Error messages follow a consistent format for better user experience
-- The implementation follows existing patterns from `CustomerPaymentService` and `SupplierPaymentService`
-- Cash basis accounting is used for rental income recognition (income recognized when payment received)
-- All journal entries are properly linked to rental records via foreign keys
+### Backward Compatibility
+
+The API response now includes the new `per_delivery_maintenance_cost` field. Existing frontend code that doesn't access this field will continue to work, but should be updated to:
+
+1. Display the per-delivery cost for better user understanding
+2. Show the calculation breakdown (per-delivery × orders = total)
+
+### Data Migration
+
+**No database migration required** - existing VehicleMaintenance records are already structured correctly as per-delivery cost components. The change is purely in the calculation logic.
+
+---
+
+## Testing Checklist
+
+After implementing the frontend changes, verify:
+
+1. ✅ `per_delivery_maintenance_cost` field is displayed in the UI
+2. ✅ Total maintenance costs calculation is correct: `per_delivery × total_orders`
+3. ✅ Calculation breakdown note is shown (e.g., "Rs 200.00 × 5 orders")
+4. ✅ Net profit and profit margin calculations are correct
+5. ✅ Adding new maintenance records updates the per-delivery cost immediately
+6. ✅ Creating new delivery orders updates the total maintenance costs correctly
+
+---
+
+## Summary
+
+**Key Changes:**
+1. ✅ New `per_delivery_maintenance_cost` field in profitability stats API
+2. ✅ Total maintenance costs = `per_delivery_maintenance_cost × total_orders`
+3. ✅ UI should display both per-delivery and total costs
+4. ✅ Show calculation breakdown for transparency
+
+**Benefits:**
+- Accurate per-delivery cost tracking
+- Correctly scales with number of orders
+- Easy to understand calculation breakdown
+- Better user visibility into maintenance cost structure
+
