@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import CustomerDetailTabs from "./CustomerDetailTabs";
 import CustomerDetailsForm from "./CustomerDetailsForm";
 import CustomerRentals from "./CustomerRentals";
+import CustomerDeliveryProfit from "./CustomerDeliveryProfit";
 import RecordPaymentModal from "./RecordPaymentModal";
 import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
@@ -710,6 +711,9 @@ export default function CustomerDetailContent({
         )}
         {activeTab === "rentals" && (
           <CustomerRentals customerId={Number(customerId)} />
+        )}
+        {activeTab === "delivery-profit" && (
+          <CustomerDeliveryProfit customerId={Number(customerId)} />
         )}
         {activeTab === "more-information" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">

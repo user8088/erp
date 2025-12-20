@@ -13,6 +13,7 @@ export default function CustomerDetailTabs({
     { id: "customer-details", label: "Customer Details" },
     { id: "customer-payments", label: "Customer Payments" },
     { id: "rentals", label: "Rentals" },
+    { id: "delivery-profit", label: "Delivery Profit" },
     { id: "transactions", label: "Transactions" },
     { id: "more-information", label: "More Information" },
     { id: "settings", label: "Settings" },
