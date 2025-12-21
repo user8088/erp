@@ -1747,6 +1747,8 @@ export interface GetVehicleMaintenanceParams {
   type?: string;
   sort_by?: string;
   sort_order?: "asc" | "desc";
+  from_date?: string;
+  to_date?: string;
 }
 
 export interface GetVehicleOrdersParams {
@@ -1874,8 +1876,8 @@ export const vehiclesApi = {
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.type) queryParams.append("type", params.type);
-    if (params.start_date) queryParams.append("start_date", params.start_date);
-    if (params.end_date) queryParams.append("end_date", params.end_date);
+    if (params.from_date) queryParams.append("from_date", params.from_date);
+    if (params.to_date) queryParams.append("to_date", params.to_date);
     if (params.sort_by) queryParams.append("sort_by", params.sort_by);
     if (params.sort_order) queryParams.append("sort_order", params.sort_order);
 
