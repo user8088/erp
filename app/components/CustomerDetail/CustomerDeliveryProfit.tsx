@@ -46,7 +46,14 @@ export default function CustomerDeliveryProfit({ customerId }: CustomerDeliveryP
     setLoading(true);
     setError(null);
     try {
-      const params: any = {
+      const params: {
+        customer_id: number;
+        sale_type: string;
+        page: number;
+        per_page: number;
+        start_date?: string;
+        end_date?: string;
+      } = {
         customer_id: customerId,
         sale_type: "delivery",
         page,
@@ -65,7 +72,14 @@ export default function CustomerDeliveryProfit({ customerId }: CustomerDeliveryP
         params.end_date = monthEnd.toISOString().split('T')[0];
       }
       
-      const data = await salesApi.getSales(params);
+      const data = await salesApi.getSales({
+        customer_id: params.customer_id,
+        sale_type: "delivery",
+        page: params.page,
+        per_page: params.per_page,
+        start_date: params.start_date,
+        end_date: params.end_date,
+      });
       setSales(data.data);
       setTotal(data.meta.total);
     } catch (e) {
@@ -103,7 +117,13 @@ export default function CustomerDeliveryProfit({ customerId }: CustomerDeliveryP
         // Fallback: Calculate on frontend if API not available yet
         console.warn("Backend API not available, calculating on frontend:", apiError);
         
-        const salesParams: any = {
+        const salesParams: {
+          customer_id: number;
+          sale_type: string;
+          per_page: number;
+          start_date?: string;
+          end_date?: string;
+        } = {
           customer_id: customerId,
           sale_type: "delivery",
           per_page: 1000,
@@ -112,7 +132,13 @@ export default function CustomerDeliveryProfit({ customerId }: CustomerDeliveryP
         if (params.start_date) salesParams.start_date = params.start_date;
         if (params.end_date) salesParams.end_date = params.end_date;
         
-        const salesData = await salesApi.getSales(salesParams);
+        const salesData = await salesApi.getSales({
+          customer_id: salesParams.customer_id,
+          sale_type: "delivery",
+          per_page: salesParams.per_page,
+          start_date: salesParams.start_date,
+          end_date: salesParams.end_date,
+        });
         const allSales = salesData.data;
         
         // Get unique vehicle IDs from sales
@@ -125,8 +151,8 @@ export default function CustomerDeliveryProfit({ customerId }: CustomerDeliveryP
             try {
               const maintenanceData = await vehiclesApi.getVehicleMaintenance(vehicleId, {
                 per_page: 1000,
-                start_date: params.start_date,
-                end_date: params.end_date,
+                // start_date: params.start_date as string,
+                // to_date: params.end_date as string,
               });
               
               return maintenanceData.data.reduce((sum: number, record: VehicleMaintenance) => sum + Number(record.amount || 0), 0);

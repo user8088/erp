@@ -32,12 +32,12 @@ const formatCurrency = (value: number) => {
   return `Rs ${value.toFixed(2)}`;
 };
 
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload }: { active: boolean; payload: { name: string; value: number }[] }) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
         <p className="text-sm font-semibold text-gray-900 mb-2">
-          {payload[0].payload.label}
+          {payload[0].name}
         </p>
         <p className="text-sm" style={{ color: "#3b82f6" }}>
           {payload[0].name}: {formatCurrency(payload[0].value)}
@@ -86,7 +86,7 @@ export default function TrendChart({ data, metric, trend }: TrendChartProps) {
               return value.toString();
             }}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip active={true} payload={[{ name: metric === "revenue" ? "Revenue" : "Expense", value: data[0].value }]} />} />
           <Legend
             wrapperStyle={{ paddingTop: "20px" }}
             iconType="line"
