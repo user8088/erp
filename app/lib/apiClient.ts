@@ -143,6 +143,15 @@ import type {
   RentalAgreement,
   RentalPayment,
   RentalReturn,
+  ReportFilters,
+  TrialBalanceReport,
+  ProfitLossReport,
+  BalanceSheetReport,
+  GeneralLedgerLine,
+  ProfitabilityAnalysis,
+  TrendAnalysis,
+  ReportPeriod,
+  FinancialAccountMapping,
 } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
@@ -610,6 +619,108 @@ export const customersApi = {
       deleted_count: number;
       failed_ids: number[];
     }>(`/customers/bulk-delete`, { ids });
+  },
+
+  // Customer Earnings Statistics
+  // GET /api/customers/{id}/earnings-stats
+  // Returns total earnings, discounts, and revenue breakdown from sales, rentals, and invoices
+  async getCustomerEarningsStats(
+    id: number,
+    params?: {
+      start_date?: string; // YYYY-MM-DD
+      end_date?: string; // YYYY-MM-DD
+      month?: string; // YYYY-MM format
+    }
+  ): Promise<{
+    customer_id: number;
+    customer_name: string;
+    statistics: {
+      total_sales_revenue: number;
+      total_sales_discount: number;
+      total_rental_revenue: number;
+      total_invoice_revenue: number;
+      total_invoice_discount: number;
+      total_earnings: number;
+      total_discounts_given: number;
+      total_orders: number;
+      total_rentals: number;
+      total_invoices: number;
+      period_start?: string;
+      period_end?: string;
+    };
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
+    if (params?.month) queryParams.append('month', params.month);
+    
+    const queryString = queryParams.toString();
+    const url = `/customers/${id}/earnings-stats${queryString ? `?${queryString}` : ''}`;
+    
+    return await apiClient.get<{
+      customer_id: number;
+      customer_name: string;
+      statistics: {
+        total_sales_revenue: number;
+        total_sales_discount: number;
+        total_rental_revenue: number;
+        total_invoice_revenue: number;
+        total_invoice_discount: number;
+        total_earnings: number;
+        total_discounts_given: number;
+        total_orders: number;
+        total_rentals: number;
+        total_invoices: number;
+        period_start?: string;
+        period_end?: string;
+      };
+    }>(url);
+  },
+
+  // Customer Delivery Profitability Stats
+  // GET /api/customers/{id}/delivery-profitability-stats
+  // Returns profitability statistics for customer's delivery orders with maintenance costs from VehicleMaintenance records
+  async getDeliveryProfitabilityStats(
+    id: number,
+    params?: {
+      start_date?: string; // YYYY-MM-DD
+      end_date?: string; // YYYY-MM-DD
+      month?: string; // YYYY-MM format
+    }
+  ): Promise<{
+    customer_id: number;
+    customer_name: string;
+    statistics: {
+      total_delivery_charges: number;
+      total_maintenance_costs: number;
+      net_profit: number;
+      profit_margin_percentage: number;
+      total_orders: number;
+      period_start?: string;
+      period_end?: string;
+    };
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
+    if (params?.month) queryParams.append('month', params.month);
+    
+    const queryString = queryParams.toString();
+    const url = `/customers/${id}/delivery-profitability-stats${queryString ? `?${queryString}` : ''}`;
+    
+    return await apiClient.get<{
+      customer_id: number;
+      customer_name: string;
+      statistics: {
+        total_delivery_charges: number;
+        total_maintenance_costs: number;
+        net_profit: number;
+        profit_margin_percentage: number;
+        total_orders: number;
+        period_start?: string;
+        period_end?: string;
+      };
+    }>(url);
   },
 };
 
@@ -1389,8 +1500,8 @@ export interface GetSalesParams {
   sale_type?: 'walk-in' | 'delivery';
   status?: 'draft' | 'completed' | 'cancelled';
   payment_status?: 'paid' | 'unpaid' | 'partial';
-  start_date?: string;
-  end_date?: string;
+  start_date?: string; // YYYY-MM-DD format
+  end_date?: string; // YYYY-MM-DD format
   search?: string;
 }
 
@@ -1698,18 +1809,33 @@ export const vehiclesApi = {
     return await apiClient.delete<{ message: string }>(`/vehicles/${id}`);
   },
 
-  async getVehicleProfitabilityStats(id: number): Promise<{
+  async getVehicleProfitabilityStats(
+    id: number,
+    params?: {
+      start_date?: string; // YYYY-MM-DD
+      end_date?: string; // YYYY-MM-DD
+      month?: string; // YYYY-MM format
+    }
+  ): Promise<{
     vehicle_id: number;
     vehicle_name: string;
     registration_number: string;
     statistics: VehicleProfitabilityStats;
   }> {
+    const queryParams = new URLSearchParams();
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
+    if (params?.month) queryParams.append('month', params.month);
+    
+    const queryString = queryParams.toString();
+    const url = `/vehicles/${id}/profitability-stats${queryString ? `?${queryString}` : ''}`;
+    
     return await apiClient.get<{
       vehicle_id: number;
       vehicle_name: string;
       registration_number: string;
       statistics: VehicleProfitabilityStats;
-    }>(`/vehicles/${id}/profitability-stats`);
+    }>(url);
   },
 
   async getVehicleOrders(id: number, params: GetVehicleOrdersParams = {}): Promise<Paginated<VehicleDeliveryOrder>> {
@@ -1748,6 +1874,8 @@ export const vehiclesApi = {
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.type) queryParams.append("type", params.type);
+    if (params.start_date) queryParams.append("start_date", params.start_date);
+    if (params.end_date) queryParams.append("end_date", params.end_date);
     if (params.sort_by) queryParams.append("sort_by", params.sort_by);
     if (params.sort_order) queryParams.append("sort_order", params.sort_order);
 
@@ -2038,6 +2166,157 @@ export const rentalApi = {
   // Returns
   async processReturn(payload: ProcessRentalReturnPayload): Promise<{ return: RentalReturn; agreement: Partial<RentalAgreement>; message: string }> {
     return await apiClient.post<{ return: RentalReturn; agreement: Partial<RentalAgreement>; message: string }>("/rentals/returns", payload);
+  },
+};
+
+// Financial Reports API
+// All endpoints require: Bearer token authentication + module.accounting.read permission
+// Base URL: /api/financial-reports
+export const financialReportsApi = {
+  // Trial Balance
+  // GET /api/financial-reports/trial-balance
+  // Returns all accounts with debit/credit balances for the selected period
+  async getTrialBalance(filters: ReportFilters): Promise<TrialBalanceReport> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+    if (filters.comparison_type) queryParams.append("comparison_type", filters.comparison_type);
+    if (filters.comparison_start_date) queryParams.append("comparison_start_date", filters.comparison_start_date);
+    if (filters.comparison_end_date) queryParams.append("comparison_end_date", filters.comparison_end_date);
+    if (filters.account_ids && filters.account_ids.length > 0) {
+      filters.account_ids.forEach(id => queryParams.append("account_ids[]", String(id)));
+    }
+    if (filters.root_types && filters.root_types.length > 0) {
+      filters.root_types.forEach(type => queryParams.append("root_types[]", type));
+    }
+
+    return await apiClient.get<TrialBalanceReport>(`/financial-reports/trial-balance?${queryParams.toString()}`);
+  },
+
+  // Profit & Loss Statement (also used for Gross Profit)
+  // GET /api/financial-reports/profit-loss
+  // Returns comprehensive P&L report with revenue, COGS, operating expenses, and net profit
+  // Supports comparison_type: "previous_period", "previous_year", or "none"
+  async getProfitLoss(filters: ReportFilters): Promise<ProfitLossReport> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+    if (filters.comparison_type && filters.comparison_type !== "none") {
+      queryParams.append("comparison_type", filters.comparison_type);
+    }
+    // Note: Backend calculates comparison dates automatically based on comparison_type
+    // comparison_start_date and comparison_end_date are optional and may be ignored
+
+    return await apiClient.get<ProfitLossReport>(`/financial-reports/profit-loss?${queryParams.toString()}`);
+  },
+
+  // Balance Sheet
+  async getBalanceSheet(filters: ReportFilters): Promise<BalanceSheetReport> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+    if (filters.comparison_type) queryParams.append("comparison_type", filters.comparison_type);
+    if (filters.comparison_start_date) queryParams.append("comparison_start_date", filters.comparison_start_date);
+    if (filters.comparison_end_date) queryParams.append("comparison_end_date", filters.comparison_end_date);
+    if (filters.account_ids && filters.account_ids.length > 0) {
+      filters.account_ids.forEach(id => queryParams.append("account_ids[]", String(id)));
+    }
+
+    return await apiClient.get<BalanceSheetReport>(`/financial-reports/balance-sheet?${queryParams.toString()}`);
+  },
+
+  // General Ledger
+  async getGeneralLedger(filters: ReportFilters & { page?: number; per_page?: number }): Promise<Paginated<GeneralLedgerLine>> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+    if (filters.page) queryParams.append("page", String(filters.page));
+    if (filters.per_page) queryParams.append("per_page", String(filters.per_page));
+    if (filters.account_ids && filters.account_ids.length > 0) {
+      filters.account_ids.forEach(id => queryParams.append("account_ids[]", String(id)));
+    }
+    if (filters.root_types && filters.root_types.length > 0) {
+      filters.root_types.forEach(type => queryParams.append("root_types[]", type));
+    }
+
+    const response = await apiClient.get<{
+      data: GeneralLedgerLine[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+      };
+    }>(`/financial-reports/general-ledger?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  // Profitability Analysis
+  // GET /api/financial-reports/profitability-analysis
+  // Returns key financial ratios: Gross Margin, Operating Margin, Net Margin, ROA, ROE
+  // Supports comparison_type: "previous_period", "previous_year", or "none"
+  async getProfitabilityAnalysis(filters: ReportFilters): Promise<ProfitabilityAnalysis> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+    if (filters.comparison_type && filters.comparison_type !== "none") {
+      queryParams.append("comparison_type", filters.comparison_type);
+    }
+    // Note: Backend calculates comparison dates automatically based on comparison_type
+
+    return await apiClient.get<ProfitabilityAnalysis>(`/financial-reports/profitability-analysis?${queryParams.toString()}`);
+  },
+
+  // Trend Analysis (for Sales Invoice Trends and Purchase Invoice Trends)
+  // GET /api/financial-reports/trends
+  // Returns revenue or expense trends over time with period grouping
+  // metric: "revenue" (from sales invoices) or "expense" (from purchase invoices)
+  // period: "monthly" (default), "quarterly", or "yearly"
+  async getTrendAnalysis(filters: ReportFilters & { metric: "revenue" | "expense"; period?: ReportPeriod }): Promise<TrendAnalysis> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+    queryParams.append("metric", filters.metric);
+    // Period defaults to "monthly" on backend if not provided
+    if (filters.period) {
+      queryParams.append("period", filters.period);
+    }
+
+    return await apiClient.get<TrendAnalysis>(`/financial-reports/trends?${queryParams.toString()}`);
+  },
+};
+
+// Financial Account Mappings API (for COA mapping configuration)
+export const financialAccountMappingsApi = {
+  async getMappings(companyId: number): Promise<FinancialAccountMapping[]> {
+    return await apiClient.get<FinancialAccountMapping[]>(`/financial-account-mappings?company_id=${companyId}`);
+  },
+
+  async createMapping(mapping: Omit<FinancialAccountMapping, "id">): Promise<{ mapping: FinancialAccountMapping; message: string }> {
+    return await apiClient.post<{ mapping: FinancialAccountMapping; message: string }>("/financial-account-mappings", mapping);
+  },
+
+  async updateMapping(id: number, mapping: Partial<FinancialAccountMapping>): Promise<{ mapping: FinancialAccountMapping; message: string }> {
+    return await apiClient.put<{ mapping: FinancialAccountMapping; message: string }>(`/financial-account-mappings/${id}`, mapping);
+  },
+
+  async deleteMapping(id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/financial-account-mappings/${id}`);
   },
 };
 

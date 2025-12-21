@@ -594,11 +594,12 @@ export interface Vehicle {
 
 export interface VehicleProfitabilityStats {
   total_delivery_charges: number;
-  per_delivery_maintenance_cost?: number; // Cost per delivery run (sum of maintenance components)
-  total_maintenance_costs: number; // per_delivery_maintenance_cost × total_orders
+  total_maintenance_costs: number; // Sum of all maintenance records in date range
   net_profit: number;
   profit_margin_percentage: number;
   total_orders: number;
+  period_start?: string; // Date range start (YYYY-MM-DD)
+  period_end?: string; // Date range end (YYYY-MM-DD)
 }
 
 export interface VehicleMaintenance {
@@ -870,6 +871,197 @@ export interface RentalReturn {
   notes?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Financial Reports Types
+export type ReportPeriod = "monthly" | "quarterly" | "yearly";
+export type ComparisonType = "previous_period" | "previous_year" | "none";
+
+export interface ReportFilters {
+  company_id: number;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  comparison_type?: ComparisonType;
+  comparison_start_date?: string;
+  comparison_end_date?: string;
+  account_ids?: number[]; // Filter by specific accounts
+  root_types?: RootAccountType[]; // Filter by account types
+}
+
+export interface TrialBalanceLine {
+  account_id: number;
+  account_number: string | null;
+  account_name: string;
+  root_type: RootAccountType;
+  debit_balance: number;
+  credit_balance: number;
+  net_balance: number; // debit - credit (positive = debit, negative = credit)
+}
+
+export interface TrialBalanceReport {
+  filters: ReportFilters;
+  lines: TrialBalanceLine[];
+  total_debit: number;
+  total_credit: number;
+  is_balanced: boolean;
+  generated_at: string;
+}
+
+export type PnLSection = 
+  | "income" 
+  | "cogs" 
+  | "operating_expense" 
+  | "non_operating_income" 
+  | "non_operating_expense"
+  | "tax"
+  | "other";
+
+export interface PnLLine {
+  account_id: number;
+  account_number: string | null;
+  account_name: string;
+  section: PnLSection;
+  category: string | null; // Account category from mapping (if available)
+  current_period: number;
+  previous_period?: number;
+  change_amount?: number;
+  change_percentage?: number;
+  order: number;
+}
+
+export interface PnLSummary {
+  total_income: number;
+  total_cogs: number;
+  gross_profit: number;
+  total_operating_expenses: number;
+  operating_profit: number;
+  total_non_operating_income: number;
+  total_non_operating_expenses: number;
+  net_profit_before_tax: number;
+  tax: number;
+  net_profit: number;
+}
+
+export interface ProfitLossReport {
+  filters: ReportFilters;
+  lines: PnLLine[];
+  summary: PnLSummary;
+  previous_summary?: PnLSummary;
+  generated_at: string;
+}
+
+export type BalanceSheetSection = 
+  | "current_assets"
+  | "fixed_assets"
+  | "intangible_assets"
+  | "other_assets"
+  | "current_liabilities"
+  | "long_term_liabilities"
+  | "other_liabilities"
+  | "equity"
+  | "retained_earnings";
+
+export interface BalanceSheetLine {
+  account_id: number;
+  account_number: string | null;
+  account_name: string;
+  section: BalanceSheetSection;
+  category: string;
+  current_period: number;
+  previous_period?: number;
+  change_amount?: number;
+  change_percentage?: number;
+  order: number;
+}
+
+export interface BalanceSheetSummary {
+  total_assets: number;
+  total_liabilities: number;
+  total_equity: number;
+  working_capital: number; // current_assets - current_liabilities
+  is_balanced: boolean; // assets = liabilities + equity
+}
+
+export interface BalanceSheetReport {
+  filters: ReportFilters;
+  lines: BalanceSheetLine[];
+  summary: BalanceSheetSummary;
+  previous_summary?: BalanceSheetSummary;
+  generated_at: string;
+}
+
+export interface GeneralLedgerLine {
+  id: number;
+  date: string;
+  voucher_type: string;
+  reference_number: string | null;
+  description: string | null;
+  account_id: number;
+  account_number: string | null;
+  account_name: string;
+  debit: number;
+  credit: number;
+  balance: number; // Running balance
+  journal_entry_id: number;
+}
+
+export interface GeneralLedgerReport {
+  filters: ReportFilters;
+  lines: GeneralLedgerLine[];
+  total_debit: number;
+  total_credit: number;
+  generated_at: string;
+}
+
+export interface ProfitabilityRatio {
+  name: string;
+  label: string;
+  value: number;
+  unit: string; // Always "%" for profitability ratios
+  description: string;
+  trend: "up" | "down" | "stable" | null; // null if no comparison data
+  previous_value: number | null; // null if no comparison data
+}
+
+export interface ProfitabilityAnalysis {
+  filters: ReportFilters;
+  ratios: ProfitabilityRatio[];
+  generated_at: string;
+}
+
+export interface TrendDataPoint {
+  period: string; // "2025-01", "2025-Q1", "2025"
+  value: number;
+  label: string;
+}
+
+export interface TrendAnalysis {
+  filters: ReportFilters;
+  metric: string; // "revenue" or "expense"
+  data_points: TrendDataPoint[];
+  trend: "increasing" | "decreasing" | "stable";
+  average_growth_rate: number | null; // null if less than 2 data points
+  generated_at: string;
+}
+
+export interface FinancialAccountMapping {
+  id?: number;
+  account_id: number;
+  pnl_section?: PnLSection;
+  pnl_category?: string;
+  balance_sheet_section?: BalanceSheetSection;
+  is_primary: boolean;
+  order: number;
+  notes?: string | null;
+}
+
+export interface FinancialReportResponse<T> {
+  data: T;
+  meta?: {
+    generated_at: string;
+    period: string;
+    comparison_period?: string;
+  };
 }
 
 

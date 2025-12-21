@@ -5,6 +5,7 @@ import CustomerDetailTabs from "./CustomerDetailTabs";
 import CustomerDetailsForm from "./CustomerDetailsForm";
 import CustomerRentals from "./CustomerRentals";
 import CustomerDeliveryProfit from "./CustomerDeliveryProfit";
+import CustomerEarnings from "./CustomerEarnings";
 import RecordPaymentModal from "./RecordPaymentModal";
 import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
@@ -708,6 +709,9 @@ export default function CustomerDetailContent({
               </div>
             )}
           </div>
+        )}
+        {activeTab === "earnings" && (
+          <CustomerEarnings customerId={Number(customerId)} />
         )}
         {activeTab === "rentals" && (
           <CustomerRentals customerId={Number(customerId)} />
