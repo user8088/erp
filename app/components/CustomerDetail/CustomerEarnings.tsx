@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { DollarSign, TrendingUp, TrendingDown, Percent, Package, ShoppingCart, Calendar, RefreshCw } from "lucide-react";
+import { DollarSign, TrendingUp, Percent, Package, ShoppingCart, Calendar, RefreshCw } from "lucide-react";
 import { salesApi, invoicesApi, rentalApi, customersApi } from "../../lib/apiClient";
 import type { Sale, Invoice, RentalAgreement } from "../../lib/types";
 
@@ -60,13 +60,27 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
       // Try to use backend API endpoint if available
       try {
         const response = await customersApi.getCustomerEarningsStats(customerId, params);
-        setStats(response.statistics);
+        console.log("Backend API response:", response.statistics);
+        // If backend returns 0 discounts but we have sales, recalculate from sales
+        if (response.statistics.total_discounts_given === 0) {
+          console.log("Backend returned 0 discounts, recalculating from sales data...");
+          // Still use backend data but recalculate discounts
+          const recalculatedStats = await recalculateDiscountsFromSales(customerId, params, response.statistics);
+          setStats(recalculatedStats);
+        } else {
+          setStats(response.statistics);
+        }
       } catch (apiError) {
         // Fallback: Calculate on frontend if API not available yet
         console.warn("Backend API not available, calculating on frontend:", apiError);
         
         // Fetch all sales for customer
-        const salesParams: any = {
+        const salesParams: {
+          customer_id: number;
+          per_page: number;
+          start_date?: string;
+          end_date?: string;
+        } = {
           customer_id: customerId,
           per_page: 1000,
         };
@@ -77,7 +91,13 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
         const allSales = salesData.data.filter(sale => sale.status !== 'cancelled');
         
         // Fetch all invoices for customer
-        const invoicesParams: any = {
+        const invoicesParams: {
+          customer_id: number;
+          invoice_type: 'sale';
+          per_page: number;
+          start_date?: string;
+          end_date?: string;
+        } = {
           customer_id: customerId,
           invoice_type: 'sale',
           per_page: 1000,
@@ -94,7 +114,10 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
         }
         
         // Fetch all rental agreements for customer
-        const rentalsParams: any = {
+        const rentalsParams: {
+          customer_id: number;
+          per_page: number;
+        } = {
           customer_id: customerId,
           per_page: 1000,
         };
@@ -187,6 +210,164 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
       setLoading(false);
     }
   }, [customerId, dateRangeType, selectedMonth, startDate, endDate]);
+
+  // Helper function to recalculate discounts from sales
+  const recalculateDiscountsFromSales = async (
+    customerId: number,
+    params: { start_date?: string; end_date?: string; month?: string },
+    existingStats?: CustomerEarningsStats
+  ): Promise<CustomerEarningsStats> => {
+    const salesParams: {
+      customer_id: number;
+      per_page: number;
+      start_date?: string;
+      end_date?: string;
+    } = {
+      customer_id: customerId,
+      per_page: 1000,
+    };
+    if (params.start_date) salesParams.start_date = params.start_date;
+    if (params.end_date) salesParams.end_date = params.end_date;
+    
+    const salesData = await salesApi.getSales(salesParams);
+    const allSales = salesData.data.filter(sale => sale.status !== 'cancelled');
+    
+    console.log("Sales found:", allSales.length);
+    console.log("Sample sale:", allSales[0] ? {
+      id: allSales[0].id,
+      total_discount: allSales[0].total_discount,
+      total_amount: allSales[0].total_amount
+    } : "No sales");
+    
+    const totalSalesDiscount = allSales.reduce((sum, sale) => {
+      const discount = Number(sale.total_discount) || 0;
+      console.log(`Sale ${sale.id}: discount = ${discount}`);
+      return sum + discount;
+    }, 0);
+    
+    console.log("Total sales discount calculated:", totalSalesDiscount);
+    
+    // Fetch invoices to get their discounts
+    const invoicesParams: {
+      customer_id: number;
+      invoice_type: 'sale';
+      per_page: number;
+      start_date?: string;
+      end_date?: string;
+    } = {
+      customer_id: customerId,
+      invoice_type: 'sale',
+      per_page: 1000,
+    };
+    if (params.start_date) invoicesParams.start_date = params.start_date;
+    if (params.end_date) invoicesParams.end_date = params.end_date;
+    
+    let allInvoices: Invoice[] = [];
+    try {
+      const invoicesData = await invoicesApi.getInvoices(invoicesParams);
+      allInvoices = invoicesData.invoices.filter(inv => inv.status !== 'cancelled');
+    } catch (e) {
+      console.warn("Failed to fetch invoices:", e);
+    }
+    
+    // Calculate invoice discounts from related sales
+    let totalInvoiceDiscount = 0;
+    const processedSaleIds = new Set<number>();
+    
+    const invoiceDiscountPromises = allInvoices.map(async (invoice) => {
+      let discount = 0;
+      let saleId: number | null = null;
+      
+      const metadata = invoice.metadata as Record<string, unknown> | undefined;
+      if (metadata?.sale) {
+        const metaSale = metadata.sale as Sale;
+        saleId = metaSale.id;
+        discount = Number(metaSale.total_discount) || 0;
+        console.log(`Invoice ${invoice.id}: discount from metadata = ${discount}`);
+      } else if (metadata?.sale_id) {
+        saleId = metadata.sale_id as number;
+      } else if (invoice.reference_type === 'sale' && invoice.reference_id) {
+        saleId = invoice.reference_id;
+      }
+      
+      if (saleId && !processedSaleIds.has(saleId) && discount === 0) {
+        processedSaleIds.add(saleId);
+        try {
+          const saleResponse = await salesApi.getSale(saleId);
+          const sale = (saleResponse as { sale?: Sale }).sale ?? (saleResponse as unknown as Sale | undefined);
+          discount = Number(sale?.total_discount) || 0;
+          console.log(`Invoice ${invoice.id}: fetched sale ${saleId}, discount = ${discount}`);
+        } catch (e) {
+          console.warn(`Failed to fetch sale ${saleId} for discount calculation:`, e);
+          discount = 0;
+        }
+      } else if (saleId) {
+        processedSaleIds.add(saleId);
+      }
+      
+      return discount;
+    });
+    
+    const invoiceDiscounts = await Promise.all(invoiceDiscountPromises);
+    totalInvoiceDiscount = invoiceDiscounts.reduce((sum, discount) => sum + discount, 0);
+    console.log("Total invoice discount calculated:", totalInvoiceDiscount);
+    
+    const totalDiscountsGiven = totalSalesDiscount + totalInvoiceDiscount;
+    console.log("Total discounts given:", totalDiscountsGiven);
+    
+    // Use existing stats if provided, otherwise calculate everything
+    if (existingStats) {
+      return {
+        ...existingStats,
+        total_sales_discount: totalSalesDiscount,
+        total_invoice_discount: totalInvoiceDiscount,
+        total_discounts_given: totalDiscountsGiven,
+      };
+    }
+    
+    // Calculate everything from scratch
+    const totalSalesRevenue = allSales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
+    const totalInvoiceRevenue = allInvoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0);
+    
+    // Fetch rentals
+    const rentalsParams: {
+      customer_id: number;
+      per_page: number;
+    } = {
+      customer_id: customerId,
+      per_page: 1000,
+    };
+    
+    let allRentals: RentalAgreement[] = [];
+    try {
+      const rentalsData = await rentalApi.getAgreements(rentalsParams);
+      allRentals = rentalsData.data;
+    } catch (e) {
+      console.warn("Failed to fetch rentals:", e);
+    }
+    
+    const totalRentalRevenue = allRentals.reduce((sum, rental) => {
+      const rentalPayments = rental.payments?.reduce((pSum, payment) => pSum + (Number(payment.amount_paid) || 0), 0) || 0;
+      return sum + rentalPayments;
+    }, 0);
+    
+    const totalEarnings = totalSalesRevenue + totalInvoiceRevenue + totalRentalRevenue;
+    
+    return {
+      total_sales_revenue: totalSalesRevenue,
+      total_sales_discount: totalSalesDiscount,
+      total_rental_revenue: totalRentalRevenue,
+      total_invoice_revenue: totalInvoiceRevenue,
+      total_invoice_discount: totalInvoiceDiscount,
+      total_earnings: totalEarnings,
+      total_discounts_given: totalDiscountsGiven,
+      total_orders: allSales.length,
+      total_rentals: allRentals.length,
+      total_invoices: allInvoices.length,
+      period_start: params.start_date,
+      period_end: params.end_date,
+    };
+  };
 
   useEffect(() => {
     if (customerId) {
