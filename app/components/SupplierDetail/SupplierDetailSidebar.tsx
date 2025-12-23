@@ -248,8 +248,8 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
 
         {/* Attachments */}
         <div
-          className="p-2 rounded hover-bg-gray-50 transition-colors cursor-pointer"
-          onClick={() => attachmentוןinputRef.current?.click()}
+          className="p-2 rounded hover:bg-gray-50 transition-colors cursor-pointer"
+          onClick={() => attachmentInputRef.current?.click()}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
