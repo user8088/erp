@@ -141,7 +141,7 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
     if (!supplier?.id) return;
 
     try {
-      const url = `${API_BASE_URL.replace(/\\/api\\/?$/, "")}/api/attachments/${attachmentId}/download`;
+      const url = `${API_BASE_URL.replace(/\/api\/?$/, "")}/api/attachments/${attachmentId}/download`;
       const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
 
       const response = await fetch(url, {
