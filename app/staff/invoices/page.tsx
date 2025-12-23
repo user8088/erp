@@ -79,9 +79,15 @@ export default function StaffInvoicesPage() {
     void fetchInvoices(1);
   }, []);
 
-  const handleViewInvoice = (invoiceId: number) => {
-    const url = invoicesApi.getInvoiceViewUrl(invoiceId);
-    window.open(url, "_blank");
+  const handleViewInvoice = async (invoiceId: number) => {
+    try {
+      const blob = await invoicesApi.downloadInvoice(invoiceId);
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (error) {
+      console.error("Failed to open invoice preview:", error);
+      addToast("Failed to open invoice", "error");
+    }
   };
 
   const handleDownloadInvoice = async (invoiceId: number, invoiceNumber: string) => {

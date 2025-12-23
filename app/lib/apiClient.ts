@@ -111,6 +111,7 @@ import type {
   Item,
   Category,
   ItemTag,
+  CustomerTag,
   ItemStock,
   PurchaseOrder,
   StockMovement,
@@ -1396,6 +1397,97 @@ export const itemTagsApi = {
   async syncItemTags(itemId: number, tagIds: number[]): Promise<{ message: string; data: ItemTag[] }> {
     return await apiClient.post<{ message: string; data: ItemTag[] }>(
       `/items/${itemId}/tags/sync`,
+      { tag_ids: tagIds }
+    );
+  },
+};
+
+// Customer Tags API - Real Backend Integration
+export interface GetCustomerTagsParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+}
+
+export interface CreateOrUpdateCustomerTagPayload {
+  name: string;
+  color: string; // Hex color code like #3b82f6
+}
+
+export const customerTagsApi = {
+  async getTags(params: GetCustomerTagsParams = {}): Promise<Paginated<CustomerTag>> {
+    const queryParams = new URLSearchParams();
+    
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    if (params.search) queryParams.append("search", params.search);
+
+    const response = await apiClient.get<{
+      data: CustomerTag[];
+      meta: {
+        current_page: number;
+        per_page: number;
+        total: number;
+        last_page: number;
+        from: number;
+        to: number;
+      };
+    }>(`/customer-tags?${queryParams.toString()}`);
+
+    return {
+      data: response.data,
+      meta: {
+        current_page: response.meta.current_page,
+        per_page: response.meta.per_page,
+        total: response.meta.total,
+        last_page: response.meta.last_page,
+      },
+    };
+  },
+
+  async getTag(id: number): Promise<{ tag: CustomerTag }> {
+    return await apiClient.get<{ tag: CustomerTag }>(`/customer-tags/${id}`);
+  },
+
+  async createTag(payload: CreateOrUpdateCustomerTagPayload): Promise<{ tag: CustomerTag; message: string }> {
+    return await apiClient.post<{ tag: CustomerTag; message: string }>(`/customer-tags`, payload);
+  },
+
+  async updateTag(
+    id: number,
+    payload: Partial<CreateOrUpdateCustomerTagPayload>
+  ): Promise<{ tag: CustomerTag; message: string }> {
+    return await apiClient.patch<{ tag: CustomerTag; message: string }>(
+      `/customer-tags/${id}`,
+      payload
+    );
+  },
+
+  async deleteTag(id: number): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/customer-tags/${id}`);
+  },
+
+  async assignTagToCustomer(tagId: number, customerId: number): Promise<{ message: string }> {
+    return await apiClient.post<{ message: string }>(
+      `/customer-tags/${tagId}/assign`,
+      { customer_id: customerId }
+    );
+  },
+
+  async removeTagFromCustomer(tagId: number, customerId: number): Promise<{ message: string }> {
+    return await apiClient.post<{ message: string }>(
+      `/customer-tags/${tagId}/remove`,
+      { customer_id: customerId }
+    );
+  },
+
+  async getCustomerTags(customerId: number): Promise<{ data: CustomerTag[] }> {
+    return await apiClient.get<{ data: CustomerTag[] }>(`/customers/${customerId}/tags`);
+  },
+
+  async syncCustomerTags(customerId: number, tagIds: number[]): Promise<{ message: string; data: CustomerTag[] }> {
+    return await apiClient.post<{ message: string; data: CustomerTag[] }>(
+      `/customers/${customerId}/tags/sync`,
       { tag_ids: tagIds }
     );
   },

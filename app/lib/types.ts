@@ -358,6 +358,15 @@ export interface ItemTag {
   updated_at: string;
 }
 
+// Customer Tags
+export interface CustomerTag {
+  id: number;
+  name: string;
+  color: string; // Hex color code like #3b82f6
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Item {
   id: number;
   serial_number: string; // Format: {category_alias}-XXXXXX or ITEM-XXXXXX

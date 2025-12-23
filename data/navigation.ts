@@ -79,6 +79,12 @@ export const navigationData: NavItem[] = [
         icon: FileText,
         href: "/customer/invoices",
       },
+      {
+        id: "customer-tags",
+        label: "Tag Manager",
+        icon: Tag,
+        href: "/customer/tags",
+      },
     ],
     isExpanded: false
   },

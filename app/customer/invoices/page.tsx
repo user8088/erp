@@ -233,10 +233,11 @@ export default function CustomerInvoicesPage() {
 
   const handleViewInvoice = async (invoiceId: number) => {
     try {
-      const viewUrl = await invoicesApi.getInvoiceViewUrl(invoiceId);
-      window.open(viewUrl, '_blank');
+      const blob = await invoicesApi.downloadInvoice(invoiceId);
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
     } catch (error) {
-      console.error("Failed to get invoice view URL:", error);
+      console.error("Failed to open invoice preview:", error);
       addToast("Failed to open invoice", "error");
     }
   };
@@ -290,7 +291,12 @@ export default function CustomerInvoicesPage() {
             <label className="block text-xs font-medium text-gray-700 mb-1">Invoice Type</label>
             <select
               value={invoiceFilters.invoice_type}
-              onChange={(e) => setInvoiceFilters({ ...invoiceFilters, invoice_type: e.target.value as any })}
+              onChange={(e) =>
+                setInvoiceFilters({
+                  ...invoiceFilters,
+                  invoice_type: e.target.value as '' | 'walk-in' | 'delivery' | 'all',
+                })
+              }
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="">All Types</option>
@@ -319,7 +325,12 @@ export default function CustomerInvoicesPage() {
             <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
             <select
               value={invoiceFilters.status}
-              onChange={(e) => setInvoiceFilters({ ...invoiceFilters, status: e.target.value as any })}
+              onChange={(e) =>
+                setInvoiceFilters({
+                  ...invoiceFilters,
+                  status: e.target.value as '' | 'draft' | 'issued' | 'paid' | 'cancelled',
+                })
+              }
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="">All Statuses</option>
@@ -453,24 +464,20 @@ export default function CustomerInvoicesPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end gap-2">
-                          {invoice.has_pdf && (
-                            <>
-                              <button
-                                onClick={() => handleViewInvoice(invoice.id)}
-                                className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
-                                title="View Invoice"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDownloadInvoice(invoice.id)}
-                                className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
-                                title="Download Invoice"
-                              >
-                                <Download className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
+                          <button
+                            onClick={() => handleViewInvoice(invoice.id)}
+                            className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
+                            title="View Invoice"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDownloadInvoice(invoice.id)}
+                            className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
+                            title="Download Invoice"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>

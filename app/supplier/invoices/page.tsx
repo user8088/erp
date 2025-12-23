@@ -420,15 +420,22 @@ export default function SupplierInvoicesPage() {
                           >
                             <Download className="w-4 h-4" />
                           </button>
-                          <a
-                            href={invoicesApi.getInvoiceViewUrl(invoice.id)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={async () => {
+                              try {
+                                const blob = await invoicesApi.downloadInvoice(invoice.id);
+                                const url = window.URL.createObjectURL(blob);
+                                window.open(url, "_blank");
+                              } catch (error) {
+                                console.error("Failed to open invoice preview:", error);
+                                addToast("Failed to open invoice", "error");
+                              }
+                            }}
                             className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
                             title="View PDF"
                           >
                             <Eye className="w-4 h-4" />
-                          </a>
+                          </button>
                         </div>
                       </td>
                     </tr>

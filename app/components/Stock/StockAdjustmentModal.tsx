@@ -58,6 +58,9 @@ export default function StockAdjustmentModal({
 
   if (!isOpen || !item) return null;
 
+  // Ensure current stock is always treated as a number (in case it comes in as a string)
+  const currentStockNumber = Number(currentStock) || 0;
+
   // Calculate new stock based on selected unit
   let quantityInPrimaryUnit = Number(quantity) || 0;
   if (selectedUnit === 'secondary' && item.secondary_unit && item.conversion_rate) {
@@ -65,11 +68,11 @@ export default function StockAdjustmentModal({
   }
 
   const newStock = adjustmentType === 'add' 
-    ? currentStock + quantityInPrimaryUnit
-    : currentStock - quantityInPrimaryUnit;
+    ? currentStockNumber + quantityInPrimaryUnit
+    : currentStockNumber - quantityInPrimaryUnit;
 
   const secondaryStock = item.secondary_unit && item.conversion_rate 
-    ? currentStock * item.conversion_rate 
+    ? currentStockNumber * item.conversion_rate 
     : null;
 
   return (
