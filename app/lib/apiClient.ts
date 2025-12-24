@@ -775,6 +775,134 @@ export const customersApi = {
       };
     }>(url);
   },
+
+  // Customer Stock Profit Statistics
+  // GET /api/customers/{id}/stock-profit-stats
+  // Returns profit analysis for stock items sold to customer, tracking cost prices from purchases
+  async getCustomerStockProfit(
+    id: number,
+    params?: {
+      start_date?: string; // YYYY-MM-DD
+      end_date?: string; // YYYY-MM-DD
+      month?: string; // YYYY-MM format
+    }
+  ): Promise<{
+    customer_id: number;
+    customer_name: string;
+    total_items_sold: number;
+    total_quantity_sold: number;
+    total_cost: number;
+    total_revenue: number;
+    total_profit: number;
+    overall_profit_margin: number;
+    items: Array<{
+      item_id: number;
+      item_name: string;
+      item_brand?: string;
+      item_category?: string;
+      total_quantity_sold: number;
+      unit: string;
+      average_cost_price: number;
+      average_selling_price: number;
+      total_cost: number;
+      total_revenue: number;
+      total_profit: number;
+      profit_margin_percentage: number;
+      transactions_count: number;
+      last_sale_date?: string;
+    }>;
+    transactions: Array<{
+      id: number;
+      sale_id: number;
+      sale_number?: string;
+      invoice_id?: number;
+      invoice_number?: string;
+      item_id: number;
+      item_name: string;
+      item_brand?: string;
+      quantity: number;
+      unit: string;
+      cost_price: number;
+      historical_cost_price: number;
+      selling_price: number;
+      total_cost: number;
+      total_revenue: number;
+      profit: number;
+      historical_profit: number;
+      profit_margin_percentage: number;
+      historical_profit_margin_percentage: number;
+      sale_date: string;
+      purchase_invoice_id?: number;
+      purchase_invoice_number?: string;
+      supplier_id?: number;
+      supplier_name?: string;
+    }>;
+    period_start?: string;
+    period_end?: string;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
+    if (params?.month) queryParams.append('month', params.month);
+    
+    const queryString = queryParams.toString();
+    const url = `/customers/${id}/stock-profit-stats${queryString ? `?${queryString}` : ''}`;
+    
+    return await apiClient.get<{
+      customer_id: number;
+      customer_name: string;
+      total_items_sold: number;
+      total_quantity_sold: number;
+      total_cost: number;
+      total_revenue: number;
+      total_profit: number;
+      overall_profit_margin: number;
+      items: Array<{
+        item_id: number;
+        item_name: string;
+        item_brand?: string;
+        item_category?: string;
+        total_quantity_sold: number;
+        unit: string;
+        average_cost_price: number;
+        average_selling_price: number;
+        total_cost: number;
+        total_revenue: number;
+        total_profit: number;
+        profit_margin_percentage: number;
+        transactions_count: number;
+        last_sale_date?: string;
+      }>;
+      transactions: Array<{
+        id: number;
+        sale_id: number;
+        sale_number?: string;
+        invoice_id?: number;
+        invoice_number?: string;
+        item_id: number;
+        item_name: string;
+        item_brand?: string;
+        quantity: number;
+        unit: string;
+        cost_price: number;
+        historical_cost_price: number;
+        selling_price: number;
+        total_cost: number;
+        total_revenue: number;
+        profit: number;
+        historical_profit: number;
+        profit_margin_percentage: number;
+        historical_profit_margin_percentage: number;
+        sale_date: string;
+        purchase_invoice_id?: number;
+        purchase_invoice_number?: string;
+        supplier_id?: number;
+        supplier_name?: string;
+      }>;
+      period_start?: string;
+      period_end?: string;
+    }>(url);
+  },
 };
 
 // Items API - Using real backend endpoints

@@ -15,6 +15,7 @@ export default function CustomerDetailTabs({
     { id: "earnings", label: "Earnings" },
     { id: "rentals", label: "Rentals" },
     { id: "delivery-profit", label: "Delivery Profit" },
+    { id: "stock-profit", label: "Stock Profit" },
     { id: "transactions", label: "Transactions" },
     { id: "more-information", label: "More Information" },
     { id: "settings", label: "Settings" },

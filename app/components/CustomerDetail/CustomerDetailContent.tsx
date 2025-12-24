@@ -6,6 +6,7 @@ import CustomerDetailsForm from "./CustomerDetailsForm";
 import CustomerRentals from "./CustomerRentals";
 import CustomerDeliveryProfit from "./CustomerDeliveryProfit";
 import CustomerEarnings from "./CustomerEarnings";
+import CustomerStockProfit from "./CustomerStockProfit";
 import RecordPaymentModal from "./RecordPaymentModal";
 import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
@@ -755,6 +756,9 @@ export default function CustomerDetailContent({
         )}
         {activeTab === "delivery-profit" && (
           <CustomerDeliveryProfit customerId={Number(customerId)} />
+        )}
+        {activeTab === "stock-profit" && (
+          <CustomerStockProfit customerId={Number(customerId)} />
         )}
         {activeTab === "more-information" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
