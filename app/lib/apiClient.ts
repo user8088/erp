@@ -636,6 +636,21 @@ export const customersApi = {
     customer_id: number;
     customer_name: string;
     statistics: {
+      // Walk-in Sales
+      walk_in_sales_revenue?: number;
+      walk_in_sales_discount?: number;
+      walk_in_sales_count?: number;
+      
+      // Order/Delivery Sales
+      order_sales_revenue?: number;
+      order_sales_discount?: number;
+      order_sales_count?: number;
+      
+      // Rental Agreements
+      rental_revenue?: number;
+      rental_count?: number;
+      
+      // Aggregated Totals (for backward compatibility)
       total_sales_revenue: number;
       total_sales_discount: number;
       total_rental_revenue: number;
@@ -643,6 +658,7 @@ export const customersApi = {
       total_invoice_discount: number;
       total_earnings: number;
       total_discounts_given: number;
+      net_earnings?: number;
       total_orders: number;
       total_rentals: number;
       total_invoices: number;

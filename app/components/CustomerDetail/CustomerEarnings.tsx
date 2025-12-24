@@ -2,24 +2,40 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { DollarSign, TrendingUp, Percent, Package, ShoppingCart, Calendar, RefreshCw } from "lucide-react";
-import { salesApi, invoicesApi, rentalApi, customersApi } from "../../lib/apiClient";
-import type { Sale, Invoice, RentalAgreement } from "../../lib/types";
+import { salesApi, rentalApi, customersApi } from "../../lib/apiClient";
+import type { RentalAgreement } from "../../lib/types";
 
 interface CustomerEarningsProps {
   customerId: number;
 }
 
 interface CustomerEarningsStats {
-  total_sales_revenue: number;
-  total_sales_discount: number;
-  total_rental_revenue: number;
-  total_invoice_revenue: number;
-  total_invoice_discount: number;
-  total_earnings: number;
-  total_discounts_given: number;
-  total_orders: number;
-  total_rentals: number;
-  total_invoices: number;
+  // Walk-in Sales
+  walk_in_sales_revenue?: number;        // Gross revenue from walk-in sales
+  walk_in_sales_discount?: number;       // Discounts for walk-in sales
+  walk_in_sales_count?: number;         // Count of walk-in sales
+  
+  // Order/Delivery Sales
+  order_sales_revenue?: number;          // Gross revenue from delivery/order sales
+  order_sales_discount?: number;         // Discounts for order sales
+  order_sales_count?: number;            // Count of delivery/order sales
+  
+  // Rental Agreements
+  rental_revenue?: number;               // Revenue from rental payments
+  rental_count?: number;                 // Count of rental agreements
+  
+  // Aggregated Totals (for backward compatibility)
+  total_sales_revenue: number;           // Total of all sales (walk-in + order)
+  total_sales_discount: number;          // Total discounts
+  total_rental_revenue: number;          // Same as rental_revenue
+  total_invoice_revenue: number;         // Same as order_sales_revenue (legacy name)
+  total_invoice_discount: number;        // Same as order_sales_discount (legacy name)
+  total_earnings: number;                // Gross total earnings
+  total_discounts_given: number;         // Total discounts
+  net_earnings?: number;                 // Net earnings after discounts
+  total_orders: number;                  // Walk-in sales count (legacy name)
+  total_rentals: number;                 // Rental count
+  total_invoices: number;                // Order sales count (legacy name)
   period_start?: string;
   period_end?: string;
 }
@@ -61,15 +77,57 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
       try {
         const response = await customersApi.getCustomerEarningsStats(customerId, params);
         console.log("Backend API response:", response.statistics);
-        // If backend returns 0 discounts but we have sales, recalculate from sales
-        if (response.statistics.total_discounts_given === 0) {
-          console.log("Backend returned 0 discounts, recalculating from sales data...");
-          // Still use backend data but recalculate discounts
-          const recalculatedStats = await recalculateDiscountsFromSales(customerId, params, response.statistics);
-          setStats(recalculatedStats);
-        } else {
-          setStats(response.statistics);
+        const backendStats = response.statistics;
+        
+        // Ensure total_earnings represents GROSS revenue (before discounts)
+        // Note: Backend should return gross revenue. If it returns net, we need to add discounts.
+        // For now, we assume backend returns gross revenue. If backend returns net revenue,
+        // the recalculateDiscountsFromSales function will handle the conversion.
+        
+        // Backend should now return walk_in_sales_revenue and order_sales_revenue separately
+        // If not present, calculate from the aggregated fields (backward compatibility)
+        if (!backendStats.walk_in_sales_revenue && !backendStats.order_sales_revenue) {
+          console.log("Backend returned old format, using frontend calculation...");
+          // Fall through to frontend calculation
+          throw new Error("Backend format not supported, using frontend calculation");
         }
+        
+        // Normalize the response to ensure all fields are present
+        const normalizedStats = {
+          walk_in_sales_revenue: backendStats.walk_in_sales_revenue || 0,
+          walk_in_sales_discount: backendStats.walk_in_sales_discount || 0,
+          walk_in_sales_count: backendStats.walk_in_sales_count || backendStats.total_orders || 0,
+          
+          order_sales_revenue: backendStats.order_sales_revenue || backendStats.total_invoice_revenue || 0,
+          order_sales_discount: backendStats.order_sales_discount || backendStats.total_invoice_discount || 0,
+          order_sales_count: backendStats.order_sales_count || backendStats.total_invoices || 0,
+          
+          rental_revenue: backendStats.rental_revenue || backendStats.total_rental_revenue || 0,
+          rental_count: backendStats.rental_count || backendStats.total_rentals || 0,
+          
+          // Aggregated fields (for backward compatibility)
+          total_sales_revenue: backendStats.total_sales_revenue || 
+                              (backendStats.walk_in_sales_revenue || 0) + (backendStats.order_sales_revenue || 0),
+          total_sales_discount: backendStats.total_sales_discount || 
+                               (backendStats.walk_in_sales_discount || 0) + (backendStats.order_sales_discount || 0),
+          total_rental_revenue: backendStats.rental_revenue || backendStats.total_rental_revenue || 0,
+          total_invoice_revenue: backendStats.order_sales_revenue || backendStats.total_invoice_revenue || 0,
+          total_invoice_discount: backendStats.order_sales_discount || backendStats.total_invoice_discount || 0,
+          total_earnings: backendStats.total_earnings || 
+                        (backendStats.walk_in_sales_revenue || 0) + 
+                        (backendStats.order_sales_revenue || 0) + 
+                        (backendStats.rental_revenue || 0),
+          total_discounts_given: backendStats.total_discounts_given || 
+                               (backendStats.walk_in_sales_discount || 0) + (backendStats.order_sales_discount || 0),
+          net_earnings: backendStats.net_earnings,
+          total_orders: backendStats.walk_in_sales_count || backendStats.total_orders || 0,
+          total_rentals: backendStats.rental_count || backendStats.total_rentals || 0,
+          total_invoices: backendStats.order_sales_count || backendStats.total_invoices || 0,
+          period_start: backendStats.period_start,
+          period_end: backendStats.period_end,
+        };
+        
+        setStats(normalizedStats);
       } catch (apiError) {
         // Fallback: Calculate on frontend if API not available yet
         console.warn("Backend API not available, calculating on frontend:", apiError);
@@ -90,28 +148,8 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
         const salesData = await salesApi.getSales(salesParams);
         const allSales = salesData.data.filter(sale => sale.status !== 'cancelled');
         
-        // Fetch all invoices for customer
-        const invoicesParams: {
-          customer_id: number;
-          invoice_type: 'sale';
-          per_page: number;
-          start_date?: string;
-          end_date?: string;
-        } = {
-          customer_id: customerId,
-          invoice_type: 'sale',
-          per_page: 1000,
-        };
-        if (params.start_date) invoicesParams.start_date = params.start_date;
-        if (params.end_date) invoicesParams.end_date = params.end_date;
-        
-        let allInvoices: Invoice[] = [];
-        try {
-          const invoicesData = await invoicesApi.getInvoices(invoicesParams);
-          allInvoices = invoicesData.invoices.filter(inv => inv.status !== 'cancelled');
-        } catch (e) {
-          console.warn("Failed to fetch invoices:", e);
-        }
+        // Note: We no longer need to fetch invoices for revenue calculation
+        // We use sale_type directly from sales to distinguish walk-in vs delivery/order sales
         
         // Fetch all rental agreements for customer
         const rentalsParams: {
@@ -130,54 +168,25 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
           console.warn("Failed to fetch rentals:", e);
         }
         
-        // Calculate totals
-        const totalSalesRevenue = allSales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
-        const totalSalesDiscount = allSales.reduce((sum, sale) => sum + (Number(sale.total_discount) || 0), 0);
+        // Separate sales by type: walk-in vs delivery/order
+        // Use sale_type field to distinguish, not invoice presence
+        const walkInSales = allSales.filter(sale => sale.sale_type === 'walk-in');
+        const deliverySales = allSales.filter(sale => sale.sale_type === 'delivery');
         
-        const totalInvoiceRevenue = allInvoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0);
+        // Calculate walk-in sales revenue
+        const walkInSalesRevenueNet = walkInSales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
+        const walkInSalesDiscount = walkInSales.reduce((sum, sale) => sum + (Number(sale.total_discount) || 0), 0);
+        const walkInSalesRevenueGross = walkInSalesRevenueNet + walkInSalesDiscount;
         
-        // Calculate invoice discounts from related sales
-        // Invoices reference sales via reference_type='sale' and reference_id
-        let totalInvoiceDiscount = 0;
-        const processedSaleIds = new Set<number>();
+        // For delivery/order sales: calculate from the sales themselves, not invoices
+        // This avoids double-counting if invoices are also created
+        const deliverySalesRevenueNet = deliverySales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
+        const deliverySalesDiscount = deliverySales.reduce((sum, sale) => sum + (Number(sale.total_discount) || 0), 0);
+        const deliverySalesRevenueGross = deliverySalesRevenueNet + deliverySalesDiscount;
         
-        // Process each invoice to get its discount
-        const invoiceDiscountPromises = allInvoices.map(async (invoice) => {
-          let discount = 0;
-          let saleId: number | null = null;
-          
-          // First, check if sale data is in metadata
-          const metadata = invoice.metadata as Record<string, unknown> | undefined;
-          if (metadata?.sale) {
-            const metaSale = metadata.sale as Sale;
-            saleId = metaSale.id;
-            discount = Number(metaSale.total_discount) || 0;
-          } else if (metadata?.sale_id) {
-            saleId = metadata.sale_id as number;
-          } else if (invoice.reference_type === 'sale' && invoice.reference_id) {
-            saleId = invoice.reference_id;
-          }
-          
-          // If we have a sale ID but no discount from metadata, fetch the sale
-          if (saleId && !processedSaleIds.has(saleId) && discount === 0) {
-            processedSaleIds.add(saleId);
-            try {
-              const saleResponse = await salesApi.getSale(saleId);
-              const sale = (saleResponse as { sale?: Sale }).sale ?? (saleResponse as unknown as Sale | undefined);
-              discount = Number(sale?.total_discount) || 0;
-            } catch (e) {
-              console.warn(`Failed to fetch sale ${saleId} for discount calculation:`, e);
-              discount = 0;
-            }
-          } else if (saleId) {
-            processedSaleIds.add(saleId);
-          }
-          
-          return discount;
-        });
-        
-        const invoiceDiscounts = await Promise.all(invoiceDiscountPromises);
-        totalInvoiceDiscount = invoiceDiscounts.reduce((sum, discount) => sum + discount, 0);
+        // Total sales revenue = walk-in sales + delivery/order sales
+        const totalSalesRevenueGross = walkInSalesRevenueGross + deliverySalesRevenueGross;
+        const totalSalesDiscount = walkInSalesDiscount + deliverySalesDiscount;
         
         const totalRentalRevenue = allRentals.reduce((sum, rental) => {
           // Sum all payments for this rental
@@ -185,20 +194,38 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
           return sum + rentalPayments;
         }, 0);
         
-        const totalEarnings = totalSalesRevenue + totalInvoiceRevenue + totalRentalRevenue;
-        const totalDiscountsGiven = totalSalesDiscount + totalInvoiceDiscount;
+        // Total Earnings should be GROSS revenue (before discounts) from the customer
+        // Note: totalSalesRevenueGross already includes both walk-in and invoice revenue, so don't add invoice revenue again
+        const totalEarnings = totalSalesRevenueGross + totalRentalRevenue;
+        const totalDiscountsGiven = totalSalesDiscount;
         
         setStats({
-          total_sales_revenue: totalSalesRevenue,
+          // Walk-in Sales
+          walk_in_sales_revenue: walkInSalesRevenueGross,
+          walk_in_sales_discount: walkInSalesDiscount,
+          walk_in_sales_count: walkInSales.length,
+          
+          // Order/Delivery Sales
+          order_sales_revenue: deliverySalesRevenueGross,
+          order_sales_discount: deliverySalesDiscount,
+          order_sales_count: deliverySales.length,
+          
+          // Rental Agreements
+          rental_revenue: totalRentalRevenue,
+          rental_count: allRentals.length,
+          
+          // Aggregated Totals (for backward compatibility)
+          total_sales_revenue: totalSalesRevenueGross,
           total_sales_discount: totalSalesDiscount,
           total_rental_revenue: totalRentalRevenue,
-          total_invoice_revenue: totalInvoiceRevenue,
-          total_invoice_discount: totalInvoiceDiscount,
+          total_invoice_revenue: deliverySalesRevenueGross, // Legacy: same as order_sales_revenue
+          total_invoice_discount: deliverySalesDiscount,    // Legacy: same as order_sales_discount
           total_earnings: totalEarnings,
           total_discounts_given: totalDiscountsGiven,
-          total_orders: allSales.length,
+          net_earnings: totalEarnings - totalDiscountsGiven,
+          total_orders: walkInSales.length,
           total_rentals: allRentals.length,
-          total_invoices: allInvoices.length,
+          total_invoices: deliverySales.length,
           period_start: params.start_date,
           period_end: params.end_date,
         });
@@ -239,95 +266,71 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
       total_amount: allSales[0].total_amount
     } : "No sales");
     
-    const totalSalesDiscount = allSales.reduce((sum, sale) => {
+    // Note: We no longer need to fetch invoices for revenue calculation
+    // We use sale_type directly from sales to distinguish walk-in vs delivery/order sales
+    
+    // Separate sales by type: walk-in vs delivery/order
+    // Use sale_type field to distinguish
+    const walkInSales = allSales.filter(sale => sale.sale_type === 'walk-in');
+    const deliverySales = allSales.filter(sale => sale.sale_type === 'delivery');
+    
+    // Calculate walk-in sales discount
+    const walkInSalesDiscount = walkInSales.reduce((sum, sale) => {
       const discount = Number(sale.total_discount) || 0;
-      console.log(`Sale ${sale.id}: discount = ${discount}`);
       return sum + discount;
     }, 0);
     
-    console.log("Total sales discount calculated:", totalSalesDiscount);
+    // Calculate delivery/order sales discount
+    const deliverySalesDiscount = deliverySales.reduce((sum, sale) => {
+      const discount = Number(sale.total_discount) || 0;
+      return sum + discount;
+    }, 0);
     
-    // Fetch invoices to get their discounts
-    const invoicesParams: {
-      customer_id: number;
-      invoice_type: 'sale';
-      per_page: number;
-      start_date?: string;
-      end_date?: string;
-    } = {
-      customer_id: customerId,
-      invoice_type: 'sale',
-      per_page: 1000,
-    };
-    if (params.start_date) invoicesParams.start_date = params.start_date;
-    if (params.end_date) invoicesParams.end_date = params.end_date;
-    
-    let allInvoices: Invoice[] = [];
-    try {
-      const invoicesData = await invoicesApi.getInvoices(invoicesParams);
-      allInvoices = invoicesData.invoices.filter(inv => inv.status !== 'cancelled');
-    } catch (e) {
-      console.warn("Failed to fetch invoices:", e);
-    }
-    
-    // Calculate invoice discounts from related sales
-    let totalInvoiceDiscount = 0;
-    const processedSaleIds = new Set<number>();
-    
-    const invoiceDiscountPromises = allInvoices.map(async (invoice) => {
-      let discount = 0;
-      let saleId: number | null = null;
-      
-      const metadata = invoice.metadata as Record<string, unknown> | undefined;
-      if (metadata?.sale) {
-        const metaSale = metadata.sale as Sale;
-        saleId = metaSale.id;
-        discount = Number(metaSale.total_discount) || 0;
-        console.log(`Invoice ${invoice.id}: discount from metadata = ${discount}`);
-      } else if (metadata?.sale_id) {
-        saleId = metadata.sale_id as number;
-      } else if (invoice.reference_type === 'sale' && invoice.reference_id) {
-        saleId = invoice.reference_id;
-      }
-      
-      if (saleId && !processedSaleIds.has(saleId) && discount === 0) {
-        processedSaleIds.add(saleId);
-        try {
-          const saleResponse = await salesApi.getSale(saleId);
-          const sale = (saleResponse as { sale?: Sale }).sale ?? (saleResponse as unknown as Sale | undefined);
-          discount = Number(sale?.total_discount) || 0;
-          console.log(`Invoice ${invoice.id}: fetched sale ${saleId}, discount = ${discount}`);
-        } catch (e) {
-          console.warn(`Failed to fetch sale ${saleId} for discount calculation:`, e);
-          discount = 0;
-        }
-      } else if (saleId) {
-        processedSaleIds.add(saleId);
-      }
-      
-      return discount;
-    });
-    
-    const invoiceDiscounts = await Promise.all(invoiceDiscountPromises);
-    totalInvoiceDiscount = invoiceDiscounts.reduce((sum, discount) => sum + discount, 0);
-    console.log("Total invoice discount calculated:", totalInvoiceDiscount);
-    
-    const totalDiscountsGiven = totalSalesDiscount + totalInvoiceDiscount;
+    const totalDiscountsGiven = walkInSalesDiscount + deliverySalesDiscount;
     console.log("Total discounts given:", totalDiscountsGiven);
     
-    // Use existing stats if provided, otherwise calculate everything
+    // Use existing stats if provided, but recalculate gross revenue
     if (existingStats) {
+      // Calculate gross revenue from net revenue + discounts
+      const walkInSalesRevenueNet = (existingStats.walk_in_sales_revenue || 0) - (existingStats.walk_in_sales_discount || 0);
+      const walkInSalesRevenueGross = walkInSalesRevenueNet + walkInSalesDiscount;
+      
+      const deliverySalesRevenueNet = (existingStats.total_invoice_revenue || 0) - (existingStats.total_invoice_discount || 0);
+      const deliverySalesRevenueGross = deliverySalesRevenueNet + deliverySalesDiscount;
+      const totalInvoiceRevenueGross = deliverySalesRevenueGross;
+      const totalInvoiceDiscount = deliverySalesDiscount;
+      
+      const totalSalesRevenueGross = walkInSalesRevenueGross + totalInvoiceRevenueGross;
+      const totalEarnings = totalSalesRevenueGross + (existingStats.total_rental_revenue || 0);
+      
       return {
         ...existingStats,
-        total_sales_discount: totalSalesDiscount,
+        total_sales_revenue: totalSalesRevenueGross,
+        total_sales_discount: totalDiscountsGiven,
+        walk_in_sales_revenue: walkInSalesRevenueGross,
+        walk_in_sales_discount: walkInSalesDiscount,
+        total_invoice_revenue: totalInvoiceRevenueGross,
         total_invoice_discount: totalInvoiceDiscount,
+        total_earnings: totalEarnings,
         total_discounts_given: totalDiscountsGiven,
       };
     }
     
     // Calculate everything from scratch
-    const totalSalesRevenue = allSales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
-    const totalInvoiceRevenue = allInvoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0);
+    // Walk-in sales
+    const walkInSalesRevenueNet = walkInSales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
+    const walkInSalesRevenueGross = walkInSalesRevenueNet + walkInSalesDiscount;
+    
+    // Delivery/order sales revenue
+    const deliverySalesRevenueNet = deliverySales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
+    const deliverySalesRevenueGross = deliverySalesRevenueNet + deliverySalesDiscount;
+    
+    // Use delivery sales revenue as order sales revenue
+    const totalInvoiceRevenueGross = deliverySalesRevenueGross;
+    const totalInvoiceDiscount = deliverySalesDiscount;
+    
+    // Total sales revenue = walk-in + delivery/order
+    const totalSalesRevenueGross = walkInSalesRevenueGross + deliverySalesRevenueGross;
     
     // Fetch rentals
     const rentalsParams: {
@@ -351,19 +354,23 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
       return sum + rentalPayments;
     }, 0);
     
-    const totalEarnings = totalSalesRevenue + totalInvoiceRevenue + totalRentalRevenue;
+    // Total Earnings should be GROSS revenue (before discounts) from the customer
+    // totalSalesRevenueGross already includes both walk-in sales and invoice revenue
+    const totalEarnings = totalSalesRevenueGross + totalRentalRevenue;
     
     return {
-      total_sales_revenue: totalSalesRevenue,
-      total_sales_discount: totalSalesDiscount,
+      total_sales_revenue: totalSalesRevenueGross,
+      total_sales_discount: totalDiscountsGiven,
       total_rental_revenue: totalRentalRevenue,
-      total_invoice_revenue: totalInvoiceRevenue,
+      total_invoice_revenue: totalInvoiceRevenueGross,
       total_invoice_discount: totalInvoiceDiscount,
+      walk_in_sales_revenue: walkInSalesRevenueGross,
+      walk_in_sales_discount: walkInSalesDiscount,
       total_earnings: totalEarnings,
       total_discounts_given: totalDiscountsGiven,
-      total_orders: allSales.length,
+      total_orders: walkInSales.length,
       total_rentals: allRentals.length,
-      total_invoices: allInvoices.length,
+      total_invoices: deliverySales.length,
       period_start: params.start_date,
       period_end: params.end_date,
     };
@@ -436,8 +443,12 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
     );
   }
 
+  // Calculate net earnings (gross - discounts)
+  const netEarnings = stats.total_earnings - stats.total_discounts_given;
+  
+  // Discount percentage of gross revenue
   const discountPercentage = stats.total_earnings > 0 
-    ? (stats.total_discounts_given / (stats.total_earnings + stats.total_discounts_given)) * 100 
+    ? (stats.total_discounts_given / stats.total_earnings) * 100 
     : 0;
 
   return (
@@ -541,7 +552,7 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
             <DollarSign className="w-5 h-5 text-green-600" />
           </div>
           <p className="text-3xl font-bold text-green-900">{formatCurrency(stats.total_earnings)}</p>
-          <p className="text-xs text-green-600 mt-1">From sales, rentals & invoices</p>
+          <p className="text-xs text-green-600 mt-1">Gross revenue from sales, rentals & invoices</p>
         </div>
 
         <div className="bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-200 rounded-lg p-6">
@@ -557,13 +568,13 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
 
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 rounded-lg p-6">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-medium text-blue-700">Gross Revenue</h4>
+            <h4 className="text-sm font-medium text-blue-700">Net Earnings</h4>
             <TrendingUp className="w-5 h-5 text-blue-600" />
           </div>
           <p className="text-3xl font-bold text-blue-900">
-            {formatCurrency(stats.total_earnings + stats.total_discounts_given)}
+            {formatCurrency(netEarnings)}
           </p>
-          <p className="text-xs text-blue-600 mt-1">Before discounts</p>
+          <p className="text-xs text-blue-600 mt-1">After discounts</p>
         </div>
 
         <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-200 rounded-lg p-6">
@@ -575,7 +586,7 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
             {stats.total_orders + stats.total_rentals + stats.total_invoices}
           </p>
           <p className="text-xs text-purple-600 mt-1">
-            {stats.total_orders} sales, {stats.total_rentals} rentals, {stats.total_invoices} invoices
+            {(stats.walk_in_sales_count || stats.total_orders || 0)} walk-in, {(stats.order_sales_count || stats.total_invoices || 0)} orders, {(stats.rental_count || stats.total_rentals || 0)} rentals
           </p>
         </div>
       </div>
@@ -584,55 +595,53 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-base font-semibold text-gray-900 mb-4">Revenue Breakdown</h3>
         <div className="space-y-4">
-          {/* Sales Revenue */}
+          {/* Walk-in Sales Revenue - Always show, even if 0 */}
           <div className="flex justify-between items-center py-3 border-b border-gray-100">
             <div className="flex items-center gap-3">
               <ShoppingCart className="w-5 h-5 text-green-600" />
               <div>
-                <span className="text-sm font-medium text-gray-700">Sales Revenue</span>
-                <p className="text-xs text-gray-500">{stats.total_orders} orders</p>
+                <span className="text-sm font-medium text-gray-700">Walk-in Sales Revenue</span>
+                <p className="text-xs text-gray-500">{(stats.walk_in_sales_count || stats.total_orders || 0)} walk-in sale{(stats.walk_in_sales_count || stats.total_orders || 0) !== 1 ? 's' : ''}</p>
               </div>
             </div>
             <div className="text-right">
-              <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.total_sales_revenue)}</span>
-              {stats.total_sales_discount > 0 && (
-                <p className="text-xs text-orange-600">-{formatCurrency(stats.total_sales_discount)} discount</p>
+              <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.walk_in_sales_revenue || 0)}</span>
+              {(stats.walk_in_sales_discount || 0) > 0 && (
+                <p className="text-xs text-orange-600">-{formatCurrency(stats.walk_in_sales_discount || 0)} discount</p>
               )}
             </div>
           </div>
 
-          {/* Rental Revenue */}
+          {/* Order/Delivery Sales Revenue - Always show, even if 0 */}
+          <div className="flex justify-between items-center py-3 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <DollarSign className="w-5 h-5 text-purple-600" />
+              <div>
+                <span className="text-sm font-medium text-gray-700">Order Sales Revenue</span>
+                <p className="text-xs text-gray-500">{(stats.order_sales_count || stats.total_invoices || 0)} order{(stats.order_sales_count || stats.total_invoices || 0) !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.order_sales_revenue || stats.total_invoice_revenue || 0)}</span>
+              {(stats.order_sales_discount || stats.total_invoice_discount || 0) > 0 && (
+                <p className="text-xs text-orange-600">-{formatCurrency(stats.order_sales_discount || stats.total_invoice_discount || 0)} discount</p>
+              )}
+            </div>
+          </div>
+
+          {/* Rental Revenue - Always show, even if 0 */}
           <div className="flex justify-between items-center py-3 border-b border-gray-100">
             <div className="flex items-center gap-3">
               <Package className="w-5 h-5 text-blue-600" />
               <div>
-                <span className="text-sm font-medium text-gray-700">Rental Revenue</span>
-                <p className="text-xs text-gray-500">{stats.total_rentals} agreements</p>
+                <span className="text-sm font-medium text-gray-700">Rental Agreements Revenue</span>
+                <p className="text-xs text-gray-500">{(stats.rental_count || stats.total_rentals || 0)} agreement{(stats.rental_count || stats.total_rentals || 0) !== 1 ? 's' : ''}</p>
               </div>
             </div>
             <div className="text-right">
-              <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.total_rental_revenue)}</span>
+              <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.rental_revenue || stats.total_rental_revenue || 0)}</span>
             </div>
           </div>
-
-          {/* Invoice Revenue */}
-          {stats.total_invoice_revenue > 0 && (
-            <div className="flex justify-between items-center py-3 border-b border-gray-100">
-              <div className="flex items-center gap-3">
-                <DollarSign className="w-5 h-5 text-purple-600" />
-                <div>
-                  <span className="text-sm font-medium text-gray-700">Invoice Revenue</span>
-                  <p className="text-xs text-gray-500">{stats.total_invoices} invoices</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.total_invoice_revenue)}</span>
-                {stats.total_invoice_discount > 0 && (
-                  <p className="text-xs text-orange-600">-{formatCurrency(stats.total_invoice_discount)} discount</p>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Total Discounts */}
           {stats.total_discounts_given > 0 && (
@@ -651,7 +660,7 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
               <TrendingUp className="w-5 h-5 text-green-600" />
               <span className="text-base font-semibold text-green-900">Net Earnings</span>
             </div>
-            <span className="text-xl font-bold text-green-900">{formatCurrency(stats.total_earnings)}</span>
+            <span className="text-xl font-bold text-green-900">{formatCurrency(netEarnings)}</span>
           </div>
         </div>
       </div>
