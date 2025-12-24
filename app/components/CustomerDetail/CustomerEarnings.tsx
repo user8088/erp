@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { DollarSign, TrendingUp, Percent, Package, ShoppingCart, Calendar, RefreshCw } from "lucide-react";
-import { salesApi, rentalApi, customersApi } from "../../lib/apiClient";
-import type { RentalAgreement } from "../../lib/types";
+import { DollarSign, TrendingUp, Percent, Package, ShoppingCart, Calendar, RefreshCw, AlertCircle } from "lucide-react";
+import { salesApi, rentalApi, customersApi, invoicesApi } from "../../lib/apiClient";
+import type { RentalAgreement, Invoice } from "../../lib/types";
 
 interface CustomerEarningsProps {
   customerId: number;
@@ -24,18 +24,28 @@ interface CustomerEarningsStats {
   rental_revenue?: number;               // Revenue from rental payments
   rental_count?: number;                 // Count of rental agreements
   
+  // Payment Breakdown
+  total_paid?: number;                   // Total amount paid by customer
+  walk_in_paid?: number;                 // Amount paid for walk-in sales
+  order_paid?: number;                   // Amount paid for order sales (invoice payments)
+  rental_paid?: number;                  // Amount paid for rentals
+  
+  // Customer Due (Unpaid Invoices)
+  customer_due?: number;                 // Total amount customer owes (unpaid invoices)
+  unpaid_invoices_count?: number;        // Count of unpaid invoices
+  
   // Aggregated Totals (for backward compatibility)
-  total_sales_revenue: number;           // Total of all sales (walk-in + order)
+  total_sales_revenue: number;           // Total of all PAID sales (walk-in + paid orders)
   total_sales_discount: number;          // Total discounts
   total_rental_revenue: number;          // Same as rental_revenue
   total_invoice_revenue: number;         // Same as order_sales_revenue (legacy name)
   total_invoice_discount: number;        // Same as order_sales_discount (legacy name)
-  total_earnings: number;                // Gross total earnings
+  total_earnings: number;                // Gross total earnings (only from paid sales)
   total_discounts_given: number;         // Total discounts
   net_earnings?: number;                 // Net earnings after discounts
   total_orders: number;                  // Walk-in sales count (legacy name)
   total_rentals: number;                 // Rental count
-  total_invoices: number;                // Order sales count (legacy name)
+  total_invoices: number;                // PAID order sales count (legacy name)
   period_start?: string;
   period_end?: string;
 }
@@ -105,6 +115,16 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
           rental_revenue: backendStats.rental_revenue || backendStats.total_rental_revenue || 0,
           rental_count: backendStats.rental_count || backendStats.total_rentals || 0,
           
+          // Payment Breakdown
+          total_paid: backendStats.total_paid || 0,
+          walk_in_paid: backendStats.walk_in_paid || 0,
+          order_paid: backendStats.order_paid || 0,
+          rental_paid: backendStats.rental_paid || backendStats.rental_revenue || backendStats.total_rental_revenue || 0,
+          
+          // Customer Due
+          customer_due: backendStats.customer_due || 0,
+          unpaid_invoices_count: backendStats.unpaid_invoices_count || 0,
+          
           // Aggregated fields (for backward compatibility)
           total_sales_revenue: backendStats.total_sales_revenue || 
                               (backendStats.walk_in_sales_revenue || 0) + (backendStats.order_sales_revenue || 0),
@@ -148,8 +168,36 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
         const salesData = await salesApi.getSales(salesParams);
         const allSales = salesData.data.filter(sale => sale.status !== 'cancelled');
         
-        // Note: We no longer need to fetch invoices for revenue calculation
-        // We use sale_type directly from sales to distinguish walk-in vs delivery/order sales
+        // Fetch invoices to check payment status - only PAID invoices count as revenue
+        const invoicesParams: {
+          customer_id: number;
+          invoice_type: 'sale';
+          per_page: number;
+          start_date?: string;
+          end_date?: string;
+        } = {
+          customer_id: customerId,
+          invoice_type: 'sale',
+          per_page: 1000,
+        };
+        if (params.start_date) invoicesParams.start_date = params.start_date;
+        if (params.end_date) invoicesParams.end_date = params.end_date;
+        
+        let allInvoices: Invoice[] = [];
+        try {
+          const invoicesData = await invoicesApi.getInvoices(invoicesParams);
+          allInvoices = invoicesData.invoices.filter(inv => inv.status !== 'cancelled');
+        } catch (e) {
+          console.warn("Failed to fetch invoices:", e);
+        }
+        
+        // Create a map of sale_id to invoice status for quick lookup
+        const saleInvoiceStatusMap = new Map<number, 'paid' | 'issued' | 'draft'>();
+        allInvoices.forEach(invoice => {
+          if (invoice.reference_type === 'sale' && invoice.reference_id) {
+            saleInvoiceStatusMap.set(invoice.reference_id, invoice.status as 'paid' | 'issued' | 'draft');
+          }
+        });
         
         // Fetch all rental agreements for customer
         const rentalsParams: {
@@ -173,31 +221,45 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
         const walkInSales = allSales.filter(sale => sale.sale_type === 'walk-in');
         const deliverySales = allSales.filter(sale => sale.sale_type === 'delivery');
         
-        // Calculate walk-in sales revenue
+        // Calculate walk-in sales revenue (walk-in sales are typically paid immediately)
         const walkInSalesRevenueNet = walkInSales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
         const walkInSalesDiscount = walkInSales.reduce((sum, sale) => sum + (Number(sale.total_discount) || 0), 0);
         const walkInSalesRevenueGross = walkInSalesRevenueNet + walkInSalesDiscount;
+        const walkInPaid = walkInSalesRevenueNet; // Walk-in sales are paid immediately
         
-        // For delivery/order sales: calculate from the sales themselves, not invoices
-        // This avoids double-counting if invoices are also created
-        const deliverySalesRevenueNet = deliverySales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
-        const deliverySalesDiscount = deliverySales.reduce((sum, sale) => sum + (Number(sale.total_discount) || 0), 0);
-        const deliverySalesRevenueGross = deliverySalesRevenueNet + deliverySalesDiscount;
+        // For delivery/order sales: ONLY count PAID invoices as revenue
+        // Unpaid invoices do NOT count as revenue
+        const paidDeliverySales = deliverySales.filter(sale => {
+          const invoiceStatus = saleInvoiceStatusMap.get(sale.id);
+          return invoiceStatus === 'paid'; // Only count if invoice is paid
+        });
         
-        // Total sales revenue = walk-in sales + delivery/order sales
-        const totalSalesRevenueGross = walkInSalesRevenueGross + deliverySalesRevenueGross;
-        const totalSalesDiscount = walkInSalesDiscount + deliverySalesDiscount;
+        const paidDeliverySalesRevenueNet = paidDeliverySales.reduce((sum, sale) => sum + (Number(sale.total_amount) || 0), 0);
+        const paidDeliverySalesDiscount = paidDeliverySales.reduce((sum, sale) => sum + (Number(sale.total_discount) || 0), 0);
+        const paidDeliverySalesRevenueGross = paidDeliverySalesRevenueNet + paidDeliverySalesDiscount;
+        const orderPaid = paidDeliverySalesRevenueNet; // Amount paid for orders
+        
+        // Calculate unpaid invoices (customer due)
+        const unpaidInvoices = allInvoices.filter(inv => inv.status === 'issued');
+        const customerDue = unpaidInvoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0);
+        
+        // Total sales revenue = walk-in sales + PAID delivery/order sales only
+        const totalSalesRevenueGross = walkInSalesRevenueGross + paidDeliverySalesRevenueGross;
+        const totalSalesDiscount = walkInSalesDiscount + paidDeliverySalesDiscount;
         
         const totalRentalRevenue = allRentals.reduce((sum, rental) => {
           // Sum all payments for this rental
           const rentalPayments = rental.payments?.reduce((pSum, payment) => pSum + (Number(payment.amount_paid) || 0), 0) || 0;
           return sum + rentalPayments;
         }, 0);
+        const rentalPaid = totalRentalRevenue; // Rental payments are already paid amounts
         
-        // Total Earnings should be GROSS revenue (before discounts) from the customer
-        // Note: totalSalesRevenueGross already includes both walk-in and invoice revenue, so don't add invoice revenue again
+        // Total Earnings should be GROSS revenue (before discounts) from PAID sales only
         const totalEarnings = totalSalesRevenueGross + totalRentalRevenue;
         const totalDiscountsGiven = totalSalesDiscount;
+        
+        // Total paid by customer
+        const totalPaid = walkInPaid + orderPaid + rentalPaid;
         
         setStats({
           // Walk-in Sales
@@ -205,27 +267,37 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
           walk_in_sales_discount: walkInSalesDiscount,
           walk_in_sales_count: walkInSales.length,
           
-          // Order/Delivery Sales
-          order_sales_revenue: deliverySalesRevenueGross,
-          order_sales_discount: deliverySalesDiscount,
-          order_sales_count: deliverySales.length,
+          // Order/Delivery Sales (ONLY PAID)
+          order_sales_revenue: paidDeliverySalesRevenueGross,
+          order_sales_discount: paidDeliverySalesDiscount,
+          order_sales_count: paidDeliverySales.length,
           
           // Rental Agreements
           rental_revenue: totalRentalRevenue,
           rental_count: allRentals.length,
           
+          // Payment Breakdown
+          total_paid: totalPaid,
+          walk_in_paid: walkInPaid,
+          order_paid: orderPaid,
+          rental_paid: rentalPaid,
+          
+          // Customer Due
+          customer_due: customerDue,
+          unpaid_invoices_count: unpaidInvoices.length,
+          
           // Aggregated Totals (for backward compatibility)
           total_sales_revenue: totalSalesRevenueGross,
           total_sales_discount: totalSalesDiscount,
           total_rental_revenue: totalRentalRevenue,
-          total_invoice_revenue: deliverySalesRevenueGross, // Legacy: same as order_sales_revenue
-          total_invoice_discount: deliverySalesDiscount,    // Legacy: same as order_sales_discount
+          total_invoice_revenue: paidDeliverySalesRevenueGross, // Legacy: same as order_sales_revenue
+          total_invoice_discount: paidDeliverySalesDiscount,    // Legacy: same as order_sales_discount
           total_earnings: totalEarnings,
           total_discounts_given: totalDiscountsGiven,
           net_earnings: totalEarnings - totalDiscountsGiven,
           total_orders: walkInSales.length,
           total_rentals: allRentals.length,
-          total_invoices: deliverySales.length,
+          total_invoices: paidDeliverySales.length, // Only count paid orders
           period_start: params.start_date,
           period_end: params.end_date,
         });
@@ -545,14 +617,14 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 rounded-lg p-6">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-medium text-green-700">Total Earnings</h4>
             <DollarSign className="w-5 h-5 text-green-600" />
           </div>
           <p className="text-3xl font-bold text-green-900">{formatCurrency(stats.total_earnings)}</p>
-          <p className="text-xs text-green-600 mt-1">Gross revenue from sales, rentals & invoices</p>
+          <p className="text-xs text-green-600 mt-1">Gross revenue from paid sales & rentals</p>
         </div>
 
         <div className="bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-200 rounded-lg p-6">
@@ -576,7 +648,10 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
           </p>
           <p className="text-xs text-blue-600 mt-1">After discounts</p>
         </div>
+      </div>
 
+      {/* Additional Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-200 rounded-lg p-6">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-medium text-purple-700">Total Transactions</h4>
@@ -640,6 +715,24 @@ export default function CustomerEarnings({ customerId }: CustomerEarningsProps) 
             </div>
             <div className="text-right">
               <span className="text-sm font-semibold text-gray-900">{formatCurrency(stats.rental_revenue || stats.total_rental_revenue || 0)}</span>
+            </div>
+          </div>
+
+          {/* Customer Due - show only here in breakdown */}
+          <div className="flex justify-between items-center py-3 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+              <div>
+                <span className="text-sm font-medium text-gray-700">Customer Due (Unpaid Invoices)</span>
+                <p className="text-xs text-gray-500">
+                  {(stats.unpaid_invoices_count || 0)} unpaid invoice{(stats.unpaid_invoices_count || 0) !== 1 ? "s" : ""}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-sm font-semibold text-red-700">
+                {formatCurrency(stats.customer_due || 0)}
+              </span>
             </div>
           </div>
 

@@ -635,36 +635,46 @@ export const customersApi = {
   ): Promise<{
     customer_id: number;
     customer_name: string;
-    statistics: {
-      // Walk-in Sales
-      walk_in_sales_revenue?: number;
-      walk_in_sales_discount?: number;
-      walk_in_sales_count?: number;
-      
-      // Order/Delivery Sales
-      order_sales_revenue?: number;
-      order_sales_discount?: number;
-      order_sales_count?: number;
-      
-      // Rental Agreements
-      rental_revenue?: number;
-      rental_count?: number;
-      
-      // Aggregated Totals (for backward compatibility)
-      total_sales_revenue: number;
-      total_sales_discount: number;
-      total_rental_revenue: number;
-      total_invoice_revenue: number;
-      total_invoice_discount: number;
-      total_earnings: number;
-      total_discounts_given: number;
-      net_earnings?: number;
-      total_orders: number;
-      total_rentals: number;
-      total_invoices: number;
-      period_start?: string;
-      period_end?: string;
-    };
+      statistics: {
+        // Walk-in Sales
+        walk_in_sales_revenue?: number;
+        walk_in_sales_discount?: number;
+        walk_in_sales_count?: number;
+        
+        // Order/Delivery Sales (ONLY PAID INVOICES)
+        order_sales_revenue?: number;
+        order_sales_discount?: number;
+        order_sales_count?: number;
+        
+        // Rental Agreements
+        rental_revenue?: number;
+        rental_count?: number;
+        
+        // Payment Breakdown
+        total_paid?: number;
+        walk_in_paid?: number;
+        order_paid?: number;
+        rental_paid?: number;
+        
+        // Customer Due (Unpaid Invoices)
+        customer_due?: number;
+        unpaid_invoices_count?: number;
+        
+        // Aggregated Totals (for backward compatibility)
+        total_sales_revenue: number;
+        total_sales_discount: number;
+        total_rental_revenue: number;
+        total_invoice_revenue: number;
+        total_invoice_discount: number;
+        total_earnings: number;
+        total_discounts_given: number;
+        net_earnings?: number;
+        total_orders: number;
+        total_rentals: number;
+        total_invoices: number;
+        period_start?: string;
+        period_end?: string;
+      };
   }> {
     const queryParams = new URLSearchParams();
     if (params?.start_date) queryParams.append('start_date', params.start_date);
@@ -678,6 +688,31 @@ export const customersApi = {
       customer_id: number;
       customer_name: string;
       statistics: {
+        // Walk-in Sales
+        walk_in_sales_revenue?: number;
+        walk_in_sales_discount?: number;
+        walk_in_sales_count?: number;
+        
+        // Order/Delivery Sales (ONLY PAID INVOICES)
+        order_sales_revenue?: number;
+        order_sales_discount?: number;
+        order_sales_count?: number;
+        
+        // Rental Agreements
+        rental_revenue?: number;
+        rental_count?: number;
+        
+        // Payment Breakdown
+        total_paid?: number;
+        walk_in_paid?: number;
+        order_paid?: number;
+        rental_paid?: number;
+        
+        // Customer Due (Unpaid Invoices)
+        customer_due?: number;
+        unpaid_invoices_count?: number;
+        
+        // Aggregated Totals (for backward compatibility)
         total_sales_revenue: number;
         total_sales_discount: number;
         total_rental_revenue: number;
@@ -685,6 +720,7 @@ export const customersApi = {
         total_invoice_discount: number;
         total_earnings: number;
         total_discounts_given: number;
+        net_earnings?: number;
         total_orders: number;
         total_rentals: number;
         total_invoices: number;
