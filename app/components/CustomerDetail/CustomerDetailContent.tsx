@@ -10,7 +10,7 @@ import RecordPaymentModal from "./RecordPaymentModal";
 import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
 import type { Customer, CustomerPaymentSummary, CustomerPayment, Invoice, Sale, SaleItem } from "../../lib/types";
-import { DollarSign, TrendingUp, CreditCard, FileText, Calendar, Plus } from "lucide-react";
+import { DollarSign, TrendingUp, CreditCard, FileText, Calendar, Plus, Eye, Download } from "lucide-react";
 
 interface CustomerDetailContentProps {
   customerId: string;
@@ -183,6 +183,41 @@ export default function CustomerDetailContent({
     return [];
   }, []);
 
+  const handleDownloadInvoice = useCallback(
+    async (invoiceId: number) => {
+      try {
+        const blob = await invoicesApi.downloadInvoice(invoiceId);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `invoice-${invoiceId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        addToast("Invoice downloaded successfully", "success");
+      } catch (error) {
+        console.error("Failed to download invoice:", error);
+        addToast("Failed to download invoice", "error");
+      }
+    },
+    [addToast]
+  );
+
+  const handleViewInvoice = useCallback(
+    async (invoiceId: number) => {
+      try {
+        const blob = await invoicesApi.downloadInvoice(invoiceId);
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, "_blank");
+      } catch (error) {
+        console.error("Failed to open invoice preview:", error);
+        addToast("Failed to open invoice", "error");
+      }
+    },
+    [addToast]
+  );
+
   const formatSaleItems = (saleItems: SaleItem[] | undefined | null): string => {
     if (!saleItems || saleItems.length === 0) return "";
     return saleItems
@@ -284,9 +319,27 @@ export default function CustomerDetailContent({
         customer_id: Number(customerId),
         per_page: 50,
       });
-      const payments = extractPayments(response);
+      const payments = extractPayments(response) || [];
       console.log("[CustomerPayments] payments raw:", response, "parsed:", payments);
-      setCustomerPayments(payments || []);
+      // Sort payments so latest appears on top.
+      // Prefer created_at (includes time); fall back to payment_date, then id.
+      const sortedPayments = [...payments].sort((a, b) => {
+        const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+
+        if (aCreated !== bCreated) {
+          return bCreated - aCreated;
+        }
+
+        const aDate = a.payment_date ? new Date(a.payment_date).getTime() : 0;
+        const bDate = b.payment_date ? new Date(b.payment_date).getTime() : 0;
+        if (aDate !== bDate) {
+          return bDate - aDate;
+        }
+
+        return (b.id || 0) - (a.id || 0);
+      });
+      setCustomerPayments(sortedPayments);
     } catch (error) {
       console.error("Failed to fetch customer payments:", error);
       setCustomerPayments([]);
@@ -549,6 +602,26 @@ export default function CustomerDetailContent({
                             }`}>
                               {payment.status}
                             </p>
+                            {payment.invoice && (
+                              <div className="flex justify-end gap-2 mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewInvoice(payment.invoice!.id)}
+                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                  title="Preview invoice"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadInvoice(payment.invoice!.id)}
+                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                  title="Download invoice"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -578,76 +651,20 @@ export default function CustomerDetailContent({
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-6">Related Transactions</h2>
             
-            {loadingInvoices || loadingPaymentList ? (
+            {loadingPaymentList ? (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-sm">Loading transactions...</p>
               </div>
-            ) : customerInvoices.length === 0 && customerPayments.length === 0 ? (
+            ) : customerPayments.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
                 <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                 <p className="text-sm font-medium text-gray-900 mb-1">No transactions found</p>
                 <p className="text-xs text-gray-400">
-                  Invoices and payments will appear here once transactions are recorded.
+                  Payments will appear here once transactions are recorded.
                 </p>
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Invoices Section */}
-                {customerInvoices.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Invoices</h3>
-                    <div className="space-y-2">
-                      {customerInvoices.map((invoice) => {
-                        const metadata = invoice.metadata;
-                        return (
-                          <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-gray-400" />
-                                <p className="text-sm font-medium text-gray-900">{invoice.invoice_number || `Invoice #${invoice.id}`}</p>
-                                <span className={`text-xs px-2 py-0.5 rounded ${
-                                  invoice.status === 'paid' ? 'bg-green-100 text-green-700' :
-                                  invoice.status === 'issued' ? 'bg-yellow-100 text-yellow-700' :
-                                  invoice.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                                  'bg-gray-100 text-gray-700'
-                                }`}>
-                                  {invoice.status}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-4 mt-1">
-                                <p className="text-xs text-gray-500 flex items-center gap-1">
-                                  <Calendar className="w-3 h-3" />
-                                  {new Date(invoice.invoice_date).toLocaleDateString()}
-                                </p>
-                                {metadata?.sale_type && (
-                                  <p className="text-xs text-gray-500 capitalize">
-                                    {metadata.sale_type.replace('-', ' ')}
-                                  </p>
-                                )}
-                              {invoiceItemSummaries[invoice.id] && (
-                                <div className="mt-1 text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded px-2 py-1 leading-snug line-clamp-2">
-                                  <span className="font-medium text-gray-700">Items:</span> {invoiceItemSummaries[invoice.id]}
-                                </div>
-                              )}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-semibold text-gray-900">
-                                PKR {invoice.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                              </p>
-                              {invoice.status !== 'paid' && (
-                                <p className="text-xs text-red-600">
-                                  Due: PKR {invoice.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 {/* Payments Section */}
                 {customerPayments.length > 0 && (
                   <div>
@@ -699,7 +716,27 @@ export default function CustomerDetailContent({
                               payment.status === 'pending' ? 'text-yellow-600' : 'text-red-600'
                             }`}>
                               {payment.status}
-              </p>
+                            </p>
+                            {payment.invoice && (
+                              <div className="flex justify-end gap-2 mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewInvoice(payment.invoice!.id)}
+                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                  title="Preview invoice"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadInvoice(payment.invoice!.id)}
+                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                  title="Download invoice"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
             </div>
                         </div>
                       ))}
