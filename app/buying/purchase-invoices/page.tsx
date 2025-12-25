@@ -55,6 +55,95 @@ export default function PurchaseInvoicesPage() {
     }
   }, [addToast]);
 
+  // Fetch purchase orders for invoices to show items purchased
+  const fetchPurchaseOrdersForInvoices = useCallback(async (invoicesToProcess: Invoice[]) => {
+    try {
+      // Get unique supplier IDs from invoices
+      const supplierIds = new Set<number>();
+      invoicesToProcess.forEach(invoice => {
+        if (invoice.metadata?.supplier?.id) {
+          supplierIds.add(invoice.metadata.supplier.id);
+        }
+      });
+
+      // Fetch purchase orders for each supplier
+      const poMap = new Map<number, PurchaseOrder[]>();
+      await Promise.all(
+        Array.from(supplierIds).map(async (supplierId) => {
+          try {
+            const response = await purchaseOrdersApi.getPurchaseOrders({
+              supplier_id: supplierId,
+              per_page: 100,
+              sort_by: 'order_date',
+              sort_order: 'desc',
+            });
+            poMap.set(supplierId, response.data);
+          } catch (error) {
+            console.error(`Failed to fetch purchase orders for supplier ${supplierId}:`, error);
+          }
+        })
+      );
+
+      setPurchaseOrdersMap(poMap);
+
+      // Fetch purchase orders linked to invoices to get attachments
+      // Method 1: Check by reference_type and reference_id
+      // Method 2: Check all purchase orders for supplier_invoice_id matching invoice.id
+      const invoicePOMap = new Map<number, PurchaseOrder>();
+      
+      // First, try to find by reference_type and reference_id
+      await Promise.all(
+        invoicesToProcess
+          .filter(invoice => {
+            const refType = invoice.reference_type?.toLowerCase();
+            return (refType === 'purchaseorder' || refType === 'purchase_order') && invoice.reference_id;
+          })
+          .map(async (invoice) => {
+            try {
+              const poId = invoice.reference_id as number;
+              const response = await purchaseOrdersApi.getPurchaseOrder(poId);
+              if (response.purchase_order.supplier_invoice_path) {
+                invoicePOMap.set(invoice.id, response.purchase_order);
+              }
+            } catch (error) {
+              console.error(`Failed to fetch purchase order ${invoice.reference_id} for invoice ${invoice.id}:`, error);
+            }
+          })
+      );
+
+      // Second, check all purchase orders for supplier_invoice_id matching invoice IDs
+      const invoiceIds = new Set(invoicesToProcess.map(inv => inv.id));
+      const allPOs = Array.from(poMap.values()).flat();
+      
+      // First pass: check if supplier_invoice_id is already in the PO data
+      allPOs.forEach(po => {
+        if (po.supplier_invoice_id && invoiceIds.has(po.supplier_invoice_id) && po.supplier_invoice_path) {
+          invoicePOMap.set(po.supplier_invoice_id, po);
+        }
+      });
+      
+      // Second pass: fetch full PO details for POs that have supplier_invoice_id but we don't have supplier_invoice_path yet
+      await Promise.all(
+        allPOs
+          .filter(po => po.supplier_invoice_id && invoiceIds.has(po.supplier_invoice_id) && !po.supplier_invoice_path)
+          .map(async (po) => {
+            try {
+              const response = await purchaseOrdersApi.getPurchaseOrder(po.id);
+              if (response.purchase_order.supplier_invoice_path && po.supplier_invoice_id) {
+                invoicePOMap.set(po.supplier_invoice_id, response.purchase_order);
+              }
+            } catch (error) {
+              console.error(`Failed to fetch purchase order ${po.id} for invoice ${po.supplier_invoice_id}:`, error);
+            }
+          })
+      );
+
+      setInvoicePurchaseOrderMap(invoicePOMap);
+    } catch (error) {
+      console.error("Failed to fetch purchase orders:", error);
+    }
+  }, []);
+
   // Fetch purchase invoices (supplier and purchase types)
   const fetchInvoices = useCallback(async (page = invoicePagination.current_page) => {
     setLoadingInvoices(true);
@@ -137,96 +226,7 @@ export default function PurchaseInvoicesPage() {
     } finally {
       setLoadingInvoices(false);
     }
-  }, [invoiceFilters.status, invoiceFilters.start_date, invoiceFilters.end_date, invoiceFilters.search, invoiceFilters.supplier_id, invoiceFilters.invoice_type, invoicePagination.per_page, addToast]);
-
-  // Fetch purchase orders for invoices to show items purchased
-  const fetchPurchaseOrdersForInvoices = useCallback(async (invoicesToProcess: Invoice[]) => {
-    try {
-      // Get unique supplier IDs from invoices
-      const supplierIds = new Set<number>();
-      invoicesToProcess.forEach(invoice => {
-        if (invoice.metadata?.supplier?.id) {
-          supplierIds.add(invoice.metadata.supplier.id);
-        }
-      });
-
-      // Fetch purchase orders for each supplier
-      const poMap = new Map<number, PurchaseOrder[]>();
-      await Promise.all(
-        Array.from(supplierIds).map(async (supplierId) => {
-          try {
-            const response = await purchaseOrdersApi.getPurchaseOrders({
-              supplier_id: supplierId,
-              per_page: 100,
-              sort_by: 'order_date',
-              sort_order: 'desc',
-            });
-            poMap.set(supplierId, response.data);
-          } catch (error) {
-            console.error(`Failed to fetch purchase orders for supplier ${supplierId}:`, error);
-          }
-        })
-      );
-
-      setPurchaseOrdersMap(poMap);
-
-      // Fetch purchase orders linked to invoices to get attachments
-      // Method 1: Check by reference_type and reference_id
-      // Method 2: Check all purchase orders for supplier_invoice_id matching invoice.id
-      const invoicePOMap = new Map<number, PurchaseOrder>();
-      
-      // First, try to find by reference_type and reference_id
-      await Promise.all(
-        invoicesToProcess
-          .filter(invoice => {
-            const refType = invoice.reference_type?.toLowerCase();
-            return (refType === 'purchaseorder' || refType === 'purchase_order') && invoice.reference_id;
-          })
-          .map(async (invoice) => {
-            try {
-              const poId = invoice.reference_id as number;
-              const response = await purchaseOrdersApi.getPurchaseOrder(poId);
-              if (response.purchase_order.supplier_invoice_path) {
-                invoicePOMap.set(invoice.id, response.purchase_order);
-              }
-            } catch (error) {
-              console.error(`Failed to fetch purchase order ${invoice.reference_id} for invoice ${invoice.id}:`, error);
-            }
-          })
-      );
-
-      // Second, check all purchase orders for supplier_invoice_id matching invoice IDs
-      const invoiceIds = new Set(invoicesToProcess.map(inv => inv.id));
-      const allPOs = Array.from(poMap.values()).flat();
-      
-      // First pass: check if supplier_invoice_id is already in the PO data
-      allPOs.forEach(po => {
-        if (po.supplier_invoice_id && invoiceIds.has(po.supplier_invoice_id) && po.supplier_invoice_path) {
-          invoicePOMap.set(po.supplier_invoice_id, po);
-        }
-      });
-      
-      // Second pass: fetch full PO details for POs that have supplier_invoice_id but we don't have supplier_invoice_path yet
-      await Promise.all(
-        allPOs
-          .filter(po => po.supplier_invoice_id && invoiceIds.has(po.supplier_invoice_id) && !po.supplier_invoice_path)
-          .map(async (po) => {
-            try {
-              const response = await purchaseOrdersApi.getPurchaseOrder(po.id);
-              if (response.purchase_order.supplier_invoice_path) {
-                invoicePOMap.set(po.supplier_invoice_id, response.purchase_order);
-              }
-            } catch (error) {
-              console.error(`Failed to fetch purchase order ${po.id} for invoice ${po.supplier_invoice_id}:`, error);
-            }
-          })
-      );
-
-      setInvoicePurchaseOrderMap(invoicePOMap);
-    } catch (error) {
-      console.error("Failed to fetch purchase orders:", error);
-    }
-  }, []);
+  }, [invoiceFilters.status, invoiceFilters.start_date, invoiceFilters.end_date, invoiceFilters.search, invoiceFilters.supplier_id, invoiceFilters.invoice_type, invoicePagination.per_page, invoicePagination.current_page, addToast, fetchPurchaseOrdersForInvoices]);
 
   // Helper function to get items purchased for an invoice
   const getItemsPurchased = useCallback((invoice: Invoice): string => {
