@@ -1,402 +1,270 @@
-# Customer Stock Profit – Backend Changes for Cost & Previous Cost per Sale
+# Customer Stock Profit API - Backend Changes Documentation
 
-## ⚠️ CRITICAL FIX REQUIRED
+## Overview
 
-**Current Bug:** Backend is using the **latest purchase price** for ALL sales, instead of using the cost **at the time of each sale**.
-
-**Example of the Bug:**
-```
-Purchase History:
-- Dec 20: Bought Cement @ PKR 1,700/bag
-- Dec 22: Bought Cement @ PKR 1,800/bag (latest)
-
-Sale History:
-- Dec 21: Sold 1 bag
-  ❌ Backend returns: cost_price = 1,800 (WRONG - using latest)
-  ✅ Should return: cost_price = 1,700 (cost at time of sale)
-
-- Dec 23: Sold 1 bag
-  ✅ Backend returns: cost_price = 1,800 (correct - this is the cost at time of sale)
-```
-
-**Result:** Both sales show cost = 1,800, when the first sale should show 1,700.
+The backend has been updated to fix a critical bug where creating new purchase orders at different prices was retroactively updating the cost for all previous sales. The fix ensures that **each sale retains the cost that was active at the time it was made**, based on ID-based comparison rather than date/time.
 
 ---
 
-## What This Document Fixes
+## What Changed
 
-This document describes the **backend changes** required so that the frontend can show, for each sale to a customer:
+### Previous Behavior (BUG)
+- When a new purchase order was created with a different price, ALL previous sales would show the new cost
+- Example: If you bought cement at PKR 2,000, then later bought at PKR 2,100, ALL sales would show cost = 2,100
 
-- **Cost**: the item cost **at the time of sale** (the active supplier cost when that sale happened)
-- **Previous Cost**: the **immediately previous** cost before that one (for trend insight)
-
-The goal is to keep the UI simple:
-
-```text
-Cost: PKR 1,700.00 / unit        ← cost at time of sale
-Previous Cost: PKR 1,500.00 / unit  ← previous supplier cost before this one
-Selling: PKR 1,800.00 / unit
-Profit: PKR 100.00  (5.56%)
-```
+### New Behavior (FIXED)
+- Each sale now "remembers" the cost that was active when it was created
+- New purchase orders only affect sales created AFTER them (based on ID comparison)
+- Example: 
+  - Purchase Order ID 10: cost = 2,000
+  - Sale ID 15: cost = 2,000 (uses PO 10, since 10 < 15)
+  - Purchase Order ID 20: cost = 2,100
+  - Sale ID 25: cost = 2,100 (uses PO 20, since 20 < 25)
+  - Sale ID 15 still shows cost = 2,000 (unchanged!)
 
 ---
 
-## 1. Endpoint (unchanged)
+## How Cost Calculation Works
 
-We keep using the existing endpoint:
+### ID-Based Comparison
+The backend now uses **ID comparison** instead of date/time comparison:
 
-```http
+1. **Purchase orders are sorted by `purchase_order_id` (ASC)**
+2. **For each sale, the backend finds the latest purchase order where `purchase_order_id < sale_id`**
+3. **That purchase order's cost is used for that sale**
+
+### Important Notes
+- Only purchase orders with `received_date` set (stock actually received) are included
+- Purchase orders with status `cancelled` are excluded
+- If no purchase order is found before a sale, it falls back to `item.last_purchase_price` or skips the transaction
+
+---
+
+## API Endpoint (Unchanged)
+
+```
 GET /api/customers/{customer_id}/stock-profit-stats
 ```
 
-Query params (`start_date`, `end_date`, `month`) stay the same.
+### Query Parameters (Unchanged)
+- `start_date` (optional): Filter sales from this date
+- `end_date` (optional): Filter sales until this date
+- `month` (optional): Filter by month (format: YYYY-MM)
 
 ---
 
-## 2. Response Changes
+## Response Structure (Unchanged)
 
-### 2.1 Transaction Shape
+The response structure remains the same. The only difference is that `cost_price` values are now **historically accurate** and won't change when new purchase orders are created.
 
-Each transaction in `statistics.transactions` MUST include the following fields:
+### Response Example
 
-```jsonc
-"transactions": [
-  {
-    "id": 1,
-    "sale_id": 101,
-    "sale_number": "SAL-20251224-001",
-    "invoice_id": 201,
-    "invoice_number": "INV-20251224-001",
-    "item_id": 1,
-    "item_name": "Portland Cement 50kg",
-    "item_brand": "Paidar",
-    "quantity": 1.0,
-    "unit": "bag",
-
-    // NEW – cost values
-    "cost_price": 1700.00,              // cost AT TIME OF SALE
-    "previous_cost_price": 1500.00,     // previous cost before this one (or null)
-
-    // Revenue and profit (always based on cost_price)
-    "selling_price": 1800.00,
-    "total_cost": 1700.00,              // quantity * cost_price
-    "total_revenue": 1800.00,           // quantity * selling_price
-    "profit": 100.00,                   // total_revenue - total_cost
-    "profit_margin_percentage": 5.56,   // (profit / total_revenue) * 100
-
-    "sale_date": "2025-12-24",
-    "purchase_invoice_id": 501,
-    "purchase_invoice_number": "PINV-20251220-001",
-    "supplier_id": 10,
-    "supplier_name": "ABC Suppliers"
-  }
-]
-```
-
-**⚠️ CRITICAL: `cost_price` MUST be the cost AT TIME OF SALE, NOT the latest cost!**
-
-Notes:
-
-- `cost_price` is **fixed per sale** – it should never change later even if you restock at a different price.
-- `cost_price` = **the latest purchase price that existed ON OR BEFORE the sale_date**
-- `previous_cost_price` = **the purchase price that was active BEFORE the one used for `cost_price`**
-- Profit and margin in the backend must always use `cost_price` (not the current latest cost).
-
-**Example Scenario (Your Exact Case):**
-```
-Purchase History:
-- Dec 20: Bought Cement @ PKR 1,700/bag (Purchase Invoice #PINV-001)
-- Dec 22: Bought Cement @ PKR 1,800/bag (Purchase Invoice #PINV-002)
-
-Sale History:
-- Dec 21: Sold 1 bag (Sale #SAL-001)
-  → cost_price: 1,700 (latest purchase on/before Dec 21 was Dec 20)
-  → previous_cost_price: null (no purchase before Dec 20)
-
-- Dec 23: Sold 1 bag (Sale #SAL-002)  
-  → cost_price: 1,800 (latest purchase on/before Dec 23 was Dec 22)
-  → previous_cost_price: 1,700 (the cost before 1,800)
-```
-
-**⚠️ COMMON MISTAKE - DO NOT DO THIS:**
-
-If you're using the **latest purchase price** (1,800) for ALL sales, that's wrong:
-
-```php
-// ❌ WRONG - Using latest cost for all sales
-$latestCost = getLatestPurchasePrice($itemId); // Returns 1,800
-foreach ($sales as $sale) {
-    $costPrice = $latestCost; // ❌ Same cost for all sales!
-}
-```
-
-**✅ CORRECT - Use cost at time of sale:**
-
-```php
-// ✅ CORRECT - Look up cost for each sale's date
-$purchaseHistory = getPurchaseHistoryByItem($itemId); // Ordered by date ASC
-
-foreach ($sales as $sale) {
-    // Find latest purchase on or before sale_date
-    $costRecord = findLatestPurchaseBeforeDate($purchaseHistory, $sale->sale_date);
-    $costPrice = $costRecord['unit_price']; // Different for each sale!
-}
-```
-
-**❌ WRONG (what backend is probably doing now):**
-```json
-// Both sales showing latest cost (1,800) - WRONG!
-{
-  "sale_date": "2025-12-21",
-  "cost_price": 1800.00  // ❌ This is wrong! Should be 1700
-},
-{
-  "sale_date": "2025-12-23", 
-  "cost_price": 1800.00  // ✅ This is correct
-}
-```
-
-**✅ CORRECT:**
 ```json
 {
-  "sale_date": "2025-12-21",
-  "cost_price": 1700.00,        // ✅ Cost at time of sale
-  "previous_cost_price": null   // ✅ No previous cost
-},
-{
-  "sale_date": "2025-12-23",
-  "cost_price": 1800.00,        // ✅ Cost at time of sale
-  "previous_cost_price": 1700.00 // ✅ Previous cost before 1800
-}
-```
-
-### 2.2 Item-Level Aggregates
-
-The `items` array should aggregate **based on these per‑sale costs**:
-
-```jsonc
-"items": [
-  {
-    "item_id": 1,
-    "item_name": "Cement",
-    "item_brand": "Paidar",
-    "item_category": "Construction Material",
-    "total_quantity_sold": 4.0,
-    "unit": "bag",
-
-    "total_cost": 5600.00,          // sum of per-sale total_cost
-    "total_revenue": 6600.00,       // sum of per-sale total_revenue
-    "total_profit": 1000.00,        // total_revenue - total_cost
-    "profit_margin_percentage": 15.15,
-
-    // Average values are optional and only used for reporting if needed
-    "average_cost_price": 1400.00,      // total_cost / total_quantity_sold
-    "average_selling_price": 1650.00,   // total_revenue / total_quantity_sold
-
-    "transactions_count": 4,
-    "last_sale_date": "2025-12-24"
-  }
-]
-```
-
-The frontend now mainly uses **totals** and `profit_margin_percentage`. Averages are optional but should be consistent with totals.
-
----
-
-## 3. How to Compute `cost_price` and `previous_cost_price`
-
-### 3.1 Data Needed
-
-For each item, you need a **price history** ordered by time, typically from:
-
-- `purchase_invoices` + `purchase_invoice_items` (preferred), or
-- `purchase_orders` + `purchase_order_items` (fallback).
-
-Each record should provide:
-
-- `item_id`
-- `purchase_date` (invoice or order date)
-- `unit_price` (supplier cost)
-- Optional: `purchase_invoice_id`, `invoice_number`, `supplier_id`, `supplier_name`
-
-### 3.2 Price Timeline per Item
-
-For each `item_id`:
-
-1. Load all purchase records (`purchase_date`, `unit_price`, etc.).
-2. Sort them by `purchase_date ASC, id ASC`.
-3. This gives you a **timeline of cost changes**.
-
-Example:
-
-```text
-Dec 01 – cost = 1,300
-Dec 10 – cost = 1,500
-Dec 20 – cost = 1,700
-```
-
-### 3.3 Cost at Time of Sale
-
-For each sale item (with `sale_date` and `item_id`):
-
-1. From the item’s price timeline, pick the **latest purchase whose date is ≤ sale_date**.
-   - That purchase’s `unit_price` becomes `cost_price` (cost at time of sale).
-   - If none exists (no purchase before that sale), you can:
-     - Either **skip that transaction**, or
-     - Use `item.last_purchase_price` as fallback (document the choice).
-
-2. The **previous_cost_price** is:
-   - The `unit_price` of the purchase **immediately before** the one you just picked in the timeline.
-   - Or `null` if the chosen purchase is the first in the list.
-
-Example:
-
-```text
-Price history:
-- Dec 01: 1,300
-- Dec 10: 1,500
-- Dec 20: 1,700
-
-Sale A on Dec 12:
-- cost_price = 1,500   (latest price ≤ Dec 12)
-- previous_cost_price = 1,300
-
-Sale B on Dec 22:
-- cost_price = 1,700   (latest price ≤ Dec 22)
-- previous_cost_price = 1,500
-```
-
-### 3.4 Profit Calculation per Sale
-
-Once you have `cost_price` for that sale:
-
-```text
-total_cost     = quantity * cost_price
-total_revenue  = quantity * selling_price
-profit         = total_revenue - total_cost
-margin %       = (profit / total_revenue) * 100
-```
-
-These values are what you return in each transaction.
-
----
-
-## 4. Implementation Sketch (Pseudocode)
-
-High‑level PHP / Laravel‑style pseudocode:
-
-```php
-function getCustomerStockProfitStats($customerId, $filters): array {
-    $sales = getCustomerSalesWithItems($customerId, $filters); // sales + sale_items
-
-    // 1) Build purchase history per item
-    $itemIds = collectItemIdsFromSales($sales);
-    $purchaseHistory = getPurchaseHistoryByItem($itemIds); // [item_id => [records...]] ordered ASC
-
-    $transactions = [];
-    $itemTotals = []; // per-item aggregates
-
-    foreach ($sales as $sale) {
-        foreach ($sale->items as $item) {
-            $itemId   = $item->item_id;
-            $qty      = $item->quantity;
-            $sellPrice = $item->unit_price;
-            $saleDate = $sale->sale_date;
-
-            $history = $purchaseHistory[$itemId] ?? [];
-            [$costRecord, $previousCostRecord] = findCostAndPreviousForDate($history, $saleDate);
-            
-            // ⚠️ CRITICAL: costRecord MUST be the purchase on/before saleDate, NOT the latest purchase!
-
-            if (!$costRecord) {
-                // optional: fallback to last_purchase_price or skip
-                continue;
-            }
-
-            $costPrice         = $costRecord['unit_price'];
-            $previousCostPrice = $previousCostRecord['unit_price'] ?? null;
-
-            $totalRevenue = $qty * $sellPrice;
-            $totalCost    = $qty * $costPrice;
-            $profit       = $totalRevenue - $totalCost;
-            $margin       = $totalRevenue > 0 ? ($profit / $totalRevenue) * 100 : 0;
-
-            $transactions[] = [
-                'id'                       => $item->id,
-                'sale_id'                  => $sale->id,
-                'sale_number'              => $sale->sale_number,
-                'invoice_id'               => $sale->invoice_id,
-                'invoice_number'           => optional($sale->invoice)->invoice_number,
-                'item_id'                  => $itemId,
-                'item_name'                => $item->item->name,
-                'item_brand'               => $item->item->brand,
-                'quantity'                 => $qty,
-                'unit'                     => $item->unit,
-                'cost_price'               => $costPrice,
-                'previous_cost_price'      => $previousCostPrice,
-                'selling_price'            => $sellPrice,
-                'total_cost'               => $totalCost,
-                'total_revenue'            => $totalRevenue,
-                'profit'                   => $profit,
-                'profit_margin_percentage' => $margin,
-                'sale_date'                => $saleDate,
-                'purchase_invoice_id'      => $costRecord['purchase_invoice_id'] ?? null,
-                'purchase_invoice_number'  => $costRecord['purchase_invoice_number'] ?? null,
-                'supplier_id'              => $costRecord['supplier_id'] ?? null,
-                'supplier_name'            => $costRecord['supplier_name'] ?? null,
-            ];
-
-            updateItemTotals($itemTotals, $itemId, $item, $totalCost, $totalRevenue, $profit, $saleDate);
-        }
+  "customer_id": 1,
+  "customer_name": "ABC Company",
+  "total_items_sold": 1,
+  "total_quantity_sold": 3.0,
+  "total_cost": 6000.00,
+  "total_revenue": 6600.00,
+  "total_profit": 600.00,
+  "overall_profit_margin": 9.09,
+  "items": [
+    {
+      "item_id": 1,
+      "item_name": "Cement (Paidar)",
+      "item_brand": "Paidar",
+      "item_category": "Construction Material",
+      "total_quantity_sold": 3.0,
+      "unit": "bag",
+      "average_cost_price": 2000.00,
+      "average_selling_price": 2200.00,
+      "total_cost": 6000.00,
+      "total_revenue": 6600.00,
+      "total_profit": 600.00,
+      "profit_margin_percentage": 9.09,
+      "transactions_count": 3,
+      "last_sale_date": "2025-12-24"
     }
-
-    $items = finalizeItemTotals($itemTotals);
-
-    return [
-        'customer_id'           => $customerId,
-        'customer_name'         => getCustomerName($customerId),
-        'total_items_sold'      => count($items),
-        'total_quantity_sold'   => array_sum(array_column($items, 'total_quantity_sold')),
-        'total_cost'            => array_sum(array_column($items, 'total_cost')),
-        'total_revenue'         => array_sum(array_column($items, 'total_revenue')),
-        'total_profit'          => array_sum(array_column($items, 'total_profit')),
-        'overall_profit_margin' => /* (total_profit / total_revenue) * 100 */,
-        'items'                 => $items,
-        'transactions'          => $transactions,
-        'period_start'          => $filters['start_date'] ?? null,
-        'period_end'            => $filters['end_date'] ?? null,
-    ];
-}
-```
-
-Helper `findCostAndPreviousForDate`:
-
-```php
-function findCostAndPreviousForDate(array $history, string $saleDate): array {
-    $costRecord = null;
-    $previous   = null;
-
-    foreach ($history as $record) {
-        if ($record['purchase_date'] <= $saleDate) {
-            $previous   = $costRecord;
-            $costRecord = $record;
-        } else {
-            break;
-        }
+  ],
+  "transactions": [
+    {
+      "id": 1,
+      "sale_id": 15,
+      "sale_number": "SALE-20251224-000001",
+      "invoice_id": 101,
+      "invoice_number": "SAL-20251224-001",
+      "item_id": 1,
+      "item_name": "Cement (Paidar)",
+      "item_brand": "Paidar",
+      "quantity": 1.0,
+      "unit": "bag",
+      "cost_price": 2000.00,           // ✅ Cost at time of sale (from PO ID 10)
+      "previous_cost_price": null,      // No previous purchase
+      "selling_price": 2000.00,
+      "total_cost": 2000.00,
+      "total_revenue": 2000.00,
+      "profit": 0.00,
+      "profit_margin_percentage": 0.00,
+      "sale_date": "2025-12-24",
+      "purchase_invoice_id": 10,
+      "purchase_invoice_number": "PO-20251220-001",
+      "supplier_id": 5,
+      "supplier_name": "Bhati building Material Store"
+    },
+    {
+      "id": 2,
+      "sale_id": 16,
+      "sale_number": "SALE-20251224-000002",
+      "invoice_id": 102,
+      "invoice_number": "SAL-20251224-002",
+      "item_id": 1,
+      "item_name": "Cement (Paidar)",
+      "item_brand": "Paidar",
+      "quantity": 1.0,
+      "unit": "bag",
+      "cost_price": 2000.00,           // ✅ Still uses PO 10 (since 10 < 16)
+      "previous_cost_price": null,
+      "selling_price": 2200.00,
+      "total_cost": 2000.00,
+      "total_revenue": 2200.00,
+      "profit": 200.00,
+      "profit_margin_percentage": 9.09,
+      "sale_date": "2025-12-24",
+      "purchase_invoice_id": 10,
+      "purchase_invoice_number": "PO-20251220-001",
+      "supplier_id": 5,
+      "supplier_name": "Bhati building Material Store"
+    },
+    {
+      "id": 3,
+      "sale_id": 25,
+      "sale_number": "SALE-20251224-000003",
+      "invoice_id": 103,
+      "invoice_number": "SAL-20251224-003",
+      "item_id": 1,
+      "item_name": "Cement (Paidar)",
+      "item_brand": "Paidar",
+      "quantity": 1.0,
+      "unit": "bag",
+      "cost_price": 2100.00,           // ✅ Uses PO 20 (since 20 < 25)
+      "previous_cost_price": 2000.00,  // Previous cost from PO 10
+      "selling_price": 2200.00,
+      "total_cost": 2100.00,
+      "total_revenue": 2200.00,
+      "profit": 100.00,
+      "profit_margin_percentage": 4.55,
+      "sale_date": "2025-12-24",
+      "purchase_invoice_id": 20,
+      "purchase_invoice_number": "PO-20251224-002",
+      "supplier_id": 5,
+      "supplier_name": "Bhati building Material Store"
     }
-
-    return [$costRecord, $previous];
+  ],
+  "period_start": "2025-12-24",
+  "period_end": "2025-12-24"
 }
 ```
 
 ---
 
-## 5. Frontend Expectations (Summary)
+## Key Fields in Transaction Object
 
-Once these changes are implemented, the frontend will:
+| Field | Type | Description |
+|-------|------|-------------|
+| `cost_price` | `number` | **Cost at time of sale** - This is now historically accurate and won't change |
+| `previous_cost_price` | `number\|null` | The cost from the purchase order immediately before the one used for `cost_price` |
+| `selling_price` | `number` | The price at which the item was sold |
+| `total_cost` | `number` | `quantity × cost_price` |
+| `total_revenue` | `number` | `quantity × selling_price` |
+| `profit` | `number` | `total_revenue - total_cost` |
+| `profit_margin_percentage` | `number` | `(profit / total_revenue) × 100` |
+| `purchase_invoice_id` | `number\|null` | The purchase order ID that provided this cost |
+| `purchase_invoice_number` | `string\|null` | The purchase order number (e.g., "PO-20251224-002") |
 
-- Show `Cost: cost_price` (cost at time of sale).
-- Show `Previous Cost: previous_cost_price` **only if** it’s not null and different from `cost_price`.
-- Compute nothing fancy – it will just display what the backend sends and use `profit` / `profit_margin_percentage` as-is.
+---
 
+## Frontend Implementation Notes
+
+### ✅ What You Can Rely On
+
+1. **`cost_price` is historically accurate**: Once a sale is made, its `cost_price` will never change, even if new purchase orders are created at different prices.
+
+2. **`previous_cost_price` shows cost trend**: This field shows the cost from the purchase order immediately before the one used for the sale, useful for showing cost changes.
+
+3. **All calculations are done in backend**: `total_cost`, `total_revenue`, `profit`, and `profit_margin_percentage` are all calculated and provided by the backend. You don't need to recalculate them.
+
+### 🔄 What Changed for Frontend
+
+**Nothing!** The API response structure is unchanged. The only difference is that the `cost_price` values are now correct and won't retroactively change.
+
+### 📊 Display Recommendations
+
+1. **Show `cost_price` clearly**: Display it prominently as "Cost at time of sale" or similar
+2. **Use `previous_cost_price` for trends**: Show it as "Previous Cost" or use it to display cost change indicators (↑/↓)
+3. **Profit calculations**: Use the provided `profit` and `profit_margin_percentage` values directly - don't recalculate
+
+### ⚠️ Important Considerations
+
+- **ID-based comparison**: The cost is determined by comparing `purchase_order_id` with `sale_id`. This means:
+  - If a purchase order is created with a lower ID than an existing sale, that sale won't use it
+  - This is intentional - it preserves historical accuracy
+  - In practice, purchase orders are usually created before sales, so this works correctly
+
+---
+
+## Example Scenario
+
+### Timeline of Events
+
+1. **Purchase Order ID 10** created on Dec 20
+   - Cost: PKR 2,000/bag
+   - Received on Dec 20
+
+2. **Sale ID 15** created on Dec 24
+   - Uses cost: PKR 2,000 (from PO 10, since 10 < 15)
+   - Selling price: PKR 2,200
+   - Profit: PKR 200
+
+3. **Sale ID 16** created on Dec 24 (after sale 15)
+   - Uses cost: PKR 2,000 (from PO 10, since 10 < 16)
+   - Selling price: PKR 2,200
+   - Profit: PKR 200
+
+4. **Purchase Order ID 20** created on Dec 24
+   - Cost: PKR 2,100/bag
+   - Received on Dec 24
+
+5. **Sale ID 25** created on Dec 24 (after PO 20)
+   - Uses cost: PKR 2,100 (from PO 20, since 20 < 25)
+   - Selling price: PKR 2,200
+   - Profit: PKR 100
+
+### Result
+
+- Sale ID 15: **cost = 2,000** ✅ (unchanged, even after PO 20 was created)
+- Sale ID 16: **cost = 2,000** ✅ (unchanged, even after PO 20 was created)
+- Sale ID 25: **cost = 2,100** ✅ (uses new PO 20)
+
+---
+
+## Testing Checklist
+
+When testing the frontend, verify:
+
+- [ ] Each transaction shows the correct `cost_price` that was active when it was sold
+- [ ] Creating a new purchase order doesn't change the cost of previous sales
+- [ ] `previous_cost_price` is shown correctly (or null if no previous purchase)
+- [ ] Profit calculations match the displayed cost and selling price
+- [ ] Item-level aggregates (totals, averages) are correct
+- [ ] Overall totals are correct
+
+---
+
+## Support
+
+If you encounter any issues or have questions about the API response, please refer to this document or contact the backend team.
+
+**Last Updated**: December 2025
+**API Version**: Unchanged (backward compatible)
 

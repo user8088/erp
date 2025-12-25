@@ -36,15 +36,13 @@ interface StockProfitTransaction {
   item_brand?: string;
   quantity: number;
   unit: string;
-  cost_price: number; // Most recent purchase price (for current profit calculation)
-  historical_cost_price: number; // Cost price at time of sale (for trend tracking)
+  cost_price: number; // Cost at time of sale
+  previous_cost_price?: number | null; // Previous cost before the one used at time of sale
   selling_price: number; // Selling price at time of sale
-  total_cost: number; // quantity * cost_price (using latest cost)
+  total_cost: number; // quantity * cost_price
   total_revenue: number; // quantity * selling_price
-  profit: number; // total_revenue - total_cost (current profit)
-  historical_profit: number; // total_revenue - (quantity * historical_cost_price) (profit at time of sale)
-  profit_margin_percentage: number; // Current profit margin
-  historical_profit_margin_percentage: number; // Profit margin at time of sale
+  profit: number; // total_revenue - total_cost
+  profit_margin_percentage: number; // (profit / total_revenue) * 100
   sale_date: string;
   purchase_invoice_id?: number;
   purchase_invoice_number?: string;
@@ -121,33 +119,25 @@ export default function CustomerStockProfit({ customerId }: CustomerStockProfitP
           overall_profit_margin: response.overall_profit_margin,
           items: response.items,
           transactions: response.transactions.map((t: StockProfitTransaction) => {
-            const costAtSale =
-              // Prefer historical_cost_price from backend if provided
-              t.historical_cost_price ?? t.cost_price;
-            const previousCost =
-              t.historical_cost_price !== undefined
-                ? t.cost_price
-                : undefined;
-
+            // Backend should now send cost_price (at time of sale) and previous_cost_price
+            // Just use what backend sends, with fallbacks for old format
+            const costAtSale = t.cost_price;
+            const previousCost = t.previous_cost_price ?? null;
+            
             const totalRevenue = t.total_revenue ?? t.quantity * t.selling_price;
             const totalCost = t.total_cost ?? t.quantity * costAtSale;
-            const profitAtSale =
-              t.historical_profit ?? totalRevenue - totalCost;
-            const marginAtSale =
-              t.historical_profit_margin_percentage ??
-              (totalRevenue > 0 ? (profitAtSale / totalRevenue) * 100 : 0);
+            const profit = t.profit ?? totalRevenue - totalCost;
+            const margin = t.profit_margin_percentage ?? 
+              (totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0);
 
             return {
               ...t,
               cost_price: costAtSale,
-              historical_cost_price: previousCost ?? costAtSale,
+              previous_cost_price: previousCost,
               total_cost: totalCost,
-              profit: profitAtSale,
-              historical_profit:
-                t.profit !== undefined ? t.profit : profitAtSale,
-              profit_margin_percentage: marginAtSale,
-              historical_profit_margin_percentage:
-                t.profit_margin_percentage ?? marginAtSale,
+              total_revenue: totalRevenue,
+              profit: profit,
+              profit_margin_percentage: margin,
             } as StockProfitTransaction;
           }),
           period_start: response.period_start,
@@ -572,9 +562,10 @@ export default function CustomerStockProfit({ customerId }: CustomerStockProfitP
                     <div className="text-xs text-gray-500">
                       Cost: {formatCurrency(transaction.cost_price)}/unit
                     </div>
-                    {transaction.historical_cost_price !== transaction.cost_price && (
-                      <div className="text-xs text-blue-600">
-                        Previous Cost: {formatCurrency(transaction.historical_cost_price)}/unit
+                    {transaction.previous_cost_price != null && 
+                     transaction.previous_cost_price !== transaction.cost_price && (
+                      <div className="text-xs text-gray-400">
+                        Previous Cost: {formatCurrency(transaction.previous_cost_price)}/unit
                       </div>
                     )}
                     <div className="text-xs text-gray-500">

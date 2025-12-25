@@ -885,7 +885,7 @@ export const customersApi = {
         quantity: number;
         unit: string;
         cost_price: number;
-        historical_cost_price: number;
+        previous_cost_price?: number | null;
         selling_price: number;
         total_cost: number;
         total_revenue: number;
@@ -1225,10 +1225,17 @@ export interface CreatePurchaseOrderPayload {
 }
 
 export interface ReceivePurchaseOrderPayload {
-  items: {
+  items: Array<{
     id: number; // PO item ID
     quantity_received: number;
-  }[];
+    final_unit_price: number;
+  }>;
+  other_costs?: Array<{
+    description: string;
+    amount: number;
+    account_id?: number | null;
+  }>;
+  supplier_invoice_file?: File | null;
 }
 
 export const purchaseOrdersApi = {
@@ -1266,8 +1273,45 @@ export const purchaseOrdersApi = {
     return await apiClient.patch<{ purchase_order: PurchaseOrder; message: string }>(`/purchase-orders/${id}`, payload);
   },
 
-  async receivePurchaseOrder(id: number, payload: ReceivePurchaseOrderPayload): Promise<{ purchase_order: PurchaseOrder; stock_movements: StockMovement[]; message: string }> {
-    return await apiClient.post<{ purchase_order: PurchaseOrder; stock_movements: StockMovement[]; message: string }>(`/purchase-orders/${id}/receive`, payload);
+  async receivePurchaseOrder(
+    id: number, 
+    payload: ReceivePurchaseOrderPayload
+  ): Promise<{ 
+    purchase_order: PurchaseOrder; 
+    stock_movements: StockMovement[]; 
+    supplier_invoice?: Invoice;
+    message: string;
+  }> {
+    // If there's a file, use FormData; otherwise use JSON
+    if (payload.supplier_invoice_file) {
+      const formData = new FormData();
+      
+      // Add items as JSON string
+      formData.append('items', JSON.stringify(payload.items));
+      
+      // Add other costs if present
+      if (payload.other_costs && payload.other_costs.length > 0) {
+        formData.append('other_costs', JSON.stringify(payload.other_costs));
+      }
+      
+      // Add the file
+      formData.append('supplier_invoice_file', payload.supplier_invoice_file);
+      
+      return await apiClient.post<{ 
+        purchase_order: PurchaseOrder; 
+        stock_movements: StockMovement[]; 
+        supplier_invoice?: Invoice;
+        message: string;
+      }>(`/purchase-orders/${id}/receive`, formData);
+    } else {
+      // No file, send as JSON
+      return await apiClient.post<{ 
+        purchase_order: PurchaseOrder; 
+        stock_movements: StockMovement[]; 
+        supplier_invoice?: Invoice;
+        message: string;
+      }>(`/purchase-orders/${id}/receive`, payload);
+    }
   },
 
   async updateStatus(id: number, status: PurchaseOrder['status']): Promise<{ purchase_order: PurchaseOrder; message: string }> {

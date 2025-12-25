@@ -428,6 +428,11 @@ export interface PurchaseOrder {
   items?: PurchaseOrderItem[];
   journal_entry_id?: number | null;
   journal_entry?: JournalEntry | null;
+  supplier_invoice_path?: string | null; // Path to uploaded supplier invoice
+  other_costs_total?: number; // Sum of other costs
+  final_total?: number; // Final amount after adjustments
+  supplier_invoice_id?: number | null; // ID of created supplier invoice
+  supplier_invoice?: Invoice | null; // Created supplier invoice
 }
 
 export interface PurchaseOrderItem {
@@ -439,6 +444,23 @@ export interface PurchaseOrderItem {
   quantity_received: number;
   unit_price: number;
   total: number;
+  final_unit_price?: number | null; // Final settled price (may differ from initial quote)
+  quantity_received_final?: number; // Final quantity received (may be less than ordered)
+}
+
+// Receive Stock Payload
+export interface ReceiveStockPayload {
+  items: Array<{
+    id: number; // PO item ID
+    quantity_received: number;
+    final_unit_price: number;
+  }>;
+  other_costs?: Array<{
+    description: string;
+    amount: number;
+    account_id?: number | null;
+  }>;
+  supplier_invoice_file?: File | null;
 }
 
 // Stock Movement (Audit Trail)

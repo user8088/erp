@@ -5,7 +5,8 @@ import { useRouter, useParams } from "next/navigation";
 import { ArrowLeft, Edit, Package, FileText, Truck, CheckCircle, XCircle, Receipt } from "lucide-react";
 import { useToast } from "../../../components/ui/ToastProvider";
 import { purchaseOrdersApi } from "../../../lib/apiClient";
-import type { PurchaseOrder } from "../../../lib/types";
+import type { PurchaseOrder, Invoice } from "../../../lib/types";
+import ReceiveStockModal from "../../../components/Stock/ReceiveStockModal";
 
 // Mock data - replace with real API call
 const mockPO: PurchaseOrder = {
@@ -93,7 +94,6 @@ export default function PurchaseOrderDetailPage() {
   
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
-  const [receiveQuantities, setReceiveQuantities] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
   const [loadingPO, setLoadingPO] = useState(true);
 
@@ -122,15 +122,6 @@ export default function PurchaseOrderDetailPage() {
     fetchPO();
   }, [params.id, addToast, router]);
 
-  useEffect(() => {
-    if (!po) return;
-    // Initialize receive quantities with remaining quantities
-    const initial: Record<number, number> = {};
-    po.items?.forEach(item => {
-      initial[item.id] = item.quantity_ordered - item.quantity_received;
-    });
-    setReceiveQuantities(initial);
-  }, [po]);
 
   const getStatusBadge = (status: PurchaseOrder['status']) => {
     const config = {
@@ -158,33 +149,42 @@ export default function PurchaseOrderDetailPage() {
     });
   };
 
-  const handleReceiveStock = async () => {
+  const handleReceiveStock = async (payload: {
+    items: Array<{
+      id: number;
+      quantity_received: number;
+      final_unit_price: number;
+    }>;
+    other_costs?: Array<{
+      description: string;
+      amount: number;
+      account_id?: number | null;
+    }>;
+    supplier_invoice_file?: File | null;
+  }) => {
     if (!po) return;
-
-    // Filter out items with zero quantity
-    const itemsToReceive = Object.entries(receiveQuantities)
-      .filter(([_, qty]) => qty > 0)
-      .map(([id, qty]) => ({
-        id: Number(id),
-        quantity_received: qty,
-      }));
-
-    if (itemsToReceive.length === 0) {
-      addToast("Please enter quantities to receive", "error");
-      return;
-    }
 
     setLoading(true);
     try {
-      const response = await purchaseOrdersApi.receivePurchaseOrder(po.id, {
-        items: itemsToReceive,
-      });
+      const response = await purchaseOrdersApi.receivePurchaseOrder(po.id, payload);
       
       addToast(response.message || "Stock received successfully", "success");
       setPo(response.purchase_order);
       setIsReceiving(false);
+      
+      // Refresh the page data
+      const refreshResponse = await purchaseOrdersApi.getPurchaseOrder(po.id);
+      setPo(refreshResponse.purchase_order);
+      
+      return {
+        purchase_order: response.purchase_order,
+        supplier_invoice: response.supplier_invoice,
+        message: response.message || "Stock received successfully",
+      };
     } catch (error) {
-      addToast(error instanceof Error ? error.message : "Failed to receive stock", "error");
+      const errorMessage = error instanceof Error ? error.message : "Failed to receive stock";
+      addToast(errorMessage, "error");
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -279,7 +279,7 @@ export default function PurchaseOrderDetailPage() {
                 </button>
               </>
             )}
-            {(po.status === 'sent' || po.status === 'partial') && !isReceiving && (
+            {(po.status === 'sent' || po.status === 'partial') && (
               <button
                 onClick={() => setIsReceiving(true)}
                 className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors inline-flex items-center gap-2"
@@ -316,9 +316,6 @@ export default function PurchaseOrderDetailPage() {
                     <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Ordered</th>
                     {(po.status === 'partial' || po.status === 'received') && (
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Received</th>
-                    )}
-                    {isReceiving && (
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Receive Now</th>
                     )}
                     <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Unit Price</th>
                     <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total</th>
@@ -361,21 +358,6 @@ export default function PurchaseOrderDetailPage() {
                           </span>
                         </td>
                       )}
-                      {isReceiving && (
-                        <td className="px-4 py-3 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            max={item.quantity_ordered - item.quantity_received}
-                            value={receiveQuantities[item.id] || 0}
-                            onChange={(e) => setReceiveQuantities({
-                              ...receiveQuantities,
-                              [item.id]: Number(e.target.value)
-                            })}
-                            className="w-20 px-2 py-1 text-sm text-right border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                          />
-                        </td>
-                      )}
                       <td className="px-4 py-3 text-sm text-gray-900 text-right">
                         <div>PKR {item.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                         <div className="text-xs text-gray-500">per {item.item?.primary_unit || 'unit'}</div>
@@ -407,23 +389,6 @@ export default function PurchaseOrderDetailPage() {
               </div>
             )}
 
-            {isReceiving && (
-              <div className="mt-4 flex items-center justify-end gap-3">
-                <button
-                  onClick={() => setIsReceiving(false)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleReceiveStock}
-                  disabled={loading}
-                  className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300"
-                >
-                  {loading ? "Processing..." : "Confirm Receipt"}
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Totals */}
@@ -579,6 +544,16 @@ export default function PurchaseOrderDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Receive Stock Modal */}
+      {po && (
+        <ReceiveStockModal
+          isOpen={isReceiving}
+          onClose={() => setIsReceiving(false)}
+          purchaseOrder={po}
+          onReceive={handleReceiveStock}
+        />
+      )}
     </div>
   );
 }
