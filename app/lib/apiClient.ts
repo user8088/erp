@@ -147,6 +147,8 @@ import type {
   ReportFilters,
   TrialBalanceReport,
   ProfitLossReport,
+  ProfitLossDiagnostics,
+  FinancialSummaryData,
   BalanceSheetReport,
   GeneralLedgerLine,
   ProfitabilityAnalysis,
@@ -1933,6 +1935,56 @@ export const salesApi = {
     }>(`/sales/${id}/mark-delivered`);
   },
 
+  // Sales Trends
+  // GET /api/sales/trends
+  // Returns sales revenue aggregated by period (daily, weekly, monthly, quarterly, yearly)
+  async getSalesTrends(filters: {
+    company_id: number;
+    period_type: "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+    start_date: string;
+    end_date: string;
+    sale_type?: "walk-in" | "delivery";
+    customer_id?: number;
+  }): Promise<{
+    data: Array<{
+      period: string;
+      value: number;
+      count?: number;
+    }>;
+    summary: {
+      total_revenue: number;
+      total_sales: number;
+      average_sale_value: number;
+    };
+    generated_at: string;
+  }> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("period_type", filters.period_type);
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+    if (filters.sale_type) {
+      queryParams.append("sale_type", filters.sale_type);
+    }
+    if (filters.customer_id) {
+      queryParams.append("customer_id", String(filters.customer_id));
+    }
+
+    return await apiClient.get<{
+      data: Array<{
+        period: string;
+        value: number;
+        count?: number;
+      }>;
+      summary: {
+        total_revenue: number;
+        total_sales: number;
+        average_sale_value: number;
+      };
+      generated_at: string;
+    }>(`/sales/trends?${queryParams.toString()}`);
+  },
+
   async deleteSale(id: number): Promise<{ message: string }> {
     return await apiClient.delete<{ message: string }>(`/sales/${id}`);
   },
@@ -2550,10 +2602,62 @@ export const financialReportsApi = {
     if (filters.comparison_type && filters.comparison_type !== "none") {
       queryParams.append("comparison_type", filters.comparison_type);
     }
-    // Note: Backend calculates comparison dates automatically based on comparison_type
-    // comparison_start_date and comparison_end_date are optional and may be ignored
+    // Custom comparison dates (for custom comparison type)
+    if (filters.comparison_start_date) {
+      queryParams.append("comparison_start_date", filters.comparison_start_date);
+    }
+    if (filters.comparison_end_date) {
+      queryParams.append("comparison_end_date", filters.comparison_end_date);
+    }
+    // Account filtering (optional)
+    if (filters.account_ids && filters.account_ids.length > 0) {
+      filters.account_ids.forEach(id => queryParams.append("account_ids[]", String(id)));
+    }
+    if (filters.root_types && filters.root_types.length > 0) {
+      filters.root_types.forEach(type => queryParams.append("root_types[]", type));
+    }
 
     return await apiClient.get<ProfitLossReport>(`/financial-reports/profit-loss?${queryParams.toString()}`);
+  },
+
+  // Profit & Loss Diagnostics
+  // GET /api/financial-reports/profit-loss/diagnostics
+  // Returns diagnostic information to help troubleshoot when no data is showing
+  async getProfitLossDiagnostics(filters: { company_id: number; start_date: string; end_date: string }): Promise<ProfitLossDiagnostics> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    queryParams.append("start_date", filters.start_date);
+    queryParams.append("end_date", filters.end_date);
+
+    return await apiClient.get<ProfitLossDiagnostics>(`/financial-reports/profit-loss/diagnostics?${queryParams.toString()}`);
+  },
+
+  // Financial Summary
+  // GET /api/financial-reports/summary
+  // Returns key financial metrics: total income, total expenses, accounts receivable, accounts payable
+  async getFinancialSummary(filters: {
+    company_id: number;
+    period?: "current_month" | "current_year" | "all_time";
+    start_date?: string;
+    end_date?: string;
+    include_breakdown?: boolean;
+  }): Promise<FinancialSummaryData> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("company_id", String(filters.company_id));
+    if (filters.period) {
+      queryParams.append("period", filters.period);
+    }
+    if (filters.start_date) {
+      queryParams.append("start_date", filters.start_date);
+    }
+    if (filters.end_date) {
+      queryParams.append("end_date", filters.end_date);
+    }
+    if (filters.include_breakdown) {
+      queryParams.append("include_breakdown", "1");
+    }
+
+    return await apiClient.get<FinancialSummaryData>(`/financial-reports/summary?${queryParams.toString()}`);
   },
 
   // Balance Sheet

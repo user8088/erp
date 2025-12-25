@@ -981,6 +981,46 @@ export interface ProfitLossReport {
   generated_at: string;
 }
 
+export interface ProfitLossDiagnostics {
+  company_id: number;
+  start_date: string;
+  end_date: string;
+  income_accounts_count: number;
+  income_accounts: Array<{
+    id: number;
+    name: string;
+    number: string | null;
+    is_disabled: boolean;
+  }>;
+  journal_entries_count: number;
+  income_transactions_count: number;
+  total_income_amount: number;
+  sales_revenue_mapping: {
+    exists: boolean;
+    account_id: number | null;
+    account_name: string | null;
+    account_number: string | null;
+  } | null;
+}
+
+export interface FinancialSummaryData {
+  company_id: number;
+  period: string;
+  start_date?: string;
+  end_date?: string;
+  summary: {
+    total_income: number;
+    total_expenses: number;
+    accounts_receivable: number;
+    accounts_payable: number;
+  };
+  breakdown?: {
+    income?: Record<string, number>;
+    expenses?: Record<string, number>;
+  };
+  generated_at: string;
+}
+
 export type BalanceSheetSection = 
   | "current_assets"
   | "fixed_assets"
