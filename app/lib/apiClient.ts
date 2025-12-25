@@ -1321,6 +1321,29 @@ export const purchaseOrdersApi = {
   async deletePurchaseOrder(id: number): Promise<{ message: string }> {
     return await apiClient.delete<{ message: string }>(`/purchase-orders/${id}`);
   },
+
+  async downloadSupplierInvoiceAttachment(poId: number): Promise<Blob> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const headers: HeadersInit = {
+      Accept: "application/pdf,image/*",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/purchase-orders/${poId}/supplier-invoice-attachment`, {
+      method: "GET",
+      credentials: "include",
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "Failed to download attachment" }));
+      throw new ApiError(errorData.message || "Failed to download attachment", response.status, errorData);
+    }
+
+    return await response.blob();
+  },
 };
 
 // Stock Movements API - Real Backend Integration

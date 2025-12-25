@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoicesApi, suppliersApi, purchaseOrdersApi, ApiError } from "../../lib/apiClient";
 import type { Invoice, Supplier, PurchaseOrder } from "../../lib/types";
-import { FileText, Download, Eye, Filter, Truck } from "lucide-react";
+import { FileText, Download, Eye, Filter, Truck, Paperclip } from "lucide-react";
 import { useToast } from "../../components/ui/ToastProvider";
 
 // Simple date formatter
@@ -20,6 +20,7 @@ export default function SupplierInvoicesPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   const [purchaseOrdersMap, setPurchaseOrdersMap] = useState<Map<number, PurchaseOrder[]>>(new Map());
+  const [invoicePurchaseOrderMap, setInvoicePurchaseOrderMap] = useState<Map<number, PurchaseOrder>>(new Map());
   const [invoicePagination, setInvoicePagination] = useState({
     current_page: 1,
     per_page: 15,
@@ -134,6 +135,60 @@ export default function SupplierInvoicesPage() {
       );
 
       setPurchaseOrdersMap(poMap);
+
+      // Fetch purchase orders linked to invoices to get attachments
+      // Method 1: Check by reference_type and reference_id
+      // Method 2: Check all purchase orders for supplier_invoice_id matching invoice.id
+      const invoicePOMap = new Map<number, PurchaseOrder>();
+      
+      // First, try to find by reference_type and reference_id
+      await Promise.all(
+        invoicesToProcess
+          .filter(invoice => {
+            const refType = invoice.reference_type?.toLowerCase();
+            return (refType === 'purchaseorder' || refType === 'purchase_order') && invoice.reference_id;
+          })
+          .map(async (invoice) => {
+            try {
+              const poId = invoice.reference_id as number;
+              const response = await purchaseOrdersApi.getPurchaseOrder(poId);
+              if (response.purchase_order.supplier_invoice_path) {
+                invoicePOMap.set(invoice.id, response.purchase_order);
+              }
+            } catch (error) {
+              console.error(`Failed to fetch purchase order ${invoice.reference_id} for invoice ${invoice.id}:`, error);
+            }
+          })
+      );
+
+      // Second, check all purchase orders for supplier_invoice_id matching invoice IDs
+      const invoiceIds = new Set(invoicesToProcess.map(inv => inv.id));
+      const allPOs = Array.from(poMap.values()).flat();
+      
+      // First pass: check if supplier_invoice_id is already in the PO data
+      allPOs.forEach(po => {
+        if (po.supplier_invoice_id && invoiceIds.has(po.supplier_invoice_id) && po.supplier_invoice_path) {
+          invoicePOMap.set(po.supplier_invoice_id, po);
+        }
+      });
+      
+      // Second pass: fetch full PO details for POs that have supplier_invoice_id but we don't have supplier_invoice_path yet
+      await Promise.all(
+        allPOs
+          .filter(po => po.supplier_invoice_id && invoiceIds.has(po.supplier_invoice_id) && !po.supplier_invoice_path)
+          .map(async (po) => {
+            try {
+              const response = await purchaseOrdersApi.getPurchaseOrder(po.id);
+              if (response.purchase_order.supplier_invoice_path) {
+                invoicePOMap.set(po.supplier_invoice_id, response.purchase_order);
+              }
+            } catch (error) {
+              console.error(`Failed to fetch purchase order ${po.id} for invoice ${po.supplier_invoice_id}:`, error);
+            }
+          })
+      );
+
+      setInvoicePurchaseOrderMap(invoicePOMap);
     } catch (error) {
       console.error("Failed to fetch purchase orders:", error);
     }
@@ -397,45 +452,105 @@ export default function SupplierInvoicesPage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={async () => {
-                              try {
-                                const blob = await invoicesApi.downloadInvoice(invoice.id);
-                                const url = window.URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `${invoice.invoice_number}.pdf`;
-                                document.body.appendChild(a);
-                                a.click();
-                                window.URL.revokeObjectURL(url);
-                                document.body.removeChild(a);
-                                addToast("Invoice downloaded successfully", "success");
-                              } catch (error) {
-                                console.error("Failed to download invoice:", error);
-                                addToast("Failed to download invoice", "error");
+                          {(() => {
+                            // Try to find linked PO by direct mapping
+                            let linkedPO = invoicePurchaseOrderMap.get(invoice.id);
+                            
+                            // Fallback: Try to find PO by matching date and amount (similar to getItemsPurchased logic)
+                            if (!linkedPO) {
+                              const supplierId = invoice.metadata?.supplier?.id;
+                              if (supplierId) {
+                                const purchaseOrders = purchaseOrdersMap.get(supplierId) || [];
+                                const invoiceDate = new Date(invoice.invoice_date);
+                                const invoiceTotal = invoice.total_amount;
+                                
+                                const candidatePOs = purchaseOrders
+                                  .map(po => {
+                                    const poDate = new Date(po.order_date);
+                                    const daysDiff = (invoiceDate.getTime() - poDate.getTime()) / (1000 * 60 * 60 * 24);
+                                    const amountDiff = Math.abs(po.total - invoiceTotal);
+                                    return {
+                                      po,
+                                      daysDiff,
+                                      amountDiff,
+                                      score: daysDiff <= 30 && daysDiff >= 0 ? (30 - daysDiff) - (amountDiff / 1000) : -1
+                                    };
+                                  })
+                                  .filter(candidate => candidate.score >= 0)
+                                  .sort((a, b) => b.score - a.score);
+                                
+                                const bestMatch = candidatePOs[0];
+                                if (bestMatch && bestMatch.po.supplier_invoice_path) {
+                                  linkedPO = bestMatch.po;
+                                }
                               }
-                            }}
-                            className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
-                            title="Download PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const blob = await invoicesApi.downloadInvoice(invoice.id);
-                                const url = window.URL.createObjectURL(blob);
-                                window.open(url, "_blank");
-                              } catch (error) {
-                                console.error("Failed to open invoice preview:", error);
-                                addToast("Failed to open invoice", "error");
-                              }
-                            }}
-                            className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
-                            title="View PDF"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
+                            }
+                            
+                            const hasAttachment = linkedPO?.supplier_invoice_path;
+                            
+                            return (
+                              <>
+                                {hasAttachment && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const blob = await purchaseOrdersApi.downloadSupplierInvoiceAttachment(linkedPO!.id);
+                                        const url = window.URL.createObjectURL(blob);
+                                        window.open(url, "_blank");
+                                        addToast("Attachment opened successfully", "success");
+                                      } catch (error) {
+                                        console.error("Failed to open attachment:", error);
+                                        addToast("Failed to open attachment", "error");
+                                      }
+                                    }}
+                                    className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    title="View Supplier Invoice Attachment"
+                                  >
+                                    <Paperclip className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const blob = await invoicesApi.downloadInvoice(invoice.id);
+                                      const url = window.URL.createObjectURL(blob);
+                                      const a = document.createElement('a');
+                                      a.href = url;
+                                      a.download = `${invoice.invoice_number}.pdf`;
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      window.URL.revokeObjectURL(url);
+                                      document.body.removeChild(a);
+                                      addToast("Invoice downloaded successfully", "success");
+                                    } catch (error) {
+                                      console.error("Failed to download invoice:", error);
+                                      addToast("Failed to download invoice", "error");
+                                    }
+                                  }}
+                                  className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                                  title="Download PDF"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const blob = await invoicesApi.downloadInvoice(invoice.id);
+                                      const url = window.URL.createObjectURL(blob);
+                                      window.open(url, "_blank");
+                                    } catch (error) {
+                                      console.error("Failed to open invoice preview:", error);
+                                      addToast("Failed to open invoice", "error");
+                                    }
+                                  }}
+                                  className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                                  title="View PDF"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
                     </tr>

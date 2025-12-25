@@ -2,90 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Edit, Package, FileText, Truck, CheckCircle, XCircle, Receipt } from "lucide-react";
+import { ArrowLeft, Edit, Package, Truck, CheckCircle, XCircle, Receipt } from "lucide-react";
 import { useToast } from "../../../components/ui/ToastProvider";
 import { purchaseOrdersApi } from "../../../lib/apiClient";
 import type { PurchaseOrder, Invoice } from "../../../lib/types";
 import ReceiveStockModal from "../../../components/Stock/ReceiveStockModal";
-
-// Mock data - replace with real API call
-const mockPO: PurchaseOrder = {
-  id: 1,
-  po_number: "PO-20251207-001",
-  supplier_id: null,
-  supplier_name: "ABC Suppliers",
-  order_date: "2025-12-07",
-  expected_delivery_date: "2025-12-15",
-  received_date: null,
-  status: "sent",
-  subtotal: 125000,
-  tax_percentage: 18,
-  tax_amount: 22500,
-  discount: 0,
-  total: 147500,
-  notes: "Urgent order for construction project",
-  created_by: 1,
-  created_at: "2025-12-07T10:30:00Z",
-  updated_at: "2025-12-07T10:30:00Z",
-  items: [
-    {
-      id: 1,
-      purchase_order_id: 1,
-      item_id: 1,
-      item: {
-        id: 1,
-        serial_number: "CONST-000001",
-        name: "Portland Cement 50kg",
-        brand: "Fauji",
-        category_id: 1,
-        category: { id: 1, name: "Construction Material", alias: "CONST", description: null, created_at: "", updated_at: "" },
-        picture_url: null,
-        total_profit: 15000,
-        last_purchase_price: 850,
-        lowest_purchase_price: 820,
-        highest_purchase_price: 900,
-        selling_price: 1200,
-        primary_unit: "bag",
-        secondary_unit: "kg",
-        conversion_rate: 50,
-        created_at: "",
-        updated_at: "",
-      },
-      quantity_ordered: 100,
-      quantity_received: 0,
-      unit_price: 850,
-      total: 85000,
-    },
-    {
-      id: 2,
-      purchase_order_id: 1,
-      item_id: 2,
-      item: {
-        id: 2,
-        serial_number: "CONST-000002",
-        name: "Steel Rebar 12mm",
-        brand: "Amreli",
-        category_id: 1,
-        category: { id: 1, name: "Construction Material", alias: "CONST", description: null, created_at: "", updated_at: "" },
-        picture_url: null,
-        total_profit: 8500,
-        last_purchase_price: 120,
-        lowest_purchase_price: 115,
-        highest_purchase_price: 130,
-        selling_price: 180,
-        primary_unit: "piece",
-        secondary_unit: "meter",
-        conversion_rate: 6,
-        created_at: "",
-        updated_at: "",
-      },
-      quantity_ordered: 200,
-      quantity_received: 0,
-      unit_price: 120,
-      total: 24000,
-    },
-  ],
-};
 
 export default function PurchaseOrderDetailPage() {
   const router = useRouter();
@@ -161,8 +82,14 @@ export default function PurchaseOrderDetailPage() {
       account_id?: number | null;
     }>;
     supplier_invoice_file?: File | null;
-  }) => {
-    if (!po) return;
+  }): Promise<{
+    purchase_order: PurchaseOrder;
+    supplier_invoice?: Invoice;
+    message: string;
+  }> => {
+    if (!po) {
+      throw new Error("Purchase order not loaded");
+    }
 
     setLoading(true);
     try {
