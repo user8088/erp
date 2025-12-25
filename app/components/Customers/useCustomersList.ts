@@ -48,9 +48,14 @@ export function useCustomersList() {
           ...filters,
         });
         if (!cancelled) {
-          setCustomers(data.data);
-          setTotal(data.meta.total);
-          customersCache.set(key, { customers: data.data, total: data.meta.total });
+          // Filter out guest customers (serial_number starts with "GUEST")
+          const filteredCustomers = data.data.filter(
+            customer => !customer.serial_number?.toUpperCase().startsWith("GUEST")
+          );
+          setCustomers(filteredCustomers);
+          // Adjust total to account for filtered guest customers
+          setTotal(data.meta.total - (data.data.length - filteredCustomers.length));
+          customersCache.set(key, { customers: filteredCustomers, total: data.meta.total - (data.data.length - filteredCustomers.length) });
         }
       } catch (e: unknown) {
         console.error(e);

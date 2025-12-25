@@ -27,6 +27,12 @@ export default function CustomerDetailClient({ id }: CustomerDetailClientProps) 
       try {
         const res = await customersApi.getCustomer(Number(id));
         if (!cancelled) {
+          // Check if this is a guest customer and prevent access
+          if (res.customer.serial_number?.toUpperCase().startsWith("GUEST")) {
+            setError("Guest customer profiles are not accessible. Guest customers are system accounts used for walk-in sales.");
+            setCustomer(null);
+            return;
+          }
           setCustomer(res.customer);
         }
       } catch (e: unknown) {

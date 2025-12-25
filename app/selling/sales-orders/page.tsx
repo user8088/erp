@@ -85,7 +85,11 @@ export default function SalesOrdersPage() {
       const response = await customersApi.getCustomers({
         per_page: 1000,
       });
-      setCustomers(response.data);
+      // Filter out guest customers
+      const filteredCustomers = response.data.filter(
+        customer => !customer.serial_number?.toUpperCase().startsWith("GUEST")
+      );
+      setCustomers(filteredCustomers);
     } catch (error) {
       console.error("Failed to fetch customers:", error);
     } finally {
