@@ -35,6 +35,7 @@ export default function PointOfSalePage() {
   const [processingSale, setProcessingSale] = useState(false);
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [isGuestMode, setIsGuestMode] = useState(false);
 
   // Fetch stocked items
   const fetchStockItems = useCallback(async () => {
@@ -226,6 +227,7 @@ export default function PointOfSalePage() {
           const newPrice = Math.max(0, unitPrice);
           // Ensure originalPrice exists (for items added before this field was added)
           const originalPrice = item.originalPrice ?? item.unitPrice;
+          
           return {
             ...item,
             unitPrice: newPrice,
@@ -244,6 +246,7 @@ export default function PointOfSalePage() {
       cart.map((item) => {
         if (item.itemStock.id === itemId) {
           const clampedDiscount = Math.max(0, Math.min(100, discount));
+          
           return {
             ...item,
             discount: clampedDiscount,
@@ -286,14 +289,59 @@ export default function PointOfSalePage() {
     : 0;
   const total = subtotal + totalDeliveryCharges;
 
+
+  // Reset sale type to walk-in when guest mode is enabled
+  useEffect(() => {
+    if (isGuestMode && saleType === "delivery") {
+      setSaleType("walk-in");
+      addToast("Guest sales are only available for walk-in sales", "info");
+    }
+  }, [isGuestMode, saleType, addToast]);
+
   // Process Sale
   const handleProcessSale = async () => {
-    if (!selectedCustomer || cart.length === 0) return;
+    // Validation for guest mode
+    if (isGuestMode) {
+      if (saleType === "delivery") {
+        addToast("Guest sales are only available for walk-in sales", "error");
+        return;
+      }
+      if (!selectedPaymentAccount) {
+        addToast("Please select a payment account", "error");
+        return;
+      }
+      
+      // For guest sales, validate that no items have been discounted below original price
+      // and that the total payment equals the expected amount
+      const hasPriceReduction = cart.some(item => {
+        const originalPrice = item.originalPrice ?? item.itemStock.item?.selling_price ?? 0;
+        return item.discountedPrice < originalPrice;
+      });
+      
+      if (hasPriceReduction) {
+        addToast("Guest customers cannot have prices reduced below the original selling price", "error");
+        return;
+      }
+      
+      // Validate payment amount (should always equal total, but check for safety)
+      const paymentAmount = total;
+      if (Math.abs(paymentAmount - total) > 0.01) { // Allow small floating point differences
+        if (paymentAmount > total) {
+          addToast("Guest customers cannot pay excess/advance amount", "error");
+        } else {
+          addToast("Guest due is not allowed", "error");
+        }
+        return;
+      }
+    } else {
+      // Regular customer validation
+      if (!selectedCustomer || cart.length === 0) return;
 
-    // For walk-in sales, payment account is required
-    if (saleType === "walk-in" && !selectedPaymentAccount) {
-      addToast("Please select a payment account", "error");
-      return;
+      // For walk-in sales, payment account is required
+      if (saleType === "walk-in" && !selectedPaymentAccount) {
+        addToast("Please select a payment account", "error");
+        return;
+      }
     }
 
     setProcessingSale(true);
@@ -307,9 +355,14 @@ export default function PointOfSalePage() {
         delivery_charge: saleType === "delivery" ? item.deliveryCharge : 0,
       }));
 
+      // For guest sales, backend will use system guest customer
+      // Pass 0 as customer_id when is_guest is true - backend will use guest customer
+      const customerId = isGuestMode ? 0 : (selectedCustomer?.id || 0);
+
       console.log("[POS] Creating sale:", {
         sale_type: saleType,
-        customer_id: selectedCustomer.id,
+        customer_id: customerId,
+        is_guest: isGuestMode,
         items_count: saleItems.length,
         items: saleItems,
       });
@@ -317,9 +370,10 @@ export default function PointOfSalePage() {
       // Create sale (draft)
       const saleResponse = await salesApi.createSale({
         sale_type: saleType,
-        customer_id: selectedCustomer.id,
+        customer_id: customerId,
+        is_guest: isGuestMode,
         vehicle_id: saleType === "delivery" ? selectedVehicle?.id || null : null,
-        delivery_address: saleType === "delivery" ? selectedCustomer.address || null : null,
+        delivery_address: saleType === "delivery" && !isGuestMode && selectedCustomer ? selectedCustomer.address || null : null,
         // IMPORTANT: maintenance cost is defined on the vehicle profile, not per order in POS.
         // Backend should use the vehicle's configured maintenance cost when calculating profitability.
         items: saleItems,
@@ -365,8 +419,11 @@ export default function PointOfSalePage() {
       if (saleType === "walk-in") {
         processPayload.payment_method = "cash" as const;
         processPayload.payment_account_id = selectedPaymentAccount!;
+        // For guest sales, payment equals total (calculated from cart items)
         processPayload.amount_paid = total;
-        processPayload.use_advance = useAdvance;
+        // Guest sales cannot use advance
+        processPayload.use_advance = isGuestMode ? false : useAdvance;
+        processPayload.is_guest = isGuestMode;
       }
 
       console.log("[POS] Processing sale:", { sale_id: sale.id, payload: processPayload });
@@ -387,6 +444,7 @@ export default function PointOfSalePage() {
       setUseAdvance(false);
       setSearchQuery(""); // Clear search as well
       setCustomerSearchQuery(""); // Clear customer search
+      setIsGuestMode(false); // Reset guest mode
 
       // Refresh stock items to reflect updated quantities
       await fetchStockItems();
@@ -398,21 +456,64 @@ export default function PointOfSalePage() {
         if (error.status === 422 || error.status === 400) {
           const errorData = error.data as { message?: string; errors?: Record<string, string[]> };
           
-          if (errorData.errors) {
-            // Show all validation errors
-            const errorMessages = Object.values(errorData.errors).flat();
-            if (errorMessages.length > 0) {
-              // Show first error in toast, log all errors
-              addToast(errorMessages[0], "error");
-              if (errorMessages.length > 1) {
-                console.warn("Additional validation errors:", errorMessages.slice(1));
+          // Check for guest-specific error messages and show user-friendly versions
+          const errorMessage = errorData.message || "";
+          if (isGuestMode) {
+            if (errorMessage.includes("advance") || errorMessage.includes("excess") || errorMessage.includes("exceeds")) {
+              addToast("Guest customers cannot pay excess/advance amount", "error");
+            } else if (errorMessage.includes("due") || errorMessage.includes("outstanding") || errorMessage.includes("less than")) {
+              addToast("Guest due is not allowed", "error");
+            } else if (errorData.errors) {
+              // Show all validation errors
+              const errorMessages = Object.values(errorData.errors).flat();
+              if (errorMessages.length > 0) {
+                // Check if any error message contains advance/due keywords
+                const hasAdvanceError = errorMessages.some(msg => 
+                  msg.toLowerCase().includes("advance") || 
+                  msg.toLowerCase().includes("excess") || 
+                  msg.toLowerCase().includes("exceeds")
+                );
+                const hasDueError = errorMessages.some(msg => 
+                  msg.toLowerCase().includes("due") || 
+                  msg.toLowerCase().includes("outstanding") || 
+                  msg.toLowerCase().includes("less than")
+                );
+                
+                if (hasAdvanceError) {
+                  addToast("Guest customers cannot pay excess/advance amount", "error");
+                } else if (hasDueError) {
+                  addToast("Guest due is not allowed", "error");
+                } else {
+                  // Show first error in toast, log all errors
+                  addToast(errorMessages[0], "error");
+                }
+                if (errorMessages.length > 1) {
+                  console.warn("Additional validation errors:", errorMessages.slice(1));
+                }
+              } else {
+                addToast(errorData.message || "Validation failed", "error");
               }
             } else {
-              addToast(errorData.message || "Validation failed", "error");
+              addToast(errorData.message || "Failed to process sale", "error");
             }
           } else {
-            // Business logic error
-            addToast(errorData.message || "Failed to process sale", "error");
+            // Regular customer error handling
+            if (errorData.errors) {
+              // Show all validation errors
+              const errorMessages = Object.values(errorData.errors).flat();
+              if (errorMessages.length > 0) {
+                // Show first error in toast, log all errors
+                addToast(errorMessages[0], "error");
+                if (errorMessages.length > 1) {
+                  console.warn("Additional validation errors:", errorMessages.slice(1));
+                }
+              } else {
+                addToast(errorData.message || "Validation failed", "error");
+              }
+            } else {
+              // Business logic error
+              addToast(errorData.message || "Failed to process sale", "error");
+            }
           }
         } else if (error.status === 404) {
           addToast("Sales API endpoint not found. Please check backend configuration.", "error");
@@ -571,6 +672,29 @@ export default function PointOfSalePage() {
           <div className="p-6 overflow-y-auto flex-1">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Sales Cart</h2>
 
+            {/* Guest Sale Toggle */}
+            <div className="mb-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isGuestMode}
+                  onChange={(e) => {
+                    setIsGuestMode(e.target.checked);
+                    if (e.target.checked) {
+                      setSelectedCustomer(null);
+                      setCustomerSearchQuery("");
+                      setSaleType("walk-in");
+                    }
+                  }}
+                  className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Guest Sale</span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1 ml-6">
+                Enable for walk-in customers without an account
+              </p>
+            </div>
+
             {/* Sale Type Selection */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Sale Type</label>
@@ -586,77 +710,99 @@ export default function PointOfSalePage() {
                   Walk-in Sale
                 </button>
                 <button
-                  onClick={() => setSaleType("delivery")}
+                  onClick={() => {
+                    if (!isGuestMode) {
+                      setSaleType("delivery");
+                    }
+                  }}
+                  disabled={isGuestMode}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     saleType === "delivery"
                       ? "bg-orange-500 text-white"
+                      : isGuestMode
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
                   Order Sale
                 </button>
               </div>
+              {isGuestMode && (
+                <p className="text-xs text-orange-600 mt-1">Guest sales are only available for walk-in sales</p>
+              )}
             </div>
 
             {/* Customer Selection */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Customer</label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 z-10" />
-                <input
-                  type="text"
-                  value={selectedCustomer ? `${selectedCustomer.name}${selectedCustomer.serial_number ? ` (${selectedCustomer.serial_number})` : ""}` : customerSearchQuery}
-                  onChange={(e) => {
-                    setCustomerSearchQuery(e.target.value);
-                    setShowCustomerDropdown(true);
-                    if (selectedCustomer) {
-                      setSelectedCustomer(null);
-                    }
-                  }}
-                  onFocus={() => {
-                    setShowCustomerDropdown(true);
-                    if (selectedCustomer) {
-                      setCustomerSearchQuery("");
-                    }
-                  }}
-                  onBlur={() => {
-                    // Delay closing to allow click events
-                    setTimeout(() => setShowCustomerDropdown(false), 200);
-                  }}
-                  placeholder="Search customer by name, serial number, or phone..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  disabled={loadingCustomers}
-                />
-                {showCustomerDropdown && filteredCustomers.length > 0 && (
-                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {filteredCustomers.map((customer) => (
-                      <button
-                        key={customer.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCustomer(customer);
-                          setCustomerSearchQuery("");
-                          setShowCustomerDropdown(false);
-                        }}
-                        className="w-full text-left px-4 py-2 hover:bg-orange-50 focus:bg-orange-50 focus:outline-none transition-colors"
-                      >
-                        <div className="font-medium text-gray-900">{customer.name}</div>
-                        {customer.serial_number && (
-                          <div className="text-xs text-gray-500">Serial: {customer.serial_number}</div>
-                        )}
-                        {customer.phone && (
-                          <div className="text-xs text-gray-500">Phone: {customer.phone}</div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {showCustomerDropdown && customerSearchQuery && filteredCustomers.length === 0 && !loadingCustomers && (
-                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg p-4 text-center text-sm text-gray-500">
-                    No customers found
-                  </div>
-                )}
-              </div>
+              {isGuestMode ? (
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 z-10" />
+                  <input
+                    type="text"
+                    value="Guest Customer"
+                    readOnly
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 cursor-not-allowed"
+                  />
+                </div>
+              ) : (
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 z-10" />
+                  <input
+                    type="text"
+                    value={selectedCustomer ? `${selectedCustomer.name}${selectedCustomer.serial_number ? ` (${selectedCustomer.serial_number})` : ""}` : customerSearchQuery}
+                    onChange={(e) => {
+                      setCustomerSearchQuery(e.target.value);
+                      setShowCustomerDropdown(true);
+                      if (selectedCustomer) {
+                        setSelectedCustomer(null);
+                      }
+                    }}
+                    onFocus={() => {
+                      setShowCustomerDropdown(true);
+                      if (selectedCustomer) {
+                        setCustomerSearchQuery("");
+                      }
+                    }}
+                    onBlur={() => {
+                      // Delay closing to allow click events
+                      setTimeout(() => setShowCustomerDropdown(false), 200);
+                    }}
+                    placeholder="Search customer by name, serial number, or phone..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    disabled={loadingCustomers}
+                  />
+                  {showCustomerDropdown && filteredCustomers.length > 0 && (
+                    <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      {filteredCustomers.map((customer) => (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCustomer(customer);
+                            setCustomerSearchQuery("");
+                            setShowCustomerDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 hover:bg-orange-50 focus:bg-orange-50 focus:outline-none transition-colors"
+                        >
+                          <div className="font-medium text-gray-900">{customer.name}</div>
+                          {customer.serial_number && (
+                            <div className="text-xs text-gray-500">Serial: {customer.serial_number}</div>
+                          )}
+                          {customer.phone && (
+                            <div className="text-xs text-gray-500">Phone: {customer.phone}</div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {showCustomerDropdown && customerSearchQuery && filteredCustomers.length === 0 && !loadingCustomers && (
+                    <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg p-4 text-center text-sm text-gray-500">
+                      No customers found
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Vehicle Selection & Maintenance Cost (Only for Delivery Sale) */}
@@ -717,8 +863,9 @@ export default function PointOfSalePage() {
               </div>
             )}
 
-            {/* Use Advance Option (Only for Walk-in Sale) */}
-            {saleType === "walk-in" && selectedCustomer && (
+
+            {/* Use Advance Option (Only for Walk-in Sale, Not for Guests) */}
+            {saleType === "walk-in" && selectedCustomer && !isGuestMode && (
               <div className="mb-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -918,14 +1065,14 @@ export default function PointOfSalePage() {
             <button
               disabled={
                 cart.length === 0 || 
-                !selectedCustomer || 
+                (isGuestMode ? false : !selectedCustomer) || 
                 (saleType === "walk-in" && !selectedPaymentAccount) ||
                 processingSale
               }
               onClick={handleProcessSale}
               className={`w-full mt-4 py-3 rounded-md font-semibold transition-colors flex items-center justify-center gap-2 ${
                 cart.length === 0 || 
-                !selectedCustomer || 
+                (isGuestMode ? false : !selectedCustomer) || 
                 (saleType === "walk-in" && !selectedPaymentAccount) ||
                 processingSale
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
@@ -937,12 +1084,12 @@ export default function PointOfSalePage() {
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Processing...
                 </>
-              ) : !selectedCustomer ? (
+              ) : !isGuestMode && !selectedCustomer ? (
                 "Select Customer to Continue"
               ) : saleType === "walk-in" && !selectedPaymentAccount ? (
                 "Select Payment Account to Continue"
               ) : saleType === "walk-in" ? (
-                "Process Walk-in Sale"
+                isGuestMode ? "Process Guest Sale" : "Process Walk-in Sale"
               ) : (
                 "Process Delivery Sale"
               )}

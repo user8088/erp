@@ -1847,6 +1847,7 @@ export interface GetSalesParams {
 export interface CreateSalePayload {
   sale_type: 'walk-in' | 'delivery';
   customer_id: number;
+  is_guest?: boolean; // New field for guest sales
   vehicle_id?: number | null;
   delivery_address?: string | null;
   expected_delivery_date?: string | null;
@@ -1868,6 +1869,7 @@ export interface ProcessSalePayload {
   payment_account_id?: number;
   amount_paid?: number;
   use_advance?: boolean;
+  is_guest?: boolean; // New field for guest sales validation
   notes?: string | null;
 }
 
