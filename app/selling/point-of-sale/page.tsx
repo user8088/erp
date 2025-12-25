@@ -931,39 +931,51 @@ export default function PointOfSalePage() {
                         <div className="space-y-2">
                           <div className="grid grid-cols-2 gap-3">
                             {/* Selling Price */}
-                            <div className="space-y-1">
+                            <div className="space-y-1 min-w-0">
                               <label className="block text-xs text-gray-600">Selling Price:</label>
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-500">PKR</span>
+                                <span className="text-xs text-gray-500 whitespace-nowrap">PKR</span>
                                 <input
                                   type="number"
                                   min="0"
                                   step="0.01"
-                                  value={cartItem.unitPrice}
-                                  onChange={(e) =>
-                                    updateUnitPrice(cartItem.itemStock.id, Number(e.target.value))
-                                  }
-                                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                  value={cartItem.unitPrice || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateUnitPrice(cartItem.itemStock.id, 0);
+                                    } else {
+                                      updateUnitPrice(cartItem.itemStock.id, Number(value));
+                                    }
+                                  }}
+                                  onWheel={(e) => e.currentTarget.blur()}
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   placeholder="0.00"
                                 />
                               </div>
                             </div>
                             {/* Discount */}
-                            <div className="space-y-1">
+                            <div className="space-y-1 min-w-0">
                               <label className="block text-xs text-gray-600">Discount:</label>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="number"
                                   min="0"
                                   max="100"
-                                  value={cartItem.discount}
-                                  onChange={(e) =>
-                                    updateDiscount(cartItem.itemStock.id, Number(e.target.value))
-                                  }
-                                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                  value={cartItem.discount || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateDiscount(cartItem.itemStock.id, 0);
+                                    } else {
+                                      updateDiscount(cartItem.itemStock.id, Number(value));
+                                    }
+                                  }}
+                                  onWheel={(e) => e.currentTarget.blur()}
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   placeholder="0"
                                 />
-                                <span className="text-xs text-gray-500">%</span>
+                                <span className="text-xs text-gray-500 whitespace-nowrap">%</span>
                               </div>
                             </div>
                           </div>
