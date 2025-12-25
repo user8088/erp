@@ -62,12 +62,19 @@ export default function PurchaseOrdersTable({ orders, loading, onDelete }: Purch
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
           {orders.map((order) => {
-            // Format items display with item names: "5 bags Cement, 5 bags Pussy"
+            // Format items display with item names and brands: "5 bags Cement (Paidaar), 5 bags Cement (Dewaan)"
             const itemsDisplay = order.items?.map((item) => {
-              const quantity = Math.floor(Number(item.quantity_ordered) || 0);
+              // Use quantity_received_final if available (for received orders), otherwise quantity_received, fallback to quantity_ordered
+              const quantity = Math.floor(
+                Number(item.quantity_received_final ?? item.quantity_received ?? item.quantity_ordered) || 0
+              );
               const unit = item.item?.primary_unit || 'units';
               const itemName = item.item?.name || `Item #${item.item_id}`;
-              return `${quantity} ${unit} ${itemName}`;
+              const brand = item.item?.brand;
+              
+              // Include brand name if available to differentiate items with same name
+              const displayName = brand ? `${itemName} (${brand})` : itemName;
+              return `${quantity} ${unit} ${displayName}`;
             }).join(', ') || '—';
 
             return (

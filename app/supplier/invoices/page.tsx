@@ -199,42 +199,69 @@ export default function SupplierInvoicesPage() {
     const supplierId = invoice.metadata?.supplier?.id;
     if (!supplierId) return "";
 
-    const purchaseOrders = purchaseOrdersMap.get(supplierId) || [];
+    // First, try to find the purchase order by direct link (supplier_invoice_id or reference_id)
+    let matchedPO: PurchaseOrder | null = null;
     
-    // Find the purchase order that best matches this invoice
-    // We'll match by: same supplier, date close to invoice date, and similar total amount
-    const invoiceDate = new Date(invoice.invoice_date);
-    const invoiceTotal = invoice.total_amount;
+    // Check if invoice is directly linked to a PO via reference_id
+    if (invoice.reference_type && invoice.reference_id) {
+      const refType = invoice.reference_type.toLowerCase();
+      if ((refType === 'purchaseorder' || refType === 'purchase_order')) {
+        const purchaseOrders = purchaseOrdersMap.get(supplierId) || [];
+        matchedPO = purchaseOrders.find(po => po.id === invoice.reference_id) || null;
+      }
+    }
     
-    // Find purchase orders within 30 days before invoice date
-    const candidatePOs = purchaseOrders
-      .map(po => {
-        const poDate = new Date(po.order_date);
-        const daysDiff = (invoiceDate.getTime() - poDate.getTime()) / (1000 * 60 * 60 * 24);
-        const amountDiff = Math.abs(po.total - invoiceTotal);
-        return {
-          po,
-          daysDiff,
-          amountDiff,
-          score: daysDiff <= 30 && daysDiff >= 0 ? (30 - daysDiff) - (amountDiff / 1000) : -1
-        };
-      })
-      .filter(candidate => candidate.score >= 0)
-      .sort((a, b) => b.score - a.score); // Sort by best match
+    // If not found, check if any PO has supplier_invoice_id matching this invoice
+    if (!matchedPO) {
+      const purchaseOrders = purchaseOrdersMap.get(supplierId) || [];
+      matchedPO = purchaseOrders.find(po => po.supplier_invoice_id === invoice.id) || null;
+    }
     
-    // Use only the best matching purchase order (most recent and closest amount)
-    const bestMatch = candidatePOs[0];
-    if (!bestMatch || !bestMatch.po.items || bestMatch.po.items.length === 0) {
+    // If still not found, use fuzzy matching as fallback
+    if (!matchedPO) {
+      const purchaseOrders = purchaseOrdersMap.get(supplierId) || [];
+      const invoiceDate = new Date(invoice.invoice_date);
+      const invoiceTotal = invoice.total_amount;
+      
+      // Find purchase orders within 30 days before invoice date
+      const candidatePOs = purchaseOrders
+        .map(po => {
+          const poDate = new Date(po.order_date);
+          const daysDiff = (invoiceDate.getTime() - poDate.getTime()) / (1000 * 60 * 60 * 24);
+          const amountDiff = Math.abs(po.total - invoiceTotal);
+          return {
+            po,
+            daysDiff,
+            amountDiff,
+            score: daysDiff <= 30 && daysDiff >= 0 ? (30 - daysDiff) - (amountDiff / 1000) : -1
+          };
+        })
+        .filter(candidate => candidate.score >= 0)
+        .sort((a, b) => b.score - a.score); // Sort by best match
+      
+      matchedPO = candidatePOs[0]?.po || null;
+    }
+    
+    if (!matchedPO || !matchedPO.items || matchedPO.items.length === 0) {
       return "";
     }
 
-    // Collect items from the best matching purchase order only
+    // Collect ALL items from the matched purchase order
     const items: string[] = [];
-    bestMatch.po.items.forEach(item => {
-      const quantity = Math.floor(item.quantity_ordered);
+    matchedPO.items.forEach(item => {
+      // Use quantity_received_final if available (for received orders), otherwise quantity_received, fallback to quantity_ordered
+      const quantity = Math.floor(
+        item.quantity_received_final ?? 
+        item.quantity_received ?? 
+        item.quantity_ordered
+      );
       const unit = item.item?.primary_unit || 'units';
       const itemName = item.item?.name || `Item #${item.item_id}`;
-      items.push(`${quantity} ${unit} of ${itemName}`);
+      const brand = item.item?.brand;
+      
+      // Include brand name if available to differentiate items with same name
+      const displayName = brand ? `${itemName} (${brand})` : itemName;
+      items.push(`${quantity} ${unit} of ${displayName}`);
     });
 
     return items.length > 0 ? items.join(", ") : "";
