@@ -885,7 +885,7 @@ export const customersApi = {
         quantity: number;
         unit: string;
         cost_price: number;
-        previous_cost_price?: number | null;
+        historical_cost_price: number;
         selling_price: number;
         total_cost: number;
         total_revenue: number;
