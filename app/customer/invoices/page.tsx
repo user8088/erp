@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { invoicesApi, customersApi, salesApi, ApiError } from "../../lib/apiClient";
-import type { Invoice, Customer, Sale, SaleItem } from "../../lib/types";
+import { invoicesApi, customersApi, salesApi, itemsApi, ApiError } from "../../lib/apiClient";
+import type { Invoice, Customer, Sale, SaleItem, Item } from "../../lib/types";
 import { FileText, Download, Eye, Filter } from "lucide-react";
 import { useToast } from "../../components/ui/ToastProvider";
 
@@ -21,6 +21,7 @@ export default function CustomerInvoicesPage() {
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [invoiceItemSummaries, setInvoiceItemSummaries] = useState<Record<number, string>>({});
   const fetchedSaleIdsRef = useRef<Set<number>>(new Set());
+  const itemNamesCache = useRef<Record<number, string>>({});
   const [invoicePagination, setInvoicePagination] = useState({
     current_page: 1,
     per_page: 15,
@@ -40,14 +41,40 @@ export default function CustomerInvoicesPage() {
     if (!saleItems || saleItems.length === 0) return "";
     return saleItems
       .map((item) => {
-        const name = item?.item?.name ?? `Item #${item?.item_id ?? ""}`.trim();
-        const unit = item?.unit ? ` ${item.unit}` : "";
+        // Try to get item name from various sources
+        const name = item?.item?.name 
+          ?? itemNamesCache.current[item?.item_id ?? 0]
+          ?? `Item #${item?.item_id ?? ""}`.trim();
+        const unit = item?.unit || item?.item?.primary_unit || "";
         const qty = item?.quantity ?? 0;
-        return `${qty}${unit} ${name}`.trim();
+        // Format quantity without unnecessary decimals (1 instead of 1.0000)
+        const formattedQty = qty % 1 === 0 ? Math.floor(qty).toString() : qty.toString();
+        // Format as "quantity unit name" (e.g., "1 Bag Cement")
+        return unit ? `${formattedQty} ${unit} ${name}`.trim() : `${formattedQty} ${name}`.trim();
       })
       .filter(Boolean)
       .join(", ");
   };
+
+  // Fetch item names for items that don't have names
+  const fetchItemNames = useCallback(async (itemIds: number[]) => {
+    const missingIds = itemIds.filter(id => id && !itemNamesCache.current[id]);
+    if (missingIds.length === 0) return;
+
+    // Fetch items in parallel
+    const fetchPromises = missingIds.map(async (itemId) => {
+      try {
+        const response = await itemsApi.getItem(itemId);
+        if (response.item?.name) {
+          itemNamesCache.current[itemId] = response.item.name;
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch item ${itemId}:`, error);
+      }
+    });
+
+    await Promise.all(fetchPromises);
+  }, []);
 
   const fetchSaleItemsForInvoices = useCallback(async (fetchedInvoices: Invoice[]) => {
     const saleInvoices = fetchedInvoices.filter(
@@ -66,6 +93,15 @@ export default function CustomerInvoicesPage() {
         (invoice.reference_id as number | undefined);
 
       if (metaItems && metaItems.length > 0) {
+        // Check if any items are missing names
+        const itemIds = metaItems
+          .filter(item => item?.item_id && !item?.item?.name)
+          .map(item => item.item_id!);
+        
+        if (itemIds.length > 0) {
+          await fetchItemNames(itemIds);
+        }
+        
         const summary = formatSaleItems(metaItems);
         if (summary) {
           setInvoiceItemSummaries((prev) => ({
@@ -87,6 +123,16 @@ export default function CustomerInvoicesPage() {
         const sale =
           (saleResponse as { sale?: Sale }).sale ??
           (saleResponse as unknown as Sale | undefined);
+        
+        // Check if any items are missing names
+        const itemIds = sale?.items
+          ?.filter(item => item?.item_id && !item?.item?.name)
+          .map(item => item.item_id!) ?? [];
+        
+        if (itemIds.length > 0) {
+          await fetchItemNames(itemIds);
+        }
+        
         const summary = formatSaleItems(sale?.items);
         if (summary) {
           setInvoiceItemSummaries((prev) => ({
@@ -100,7 +146,7 @@ export default function CustomerInvoicesPage() {
     });
 
     await Promise.all(tasks);
-  }, []);
+  }, [fetchItemNames]);
 
   // Fetch customers for filter dropdown
   const fetchCustomers = useCallback(async () => {

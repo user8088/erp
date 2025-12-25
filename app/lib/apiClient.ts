@@ -1861,6 +1861,7 @@ export interface CreateSalePayload {
     discount_percentage?: number;
     delivery_charge?: number;
   }>;
+  overall_discount?: number; // Overall discount applied to the entire sale (in addition to item-level discounts)
   notes?: string | null;
 }
 

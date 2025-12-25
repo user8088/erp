@@ -14,6 +14,7 @@ interface CartItem {
   discount: number; // Discount percentage (0-100)
   discountedPrice: number;
   deliveryCharge: number; // Delivery charge for this item (only for order sales)
+  manualSubtotal?: number | null; // Manual subtotal override (null means use calculated)
 }
 
 export default function PointOfSalePage() {
@@ -36,6 +37,7 @@ export default function PointOfSalePage() {
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isGuestMode, setIsGuestMode] = useState(false);
+  const [editingSubtotal, setEditingSubtotal] = useState<number | null>(null); // itemStock.id being edited
 
   // Fetch stocked items
   const fetchStockItems = useCallback(async () => {
@@ -192,6 +194,7 @@ export default function PointOfSalePage() {
         discount: 0,
         discountedPrice: sellingPrice,
         deliveryCharge: 0,
+        manualSubtotal: null,
       };
       setCart([...cart, newItem]);
     }
@@ -266,6 +269,23 @@ export default function PointOfSalePage() {
           return {
             ...item,
             deliveryCharge: Math.max(0, deliveryCharge),
+            // Clear manual subtotal when delivery charge changes
+            manualSubtotal: null,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Update manual subtotal
+  const updateManualSubtotal = (itemId: number, subtotal: number | null) => {
+    setCart(
+      cart.map((item) => {
+        if (item.itemStock.id === itemId) {
+          return {
+            ...item,
+            manualSubtotal: subtotal,
           };
         }
         return item;
@@ -279,7 +299,18 @@ export default function PointOfSalePage() {
   };
 
   // Calculate totals
-  const subtotal = cart.reduce((sum, item) => sum + item.discountedPrice * item.quantity, 0);
+  const calculatedSubtotal = cart.reduce((sum, item) => {
+    const itemSubtotal = item.manualSubtotal !== null && item.manualSubtotal !== undefined
+      ? item.manualSubtotal
+      : item.discountedPrice * item.quantity + (saleType === "delivery" ? item.deliveryCharge : 0);
+    return sum + itemSubtotal;
+  }, 0);
+  
+  const originalSubtotal = cart.reduce((sum, item) => 
+    sum + item.discountedPrice * item.quantity + (saleType === "delivery" ? item.deliveryCharge : 0), 
+  0);
+  
+  const subtotal = calculatedSubtotal;
   const totalDiscount = cart.reduce(
     (sum, item) => sum + (item.unitPrice - item.discountedPrice) * item.quantity,
     0
@@ -287,7 +318,13 @@ export default function PointOfSalePage() {
   const totalDeliveryCharges = saleType === "delivery" 
     ? cart.reduce((sum, item) => sum + item.deliveryCharge, 0)
     : 0;
-  const total = subtotal + totalDeliveryCharges;
+  
+  // Calculate overall discount (negative) or advance (positive)
+  const overallAdjustment = subtotal - originalSubtotal; // negative = discount, positive = advance
+  const overallDiscount = overallAdjustment < 0 ? Math.abs(overallAdjustment) : 0;
+  const advanceAmount = overallAdjustment > 0 ? overallAdjustment : 0;
+  
+  const total = subtotal;
 
 
   // Reset sale type to walk-in when guest mode is enabled
@@ -320,6 +357,13 @@ export default function PointOfSalePage() {
       
       if (hasPriceReduction) {
         addToast("Guest customers cannot have prices reduced below the original selling price", "error");
+        return;
+      }
+      
+      // Guest sales cannot have manual subtotal adjustments (overall discount/advance)
+      const hasManualAdjustments = cart.some(item => item.manualSubtotal !== null && item.manualSubtotal !== undefined);
+      if (hasManualAdjustments) {
+        addToast("Guest sales cannot have manual subtotal adjustments", "error");
         return;
       }
       
@@ -377,6 +421,8 @@ export default function PointOfSalePage() {
         // IMPORTANT: maintenance cost is defined on the vehicle profile, not per order in POS.
         // Backend should use the vehicle's configured maintenance cost when calculating profitability.
         items: saleItems,
+        overall_discount: overallDiscount > 0 ? overallDiscount : undefined, // Only send if there's a discount
+        notes: overallDiscount > 0 ? `Overall discount: PKR ${overallDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : undefined,
       });
 
       console.log("[POS] Sale created:", saleResponse);
@@ -420,7 +466,8 @@ export default function PointOfSalePage() {
         processPayload.payment_method = "cash" as const;
         processPayload.payment_account_id = selectedPaymentAccount!;
         // For guest sales, payment equals total (calculated from cart items)
-        processPayload.amount_paid = total;
+        // For regular customers, if there's an advance (positive adjustment), include it in amount_paid
+        processPayload.amount_paid = isGuestMode ? total : (total + advanceAmount);
         // Guest sales cannot use advance
         processPayload.use_advance = isGuestMode ? false : useAdvance;
         processPayload.is_guest = isGuestMode;
@@ -1022,14 +1069,56 @@ export default function PointOfSalePage() {
                           )}
                           <div className="flex items-center justify-between text-sm font-semibold pt-1 border-t border-gray-200">
                             <span className="text-gray-900">Subtotal:</span>
-                            <span className="text-gray-900">
-                              PKR {(
-                                cartItem.discountedPrice * cartItem.quantity + 
-                                (saleType === "delivery" ? cartItem.deliveryCharge : 0)
-                              ).toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                              })}
-                            </span>
+                            {editingSubtotal === cartItem.itemStock.id ? (
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-gray-500">PKR</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={cartItem.manualSubtotal !== null && cartItem.manualSubtotal !== undefined 
+                                    ? cartItem.manualSubtotal 
+                                    : (cartItem.discountedPrice * cartItem.quantity + (saleType === "delivery" ? cartItem.deliveryCharge : 0))}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateManualSubtotal(cartItem.itemStock.id, null);
+                                    } else {
+                                      updateManualSubtotal(cartItem.itemStock.id, Number(value));
+                                    }
+                                  }}
+                                  onBlur={() => setEditingSubtotal(null)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.currentTarget.blur();
+                                    } else if (e.key === "Escape") {
+                                      updateManualSubtotal(cartItem.itemStock.id, null);
+                                      setEditingSubtotal(null);
+                                    }
+                                  }}
+                                  onWheel={(e) => e.currentTarget.blur()}
+                                  autoFocus
+                                  className="w-24 px-1 py-0.5 text-sm border border-orange-500 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                              </div>
+                            ) : (
+                              <span 
+                                className="text-gray-900 cursor-pointer hover:text-orange-600 transition-colors"
+                                onDoubleClick={() => {
+                                  if (!isGuestMode) {
+                                    setEditingSubtotal(cartItem.itemStock.id);
+                                  }
+                                }}
+                                title={isGuestMode ? "Guest sales cannot have manual subtotal adjustments" : "Double-click to edit"}
+                              >
+                                PKR {(cartItem.manualSubtotal !== null && cartItem.manualSubtotal !== undefined
+                                  ? cartItem.manualSubtotal
+                                  : (cartItem.discountedPrice * cartItem.quantity + (saleType === "delivery" ? cartItem.deliveryCharge : 0))
+                                ).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1050,9 +1139,25 @@ export default function PointOfSalePage() {
                 </div>
                 {totalDiscount > 0 && (
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Total Discount:</span>
+                    <span className="text-gray-600">Item Discounts:</span>
                     <span className="font-medium text-green-600">
                       - PKR {totalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                {overallDiscount > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Overall Discount:</span>
+                    <span className="font-medium text-green-600">
+                      - PKR {overallDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                {advanceAmount > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Advance Payment:</span>
+                    <span className="font-medium text-blue-600">
+                      + PKR {advanceAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                 )}
