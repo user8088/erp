@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoicesApi, suppliersApi, purchaseOrdersApi, ApiError } from "../../lib/apiClient";
 import type { Invoice, Supplier, PurchaseOrder } from "../../lib/types";
-import { FileText, Download, Eye, Filter, Truck, Paperclip } from "lucide-react";
+import { FileText, Download, Eye, Filter, Paperclip } from "lucide-react";
 import { useToast } from "../../components/ui/ToastProvider";
 
 // Simple date formatter
@@ -53,57 +53,6 @@ export default function SupplierInvoicesPage() {
       setLoadingSuppliers(false);
     }
   }, [addToast]);
-
-  // Fetch supplier invoices
-  const fetchInvoices = useCallback(async (page = invoicePagination.current_page) => {
-    setLoadingInvoices(true);
-    try {
-      const response = await invoicesApi.getInvoices({
-        invoice_type: 'supplier',
-        status: invoiceFilters.status || undefined,
-        start_date: invoiceFilters.start_date || undefined,
-        end_date: invoiceFilters.end_date || undefined,
-        search: invoiceFilters.search || undefined,
-        sort_by: 'invoice_date',
-        sort_direction: 'desc',
-        page: page,
-        per_page: invoicePagination.per_page,
-      });
-
-      // Filter by supplier ID if selected
-      let filteredInvoices = response.invoices;
-      if (invoiceFilters.supplier_id) {
-        filteredInvoices = response.invoices.filter(invoice => 
-          invoice.metadata?.supplier?.id === invoiceFilters.supplier_id
-        );
-      }
-
-      setInvoices(filteredInvoices);
-      setInvoicePagination(response.pagination);
-      setInvoiceApiUnavailable(false);
-
-      // Fetch purchase orders for suppliers to show items purchased
-      await fetchPurchaseOrdersForInvoices(filteredInvoices);
-    } catch (error) {
-      console.error("Failed to fetch invoices:", error);
-      
-      if (error instanceof ApiError && error.status === 404) {
-        setInvoiceApiUnavailable(true);
-      } else {
-        addToast("Failed to load invoices", "error");
-      }
-      
-      setInvoices([]);
-      setInvoicePagination({
-        current_page: 1,
-        per_page: 15,
-        total: 0,
-        last_page: 1,
-      });
-    } finally {
-      setLoadingInvoices(false);
-    }
-  }, [invoiceFilters.status, invoiceFilters.start_date, invoiceFilters.end_date, invoiceFilters.search, invoiceFilters.supplier_id, invoicePagination.per_page, addToast]);
 
   // Fetch purchase orders for invoices to show items purchased
   const fetchPurchaseOrdersForInvoices = useCallback(async (invoicesToProcess: Invoice[]) => {
@@ -179,7 +128,7 @@ export default function SupplierInvoicesPage() {
           .map(async (po) => {
             try {
               const response = await purchaseOrdersApi.getPurchaseOrder(po.id);
-              if (response.purchase_order.supplier_invoice_path) {
+              if (response.purchase_order.supplier_invoice_path && po.supplier_invoice_id) {
                 invoicePOMap.set(po.supplier_invoice_id, response.purchase_order);
               }
             } catch (error) {
@@ -193,6 +142,57 @@ export default function SupplierInvoicesPage() {
       console.error("Failed to fetch purchase orders:", error);
     }
   }, []);
+
+  // Fetch supplier invoices
+  const fetchInvoices = useCallback(async (page = invoicePagination.current_page) => {
+    setLoadingInvoices(true);
+    try {
+      const response = await invoicesApi.getInvoices({
+        invoice_type: 'supplier',
+        status: invoiceFilters.status || undefined,
+        start_date: invoiceFilters.start_date || undefined,
+        end_date: invoiceFilters.end_date || undefined,
+        search: invoiceFilters.search || undefined,
+        sort_by: 'invoice_date',
+        sort_direction: 'desc',
+        page: page,
+        per_page: invoicePagination.per_page,
+      });
+
+      // Filter by supplier ID if selected
+      let filteredInvoices = response.invoices;
+      if (invoiceFilters.supplier_id) {
+        filteredInvoices = response.invoices.filter(invoice => 
+          invoice.metadata?.supplier?.id === invoiceFilters.supplier_id
+        );
+      }
+
+      setInvoices(filteredInvoices);
+      setInvoicePagination(response.pagination);
+      setInvoiceApiUnavailable(false);
+
+      // Fetch purchase orders for suppliers to show items purchased
+      await fetchPurchaseOrdersForInvoices(filteredInvoices);
+    } catch (error) {
+      console.error("Failed to fetch invoices:", error);
+      
+      if (error instanceof ApiError && error.status === 404) {
+        setInvoiceApiUnavailable(true);
+      } else {
+        addToast("Failed to load invoices", "error");
+      }
+      
+      setInvoices([]);
+      setInvoicePagination({
+        current_page: 1,
+        per_page: 15,
+        total: 0,
+        last_page: 1,
+      });
+    } finally {
+      setLoadingInvoices(false);
+    }
+  }, [invoiceFilters.status, invoiceFilters.start_date, invoiceFilters.end_date, invoiceFilters.search, invoiceFilters.supplier_id, invoicePagination.per_page, invoicePagination.current_page, addToast, fetchPurchaseOrdersForInvoices]);
 
   // Helper function to get items purchased for an invoice
   const getItemsPurchased = useCallback((invoice: Invoice): string => {
