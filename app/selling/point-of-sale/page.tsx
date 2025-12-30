@@ -147,6 +147,12 @@ export default function PointOfSalePage() {
     fetchPaymentAccounts();
   }, [fetchStockItems, fetchCustomers, fetchVehicles, fetchPaymentAccounts]);
 
+  // Get cart quantity for an item stock
+  const getCartQuantity = (itemStockId: number): number => {
+    const cartItem = cart.find(item => item.itemStock.id === itemStockId);
+    return cartItem ? cartItem.quantity : 0;
+  };
+
   // Filter stock items by search query
   const filteredItems = stockItems.filter((item) => {
     if (!searchQuery) return true;
@@ -173,6 +179,15 @@ export default function PointOfSalePage() {
   // Add item to cart
   const addToCart = (itemStock: ItemStock) => {
     const existingItem = cart.find((item) => item.itemStock.id === itemStock.id);
+    const quantityOnHand = Number(itemStock.quantity_on_hand);
+    const cartQuantity = existingItem ? existingItem.quantity : 0;
+    const availableQuantity = quantityOnHand - cartQuantity;
+    
+    // Check if there's available stock
+    if (availableQuantity <= 0) {
+      addToast("No stock available for this item", "error");
+      return;
+    }
     
     if (existingItem) {
       // Increase quantity if already in cart
@@ -214,7 +229,19 @@ export default function PointOfSalePage() {
     setCart(
       cart.map((item) => {
         if (item.itemStock.id === itemId) {
-          const newQuantity = Math.max(1, item.quantity + delta);
+          const quantityOnHand = Number(item.itemStock.quantity_on_hand);
+          const currentQuantity = item.quantity;
+          const maxAvailable = quantityOnHand;
+          
+          // Calculate new quantity, but don't exceed available stock
+          let newQuantity = Math.max(1, currentQuantity + delta);
+          if (newQuantity > maxAvailable) {
+            newQuantity = maxAvailable;
+            if (delta > 0) {
+              addToast(`Only ${maxAvailable} units available in stock`, "error");
+            }
+          }
+          
           return {
             ...item,
             quantity: newQuantity,
@@ -303,6 +330,23 @@ export default function PointOfSalePage() {
   };
 
   // Calculate totals
+  // Original subtotal: sum of original prices + delivery charges
+  const originalSubtotal = cart.reduce((sum, item) => 
+    sum + item.originalPrice * item.quantity + (saleType === "delivery" ? item.deliveryCharge : 0), 
+  0);
+  
+  // Item-level discounts: sum of (originalPrice - discountedPrice) * quantity
+  const totalItemDiscount = cart.reduce(
+    (sum, item) => sum + (item.originalPrice - item.discountedPrice) * item.quantity,
+    0
+  );
+  
+  // Subtotal after item discounts (before manual adjustments)
+  const subtotalAfterItemDiscounts = cart.reduce((sum, item) => 
+    sum + item.discountedPrice * item.quantity + (saleType === "delivery" ? item.deliveryCharge : 0), 
+  0);
+  
+  // Current subtotal (with manual adjustments if any)
   const calculatedSubtotal = cart.reduce((sum, item) => {
     const itemSubtotal = item.manualSubtotal !== null && item.manualSubtotal !== undefined
       ? item.manualSubtotal
@@ -310,23 +354,19 @@ export default function PointOfSalePage() {
     return sum + itemSubtotal;
   }, 0);
   
-  const originalSubtotal = cart.reduce((sum, item) => 
-    sum + item.discountedPrice * item.quantity + (saleType === "delivery" ? item.deliveryCharge : 0), 
-  0);
-  
   const subtotal = calculatedSubtotal;
-  const totalDiscount = cart.reduce(
-    (sum, item) => sum + (item.unitPrice - item.discountedPrice) * item.quantity,
-    0
-  );
   const totalDeliveryCharges = saleType === "delivery" 
     ? cart.reduce((sum, item) => sum + item.deliveryCharge, 0)
     : 0;
   
-  // Calculate overall discount (negative) or advance (positive)
-  const overallAdjustment = subtotal - originalSubtotal; // negative = discount, positive = advance
-  const overallDiscount = overallAdjustment < 0 ? Math.abs(overallAdjustment) : 0;
+  // Calculate overall discount (additional discount beyond item-level discounts)
+  // This is the difference between subtotal after item discounts and current subtotal
+  const overallAdjustment = subtotal - subtotalAfterItemDiscounts; // negative = discount, positive = advance
+  const additionalDiscount = overallAdjustment < 0 ? Math.abs(overallAdjustment) : 0;
   const advanceAmount = overallAdjustment > 0 ? overallAdjustment : 0;
+  
+  // Overall discount includes both item-level discounts and any additional discount
+  const overallDiscount = totalItemDiscount + additionalDiscount;
   
   const total = subtotal;
 
@@ -425,8 +465,8 @@ export default function PointOfSalePage() {
         // IMPORTANT: maintenance cost is defined on the vehicle profile, not per order in POS.
         // Backend should use the vehicle's configured maintenance cost when calculating profitability.
         items: saleItems,
-        overall_discount: overallDiscount > 0 ? overallDiscount : undefined, // Only send if there's a discount
-        notes: overallDiscount > 0 ? `Overall discount: PKR ${overallDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : undefined,
+        overall_discount: additionalDiscount > 0 ? additionalDiscount : undefined, // Only send additional discount (item discounts are already in unit prices)
+        notes: overallDiscount > 0 ? `Total discount: PKR ${overallDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Item discounts: PKR ${totalItemDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}${additionalDiscount > 0 ? `, Additional: PKR ${additionalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ''})` : undefined,
       });
 
       console.log("[POS] Sale created:", saleResponse);
@@ -625,16 +665,18 @@ export default function PointOfSalePage() {
                   const item = itemStock.item;
                   if (!item) return null;
 
-                  const quantity = Number(itemStock.quantity_on_hand);
+                  const quantityOnHand = Number(itemStock.quantity_on_hand);
+                  const cartQuantity = getCartQuantity(itemStock.id);
+                  const availableQuantity = Math.max(0, quantityOnHand - cartQuantity);
                   const stockValue = itemStock.stock_value;
                   const sellingPrice = item.selling_price ?? 0;
 
-                  // Determine stock status
+                  // Determine stock status based on available quantity (after subtracting cart)
                   const reorderLevel = Number(itemStock.reorder_level);
                   let stockStatus: "in_stock" | "low_stock" | "out_of_stock";
-                  if (quantity === 0 || quantity < 0) {
+                  if (availableQuantity === 0 || availableQuantity < 0) {
                     stockStatus = "out_of_stock";
-                  } else if (quantity > 0 && quantity <= reorderLevel) {
+                  } else if (availableQuantity > 0 && availableQuantity <= reorderLevel) {
                     stockStatus = "low_stock";
                   } else {
                     stockStatus = "in_stock";
@@ -649,7 +691,7 @@ export default function PointOfSalePage() {
                           : "border-gray-200 hover:border-orange-300"
                       }`}
                       onClick={() => {
-                        if (stockStatus !== "out_of_stock") {
+                        if (stockStatus !== "out_of_stock" && availableQuantity > 0) {
                           addToCart(itemStock);
                         }
                       }}
@@ -657,11 +699,7 @@ export default function PointOfSalePage() {
                       {/* Item Image */}
                       <div className="mb-3">
                         {item.picture_url ? (
-                          <img
-                            src={item.picture_url}
-                            alt={item.name}
-                            className="w-full h-32 object-cover rounded border border-gray-200"
-                          />
+                          <img src={item.picture_url} alt={item.name}  className="w-full h-32 object-cover rounded border border-gray-200"/>
                         ) : (
                           <div className="w-full h-32 rounded bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center border border-gray-200">
                             <Package className="w-12 h-12 text-white" />
@@ -692,7 +730,12 @@ export default function PointOfSalePage() {
                                 ? "text-yellow-600"
                                 : "text-green-600"
                             }`}>
-                              {Math.floor(quantity).toLocaleString()} {item.primary_unit || "units"}
+                              {Math.floor(availableQuantity).toLocaleString()} {item.primary_unit || "units"}
+                              {cartQuantity > 0 && (
+                                <span className="text-xs text-gray-400 ml-1">
+                                  ({cartQuantity} in cart)
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -1030,24 +1073,41 @@ export default function PointOfSalePage() {
                               </div>
                             </div>
                           </div>
-                          {cartItem.originalPrice !== undefined && 
-                           cartItem.unitPrice !== cartItem.originalPrice && (
-                            <p className="text-xs text-gray-500">
-                              Original: PKR {cartItem.originalPrice.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                              })}
-                            </p>
-                          )}
-                          {cartItem.discount > 0 && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-gray-600">Discounted Price:</span>
-                              <span className="font-semibold text-green-600">
+                          {/* Pricing Breakdown */}
+                          <div className="pt-2 border-t border-gray-100 space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-600">Original Unit Price:</span>
+                              <span className="font-medium text-gray-900">
+                                PKR {cartItem.originalPrice.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-600">Per Unit Discount:</span>
+                              <span className={`font-medium ${cartItem.originalPrice - cartItem.discountedPrice > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                - PKR {(cartItem.originalPrice - cartItem.discountedPrice).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-600">Total Discount:</span>
+                              <span className={`font-semibold ${(cartItem.originalPrice - cartItem.discountedPrice) * cartItem.quantity > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                - PKR {((cartItem.originalPrice - cartItem.discountedPrice) * cartItem.quantity).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm pt-1 border-t border-gray-100">
+                              <span className="text-gray-600">Discounted Price per Unit:</span>
+                              <span className="font-semibold text-gray-900">
                                 PKR {cartItem.discountedPrice.toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                 })}
                               </span>
                             </div>
-                          )}
+                          </div>
                           {/* Delivery Charge (Only for Delivery Sale) */}
                           {saleType === "delivery" && (
                             <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
@@ -1136,27 +1196,33 @@ export default function PointOfSalePage() {
             {cart.length > 0 && (
               <div className="border-t border-gray-200 pt-4 space-y-2">
                 <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Original Subtotal:</span>
+                  <span className="font-medium text-gray-900">
+                    PKR {originalSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {totalItemDiscount > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Item Discounts:</span>
+                    <span className="font-medium text-green-600">
+                      - PKR {totalItemDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                {additionalDiscount > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Additional Discount:</span>
+                    <span className="font-medium text-green-600">
+                      - PKR {additionalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">Subtotal:</span>
                   <span className="font-medium text-gray-900">
                     PKR {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-                {totalDiscount > 0 && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Item Discounts:</span>
-                    <span className="font-medium text-green-600">
-                      - PKR {totalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                )}
-                {overallDiscount > 0 && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Overall Discount:</span>
-                    <span className="font-medium text-green-600">
-                      - PKR {overallDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                )}
                 {advanceAmount > 0 && (
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">Advance Payment:</span>
