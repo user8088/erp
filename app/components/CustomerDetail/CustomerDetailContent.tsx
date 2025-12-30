@@ -8,7 +8,7 @@ import CustomerDeliveryProfit from "./CustomerDeliveryProfit";
 import CustomerEarnings from "./CustomerEarnings";
 import CustomerStockProfit from "./CustomerStockProfit";
 import RecordPaymentModal from "./RecordPaymentModal";
-import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, ApiError } from "../../lib/apiClient";
+import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, itemsApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
 import type { Customer, CustomerPaymentSummary, CustomerPayment, Invoice, Sale, SaleItem } from "../../lib/types";
 import { DollarSign, TrendingUp, CreditCard, FileText, Calendar, Plus, Eye, Download } from "lucide-react";
@@ -40,6 +40,9 @@ export default function CustomerDetailContent({
   const [loadingPaymentList, setLoadingPaymentList] = useState(false);
   const [invoiceItemSummaries, setInvoiceItemSummaries] = useState<Record<number, string>>({});
   const fetchedSaleIdsRef = useRef<Set<number>>(new Set());
+  const itemNamesCache = useRef<Record<number, string>>({});
+  const itemBrandsCache = useRef<Record<number, string | null>>({});
+  const itemUnitsCache = useRef<Record<number, string>>({});
   
   // Customer invoices
   const [customerInvoices, setCustomerInvoices] = useState<Invoice[]>([]);
@@ -223,10 +226,33 @@ export default function CustomerDetailContent({
     if (!saleItems || saleItems.length === 0) return "";
     return saleItems
       .map((item) => {
-        const name = item?.item?.name ?? `Item #${item?.item_id ?? ""}`.trim();
-        const unit = item?.unit ? ` ${item.unit}` : "";
+        // Try to get item name from various sources
+        const name = item?.item?.name 
+          ?? itemNamesCache.current[item?.item_id ?? 0]
+          ?? `Item #${item?.item_id ?? ""}`.trim();
+        // Try to get brand from item object or cache
+        const brand = item?.item?.brand 
+          ?? itemBrandsCache.current[item?.item_id ?? 0] 
+          ?? null;
+        // Get unit - prioritize item.unit, then item.item.primary_unit, then cache
+        const unit = item?.unit 
+          || item?.item?.primary_unit 
+          || itemUnitsCache.current[item?.item_id ?? 0] 
+          || "";
         const qty = item?.quantity ?? 0;
-        return `${qty}${unit} ${name}`.trim();
+        // Format quantity without unnecessary decimals (1 instead of 1.0000)
+        const formattedQty = qty % 1 === 0 ? Math.floor(qty).toString() : qty.toString();
+        // Format as "quantity unit brand name" (e.g., "8 bags paidaar cement")
+        // Always include unit if available
+        const parts = [formattedQty];
+        if (unit) {
+          parts.push(unit);
+        }
+        if (brand) {
+          parts.push(brand);
+        }
+        parts.push(name);
+        return parts.join(" ").trim();
       })
       .filter(Boolean)
       .join(", ");
@@ -251,6 +277,37 @@ export default function CustomerDetailContent({
 
       // If items are already present in metadata, use them without fetching
       if (metaItems && metaItems.length > 0) {
+        // Check if any items are missing names or brands
+        const itemIds = metaItems
+          .filter(item => item?.item_id && (!item?.item?.name || item?.item?.brand === undefined))
+          .map(item => item.item_id!);
+        
+        if (itemIds.length > 0) {
+          // Fetch missing item names and brands
+          const fetchPromises = itemIds
+            .filter(id => id && (!itemNamesCache.current[id] || itemBrandsCache.current[id] === undefined))
+            .map(async (itemId) => {
+              try {
+                const response = await itemsApi.getItem(itemId);
+                if (response.item) {
+                  if (response.item.name) {
+                    itemNamesCache.current[itemId] = response.item.name;
+                  }
+                  if (response.item.brand !== undefined) {
+                    itemBrandsCache.current[itemId] = response.item.brand;
+                  }
+                  if (response.item.primary_unit) {
+                    itemUnitsCache.current[itemId] = response.item.primary_unit;
+                  }
+                }
+              } catch (error) {
+                console.warn(`Failed to fetch item ${itemId}:`, error);
+              }
+            });
+          
+          await Promise.all(fetchPromises);
+        }
+        
         const summary = formatSaleItems(metaItems);
         if (summary) {
           setInvoiceItemSummaries((prev) => ({
@@ -546,92 +603,79 @@ export default function CustomerDetailContent({
                   </div>
                 )}
 
-                {/* Payment History */}
+                {/* Invoices */}
                 <div className="border-t border-gray-200 pt-6">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Payment History</h3>
-                  {loadingPaymentList ? (
+                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Invoices</h3>
+                  {loadingInvoices ? (
                     <div className="text-center py-8 text-gray-500">
-                      <p className="text-sm">Loading payment history...</p>
+                      <p className="text-sm">Loading invoices...</p>
                     </div>
-                  ) : customerPayments.length > 0 ? (
+                  ) : customerInvoices.length > 0 ? (
                     <div className="space-y-2">
-                      {customerPayments.map((payment) => (
-                        <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      {customerInvoices.map((invoice) => (
+                        <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-gray-900">{payment.payment_number}</p>
+                              <FileText className="w-4 h-4 text-gray-400" />
+                              <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
                               <span className={`text-xs px-2 py-0.5 rounded ${
-                                payment.payment_type === 'invoice_payment' 
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : payment.payment_type === 'advance_payment'
+                                invoice.status === 'paid' 
                                   ? 'bg-green-100 text-green-700'
-                                  : 'bg-purple-100 text-purple-700'
+                                  : invoice.status === 'issued'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : invoice.status === 'cancelled'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-gray-100 text-gray-700'
                               }`}>
-                                {payment.payment_type === 'invoice_payment' ? 'Invoice Payment' :
-                                 payment.payment_type === 'advance_payment' ? 'Advance' : 'Refund'}
+                                {invoice.status}
                               </span>
                             </div>
                             <div className="flex items-center gap-4 mt-1">
                               <p className="text-xs text-gray-500 flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
-                                {new Date(payment.payment_date).toLocaleDateString()}
+                                {new Date(invoice.invoice_date || invoice.created_at).toLocaleDateString()}
                               </p>
-                              <p className="text-xs text-gray-500 capitalize">
-                                {payment.payment_method.replace('_', ' ')}
-                              </p>
-                              {payment.invoice && (
-                              <div className="flex flex-col gap-0.5 text-xs text-gray-500">
-                                <p>
-                                  Invoice: {payment.invoice.invoice_number}
-                                </p>
-                                {invoiceItemSummaries[payment.invoice.id] && (
-                                  <p className="line-clamp-2">
-                                    Items: {invoiceItemSummaries[payment.invoice.id]}
-                                  </p>
-                                )}
-                              </div>
+                              {invoiceItemSummaries[invoice.id] && (
+                                <div className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded px-2 py-1 leading-snug line-clamp-2">
+                                  <span className="font-medium text-gray-700">Items:</span> {invoiceItemSummaries[invoice.id]}
+                                </div>
                               )}
                             </div>
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-semibold text-gray-900">
-                              PKR {payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </p>
-                            <p className={`text-xs ${
-                              payment.status === 'completed' ? 'text-green-600' :
-                              payment.status === 'pending' ? 'text-yellow-600' : 'text-red-600'
-                            }`}>
-                              {payment.status}
+                            <p className="text-xs text-gray-500">
+                              {invoice.invoice_type === 'walk-in' ? 'Walk-in' : 'Delivery'}
                             </p>
-                            {payment.invoice && (
-                              <div className="flex justify-end gap-2 mt-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleViewInvoice(payment.invoice!.id)}
-                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                  title="Preview invoice"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDownloadInvoice(payment.invoice!.id)}
-                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                  title="Download invoice"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex justify-end gap-2 mt-2">
+                              <button
+                                type="button"
+                                onClick={() => handleViewInvoice(invoice.id)}
+                                className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                title="Preview invoice"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadInvoice(invoice.id)}
+                                className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                title="Download invoice"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">
-                      <p className="text-sm">No payment history found</p>
+                      <p className="text-sm">No invoices found</p>
                       <p className="text-xs mt-1 text-gray-400">
-                        Payment transactions will appear here once payments are recorded.
+                        Invoices will appear here once sales are processed.
                       </p>
                     </div>
                   )}
@@ -652,98 +696,78 @@ export default function CustomerDetailContent({
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-6">Related Transactions</h2>
             
-            {loadingPaymentList ? (
+            {loadingInvoices ? (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-sm">Loading transactions...</p>
               </div>
-            ) : customerPayments.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
+            ) : customerInvoices.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
                 <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                 <p className="text-sm font-medium text-gray-900 mb-1">No transactions found</p>
                 <p className="text-xs text-gray-400">
-                  Payments will appear here once transactions are recorded.
+                  Invoices will appear here once transactions are recorded.
                 </p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {/* Payments Section */}
-                {customerPayments.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Payments</h3>
-                    <div className="space-y-2">
-                      {customerPayments.map((payment) => (
-                        <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <CreditCard className="w-4 h-4 text-gray-400" />
-                              <p className="text-sm font-medium text-gray-900">{payment.payment_number}</p>
-                              <span className={`text-xs px-2 py-0.5 rounded ${
-                                payment.payment_type === 'invoice_payment' 
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : payment.payment_type === 'advance_payment'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-purple-100 text-purple-700'
-                              }`}>
-                                {payment.payment_type === 'invoice_payment' ? 'Invoice Payment' :
-                                 payment.payment_type === 'advance_payment' ? 'Advance' : 'Refund'}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-4 mt-1">
-                              <p className="text-xs text-gray-500 flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                {new Date(payment.payment_date).toLocaleDateString()}
-                              </p>
-                              <p className="text-xs text-gray-500 capitalize">
-                                {payment.payment_method.replace('_', ' ')}
-                              </p>
-                              {payment.invoice && (
-                                <div className="flex flex-col gap-0.5 text-xs text-gray-500">
-                                  <p>Invoice: {payment.invoice.invoice_number}</p>
-                                  {invoiceItemSummaries[payment.invoice.id] && (
-                                    <div className="mt-0.5 text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded px-2 py-1 leading-snug line-clamp-2">
-                                      <span className="font-medium text-gray-700">Items:</span> {invoiceItemSummaries[payment.invoice.id]}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
+              <div className="space-y-2">
+                {customerInvoices.map((invoice) => (
+                  <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-gray-400" />
+                        <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          invoice.status === 'paid' 
+                            ? 'bg-green-100 text-green-700'
+                            : invoice.status === 'issued'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : invoice.status === 'cancelled'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {invoice.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 mt-1">
+                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(invoice.invoice_date || invoice.created_at).toLocaleDateString()}
+                        </p>
+                        {invoiceItemSummaries[invoice.id] && (
+                          <div className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded px-2 py-1 leading-snug line-clamp-2">
+                            <span className="font-medium text-gray-700">Items:</span> {invoiceItemSummaries[invoice.id]}
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-semibold text-gray-900">
-                              PKR {payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </p>
-                            <p className={`text-xs ${
-                              payment.status === 'completed' ? 'text-green-600' :
-                              payment.status === 'pending' ? 'text-yellow-600' : 'text-red-600'
-                            }`}>
-                              {payment.status}
-                            </p>
-                            {payment.invoice && (
-                              <div className="flex justify-end gap-2 mt-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleViewInvoice(payment.invoice!.id)}
-                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                  title="Preview invoice"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDownloadInvoice(payment.invoice!.id)}
-                                  className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                  title="Download invoice"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
-            </div>
-                        </div>
-                      ))}
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-gray-900">
+                        PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {invoice.invoice_type === 'walk-in' ? 'Walk-in' : 'Delivery'}
+                      </p>
+                      <div className="flex justify-end gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleViewInvoice(invoice.id)}
+                          className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          title="Preview invoice"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadInvoice(invoice.id)}
+                          className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          title="Download invoice"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>

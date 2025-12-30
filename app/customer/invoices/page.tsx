@@ -22,6 +22,8 @@ export default function CustomerInvoicesPage() {
   const [invoiceItemSummaries, setInvoiceItemSummaries] = useState<Record<number, string>>({});
   const fetchedSaleIdsRef = useRef<Set<number>>(new Set());
   const itemNamesCache = useRef<Record<number, string>>({});
+  const itemBrandsCache = useRef<Record<number, string | null>>({});
+  const itemUnitsCache = useRef<Record<number, string>>({});
   const [invoicePagination, setInvoicePagination] = useState({
     current_page: 1,
     per_page: 15,
@@ -45,28 +47,55 @@ export default function CustomerInvoicesPage() {
         const name = item?.item?.name 
           ?? itemNamesCache.current[item?.item_id ?? 0]
           ?? `Item #${item?.item_id ?? ""}`.trim();
-        const unit = item?.unit || item?.item?.primary_unit || "";
+        // Try to get brand from item object or cache
+        const brand = item?.item?.brand 
+          ?? itemBrandsCache.current[item?.item_id ?? 0] 
+          ?? null;
+        // Get unit - prioritize item.unit, then item.item.primary_unit, then cache
+        const unit = item?.unit 
+          || item?.item?.primary_unit 
+          || itemUnitsCache.current[item?.item_id ?? 0] 
+          || "";
         const qty = item?.quantity ?? 0;
         // Format quantity without unnecessary decimals (1 instead of 1.0000)
         const formattedQty = qty % 1 === 0 ? Math.floor(qty).toString() : qty.toString();
-        // Format as "quantity unit name" (e.g., "1 Bag Cement")
-        return unit ? `${formattedQty} ${unit} ${name}`.trim() : `${formattedQty} ${name}`.trim();
+        // Format as "quantity unit brand name" (e.g., "8 bags paidaar cement")
+        // Always include unit if available
+        const parts = [formattedQty];
+        if (unit) {
+          parts.push(unit);
+        }
+        if (brand) {
+          parts.push(brand);
+        }
+        parts.push(name);
+        return parts.join(" ").trim();
       })
       .filter(Boolean)
       .join(", ");
   };
 
-  // Fetch item names for items that don't have names
+  // Fetch item names, brands, and units for items that don't have them
   const fetchItemNames = useCallback(async (itemIds: number[]) => {
-    const missingIds = itemIds.filter(id => id && !itemNamesCache.current[id]);
+    const missingIds = itemIds.filter(id => 
+      id && (!itemNamesCache.current[id] || itemBrandsCache.current[id] === undefined || !itemUnitsCache.current[id])
+    );
     if (missingIds.length === 0) return;
 
     // Fetch items in parallel
     const fetchPromises = missingIds.map(async (itemId) => {
       try {
         const response = await itemsApi.getItem(itemId);
-        if (response.item?.name) {
-          itemNamesCache.current[itemId] = response.item.name;
+        if (response.item) {
+          if (response.item.name) {
+            itemNamesCache.current[itemId] = response.item.name;
+          }
+          if (response.item.brand !== undefined) {
+            itemBrandsCache.current[itemId] = response.item.brand;
+          }
+          if (response.item.primary_unit) {
+            itemUnitsCache.current[itemId] = response.item.primary_unit;
+          }
         }
       } catch (error) {
         console.warn(`Failed to fetch item ${itemId}:`, error);
@@ -93,9 +122,9 @@ export default function CustomerInvoicesPage() {
         (invoice.reference_id as number | undefined);
 
       if (metaItems && metaItems.length > 0) {
-        // Check if any items are missing names
+        // Check if any items are missing names, brands, or units
         const itemIds = metaItems
-          .filter(item => item?.item_id && !item?.item?.name)
+          .filter(item => item?.item_id && (!item?.item?.name || item?.item?.brand === undefined || !item?.item?.primary_unit))
           .map(item => item.item_id!);
         
         if (itemIds.length > 0) {
@@ -124,9 +153,9 @@ export default function CustomerInvoicesPage() {
           (saleResponse as { sale?: Sale }).sale ??
           (saleResponse as unknown as Sale | undefined);
         
-        // Check if any items are missing names
+        // Check if any items are missing names, brands, or units
         const itemIds = sale?.items
-          ?.filter(item => item?.item_id && !item?.item?.name)
+          ?.filter(item => item?.item_id && (!item?.item?.name || item?.item?.brand === undefined || !item?.item?.primary_unit))
           .map(item => item.item_id!) ?? [];
         
         if (itemIds.length > 0) {

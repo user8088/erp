@@ -11,7 +11,8 @@ interface CartItem {
   quantity: number;
   unitPrice: number; // Adjusted selling price (can be changed)
   originalPrice: number; // Original selling price from item
-  discount: number; // Discount percentage (0-100)
+  discountAmount: number; // Discount amount in PKR (absolute value, not percentage)
+  discountPercentage: number; // Discount percentage (0-100)
   discountedPrice: number;
   deliveryCharge: number; // Delivery charge for this item (only for order sales)
   manualSubtotal?: number | null; // Manual subtotal override (null means use calculated)
@@ -197,7 +198,7 @@ export default function PointOfSalePage() {
             ? {
                 ...item,
                 quantity: item.quantity + 1,
-                discountedPrice: calculateDiscountedPrice(item.unitPrice, item.discount),
+                discountedPrice: calculateDiscountedPrice(item.unitPrice, item.discountAmount),
               }
             : item
         )
@@ -210,7 +211,8 @@ export default function PointOfSalePage() {
         quantity: 1,
         unitPrice: sellingPrice,
         originalPrice: sellingPrice,
-        discount: 0,
+        discountAmount: 0,
+        discountPercentage: 0,
         discountedPrice: sellingPrice,
         deliveryCharge: 0,
         manualSubtotal: null,
@@ -219,9 +221,9 @@ export default function PointOfSalePage() {
     }
   };
 
-  // Calculate discounted price
-  const calculateDiscountedPrice = (unitPrice: number, discount: number): number => {
-    return unitPrice * (1 - discount / 100);
+  // Calculate discounted price (unitPrice - discountAmount)
+  const calculateDiscountedPrice = (unitPrice: number, discountAmount: number): number => {
+    return Math.max(0, unitPrice - discountAmount);
   };
 
   // Update quantity
@@ -245,7 +247,7 @@ export default function PointOfSalePage() {
           return {
             ...item,
             quantity: newQuantity,
-            discountedPrice: calculateDiscountedPrice(item.unitPrice, item.discount),
+            discountedPrice: calculateDiscountedPrice(item.unitPrice, item.discountAmount),
           };
         }
         return item;
@@ -254,19 +256,53 @@ export default function PointOfSalePage() {
   };
 
   // Update unit price
-  const updateUnitPrice = (itemId: number, unitPrice: number) => {
+  const updateUnitPrice = (itemId: number, unitPrice: number, showError: boolean = true) => {
     setCart(
       cart.map((item) => {
         if (item.itemStock.id === itemId) {
-          const newPrice = Math.max(0, unitPrice);
-          // Ensure originalPrice exists (for items added before this field was added)
+          const costPrice = item.itemStock.item?.last_purchase_price ?? null;
           const originalPrice = item.originalPrice ?? item.unitPrice;
+          const newPrice = Math.max(0, unitPrice);
+          
+          // Guest mode: price cannot be reduced below original selling price
+          if (isGuestMode && newPrice < originalPrice) {
+            if (showError) {
+              addToast("Guest customers cannot have prices reduced below the original selling price", "error");
+            }
+            return item;
+          }
+          
+          // Validate: price cannot go below cost (for all sales)
+          if (costPrice !== null && newPrice < costPrice) {
+            if (showError) {
+              addToast(`Price cannot be below cost (PKR ${costPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })})`, "error");
+            }
+            return item; // Don't update if below cost
+          }
+          
+          const discountedPrice = calculateDiscountedPrice(newPrice, item.discountAmount);
+          
+          // Also validate discounted price doesn't go below cost
+          if (costPrice !== null && discountedPrice < costPrice) {
+            if (showError) {
+              addToast(`Discounted price cannot be below cost (PKR ${costPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })})`, "error");
+            }
+            // Recalculate discount amount to keep price at cost
+            const maxDiscountAmount = costPrice >= newPrice ? 0 : newPrice - costPrice;
+            return {
+              ...item,
+              unitPrice: newPrice,
+              originalPrice: originalPrice,
+              discountAmount: Math.min(item.discountAmount, maxDiscountAmount),
+              discountedPrice: Math.max(costPrice, discountedPrice),
+            };
+          }
           
           return {
             ...item,
             unitPrice: newPrice,
             originalPrice: originalPrice,
-            discountedPrice: calculateDiscountedPrice(newPrice, item.discount),
+            discountedPrice: discountedPrice,
           };
         }
         return item;
@@ -274,17 +310,139 @@ export default function PointOfSalePage() {
     );
   };
 
-  // Update discount
-  const updateDiscount = (itemId: number, discount: number) => {
+  // Update discount amount
+  const updateDiscountAmount = (itemId: number, discountAmount: number, showError: boolean = true) => {
     setCart(
       cart.map((item) => {
         if (item.itemStock.id === itemId) {
-          const clampedDiscount = Math.max(0, Math.min(100, discount));
+          const costPrice = item.itemStock.item?.last_purchase_price ?? null;
+          const originalPrice = item.originalPrice ?? item.unitPrice;
+          const clampedDiscountAmount = Math.max(0, discountAmount); // Discount cannot be negative
+          
+          // Validate: discount amount cannot be greater than or equal to unit price
+          if (clampedDiscountAmount >= item.unitPrice) {
+            if (showError) {
+              addToast(`Discount amount cannot be greater than or equal to the selling price (PKR ${item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })})`, "error");
+            }
+            // Set to maximum allowed (just below unit price)
+            const maxDiscountAmount = item.unitPrice > 0 ? item.unitPrice - 0.01 : 0;
+            const discountedPrice = calculateDiscountedPrice(item.unitPrice, maxDiscountAmount);
+            const discountPercentage = item.unitPrice > 0 ? Math.round((maxDiscountAmount / item.unitPrice) * 10000) / 100 : 0; // Round to 2 decimal places
+            return {
+              ...item,
+              discountAmount: maxDiscountAmount,
+              discountPercentage: discountPercentage,
+              discountedPrice: discountedPrice,
+            };
+          }
+          
+          const discountedPrice = calculateDiscountedPrice(item.unitPrice, clampedDiscountAmount);
+          const discountPercentage = item.unitPrice > 0 ? Math.round((clampedDiscountAmount / item.unitPrice) * 10000) / 100 : 0; // Round to 2 decimal places
+          
+          // Guest mode: discount cannot reduce price below original selling price
+          if (isGuestMode && discountedPrice < originalPrice) {
+            if (showError) {
+              addToast("Guest customers cannot have prices reduced below the original selling price", "error");
+            }
+            // Calculate max discount for guest (0 - no discount allowed)
+            return {
+              ...item,
+              discountAmount: 0,
+              discountPercentage: 0,
+              discountedPrice: originalPrice,
+            };
+          }
+          
+          // Validate: discounted price cannot go below cost (for all sales)
+          if (costPrice !== null && discountedPrice < costPrice) {
+            // Calculate maximum allowed discount amount
+            const maxDiscountAmount = costPrice >= item.unitPrice ? 0 : item.unitPrice - costPrice;
+            if (showError) {
+              addToast(`Discount cannot exceed PKR ${maxDiscountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} (price would go below cost: PKR ${costPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })})`, "error");
+            }
+            const maxDiscountPercentage = item.unitPrice > 0 ? Math.round((maxDiscountAmount / item.unitPrice) * 10000) / 100 : 0; // Round to 2 decimal places
+            return {
+              ...item,
+              discountAmount: maxDiscountAmount,
+              discountPercentage: maxDiscountPercentage,
+              discountedPrice: Math.max(costPrice, calculateDiscountedPrice(item.unitPrice, maxDiscountAmount)),
+            };
+          }
           
           return {
             ...item,
-            discount: clampedDiscount,
-            discountedPrice: calculateDiscountedPrice(item.unitPrice, clampedDiscount),
+            discountAmount: clampedDiscountAmount,
+            discountPercentage: discountPercentage,
+            discountedPrice: discountedPrice,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Update discount percentage
+  const updateDiscountPercentage = (itemId: number, discountPercentage: number, showError: boolean = true) => {
+    setCart(
+      cart.map((item) => {
+        if (item.itemStock.id === itemId) {
+          const costPrice = item.itemStock.item?.last_purchase_price ?? null;
+          const originalPrice = item.originalPrice ?? item.unitPrice;
+          const clampedPercentage = Math.max(0, Math.min(100, discountPercentage)); // Clamp between 0-100
+          const discountAmount = (item.unitPrice * clampedPercentage) / 100;
+          const discountedPrice = calculateDiscountedPrice(item.unitPrice, discountAmount);
+          
+          // Validate: discount amount cannot be greater than or equal to unit price
+          if (discountAmount >= item.unitPrice) {
+            if (showError) {
+              addToast(`Discount cannot be 100% or more (would make price zero or negative)`, "error");
+            }
+            // Set to maximum allowed (99.99%)
+            const maxPercentage = 99.99;
+            const maxDiscountAmount = (item.unitPrice * maxPercentage) / 100;
+            return {
+              ...item,
+              discountAmount: maxDiscountAmount,
+              discountPercentage: maxPercentage,
+              discountedPrice: calculateDiscountedPrice(item.unitPrice, maxDiscountAmount),
+            };
+          }
+          
+          // Guest mode: discount cannot reduce price below original selling price
+          if (isGuestMode && discountedPrice < originalPrice) {
+            if (showError) {
+              addToast("Guest customers cannot have prices reduced below the original selling price", "error");
+            }
+            // Calculate max discount for guest (0 - no discount allowed)
+            return {
+              ...item,
+              discountAmount: 0,
+              discountPercentage: 0,
+              discountedPrice: originalPrice,
+            };
+          }
+          
+          // Validate: discounted price cannot go below cost (for all sales)
+          if (costPrice !== null && discountedPrice < costPrice) {
+            // Calculate maximum allowed discount percentage
+            const maxDiscountAmount = costPrice >= item.unitPrice ? 0 : item.unitPrice - costPrice;
+            const maxPercentage = item.unitPrice > 0 ? Math.round((maxDiscountAmount / item.unitPrice) * 10000) / 100 : 0; // Round to 2 decimal places
+            if (showError) {
+              addToast(`Discount cannot exceed ${maxPercentage.toFixed(2)}% (price would go below cost: PKR ${costPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })})`, "error");
+            }
+            return {
+              ...item,
+              discountAmount: maxDiscountAmount,
+              discountPercentage: maxPercentage,
+              discountedPrice: Math.max(costPrice, calculateDiscountedPrice(item.unitPrice, maxDiscountAmount)),
+            };
+          }
+          
+          return {
+            ...item,
+            discountAmount: discountAmount,
+            discountPercentage: clampedPercentage,
+            discountedPrice: discountedPrice,
           };
         }
         return item;
@@ -381,6 +539,30 @@ export default function PointOfSalePage() {
 
   // Process Sale
   const handleProcessSale = async () => {
+    // Validate: no items can be sold below cost price
+    const itemsBelowCost = cart.filter(item => {
+      const costPrice = item.itemStock.item?.last_purchase_price ?? null;
+      if (costPrice === null) return false; // Skip if no cost price available
+      return item.discountedPrice < costPrice;
+    });
+    
+    if (itemsBelowCost.length > 0) {
+      const itemNames = itemsBelowCost.map(item => item.itemStock.item?.name || "Unknown").join(", ");
+      addToast(`Cannot sell items below cost price: ${itemNames}`, "error");
+      return;
+    }
+    
+    // Validate: discount amount cannot be greater than or equal to unit price
+    const itemsWithInvalidDiscount = cart.filter(item => {
+      return item.discountAmount >= item.unitPrice;
+    });
+    
+    if (itemsWithInvalidDiscount.length > 0) {
+      const itemNames = itemsWithInvalidDiscount.map(item => item.itemStock.item?.name || "Unknown").join(", ");
+      addToast(`Cannot process sale: Discount amount is greater than or equal to selling price for: ${itemNames}`, "error");
+      return;
+    }
+    
     // Validation for guest mode
     if (isGuestMode) {
       if (saleType === "delivery") {
@@ -435,13 +617,20 @@ export default function PointOfSalePage() {
     setProcessingSale(true);
     try {
       // Prepare sale items
-      const saleItems = cart.map(item => ({
-        item_id: item.itemStock.item!.id,
-        quantity: item.quantity,
-        unit_price: item.unitPrice,
-        discount_percentage: item.discount,
-        delivery_charge: saleType === "delivery" ? item.deliveryCharge : 0,
-      }));
+      const saleItems = cart.map(item => {
+        // Calculate discount percentage from discount amount for backend
+        // Round to 2 decimal places to avoid precision issues
+        const discountPercentage = item.unitPrice > 0 
+          ? Math.round((item.discountAmount / item.unitPrice) * 10000) / 100 
+          : 0;
+        return {
+          item_id: item.itemStock.item!.id,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          discount_percentage: discountPercentage > 0 ? discountPercentage : undefined, // Only send if > 0
+          delivery_charge: saleType === "delivery" ? item.deliveryCharge : 0,
+        };
+      });
 
       // For guest sales, backend will use system guest customer
       // Pass 0 as customer_id when is_guest is true - backend will use guest customer
@@ -465,8 +654,11 @@ export default function PointOfSalePage() {
         // IMPORTANT: maintenance cost is defined on the vehicle profile, not per order in POS.
         // Backend should use the vehicle's configured maintenance cost when calculating profitability.
         items: saleItems,
-        overall_discount: additionalDiscount > 0 ? additionalDiscount : undefined, // Only send additional discount (item discounts are already in unit prices)
-        notes: overallDiscount > 0 ? `Total discount: PKR ${overallDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Item discounts: PKR ${totalItemDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}${additionalDiscount > 0 ? `, Additional: PKR ${additionalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ''})` : undefined,
+        overall_discount: additionalDiscount > 0 ? additionalDiscount : undefined, // Only send additional discount (item discounts are in discount_percentage)
+        // Include detailed discount breakdown in notes for backend tracking
+        notes: totalItemDiscount > 0 || additionalDiscount > 0 
+          ? `Total discount: PKR ${overallDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })} | Item discounts: PKR ${totalItemDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}${additionalDiscount > 0 ? ` | Overall discount: PKR ${additionalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ''}`
+          : undefined,
       });
 
       console.log("[POS] Sale created:", saleResponse);
@@ -1037,9 +1229,17 @@ export default function PointOfSalePage() {
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     if (value === "") {
-                                      updateUnitPrice(cartItem.itemStock.id, 0);
+                                      updateUnitPrice(cartItem.itemStock.id, 0, false);
                                     } else {
-                                      updateUnitPrice(cartItem.itemStock.id, Number(value));
+                                      updateUnitPrice(cartItem.itemStock.id, Number(value), false);
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateUnitPrice(cartItem.itemStock.id, 0, true);
+                                    } else {
+                                      updateUnitPrice(cartItem.itemStock.id, Number(value), true);
                                     }
                                   }}
                                   onWheel={(e) => e.currentTarget.blur()}
@@ -1048,21 +1248,64 @@ export default function PointOfSalePage() {
                                 />
                               </div>
                             </div>
-                            {/* Discount */}
+                            {/* Discount Amount */}
                             <div className="space-y-1 min-w-0">
-                              <label className="block text-xs text-gray-600">Discount:</label>
+                              <label className="block text-xs text-gray-600">Discount Amount:</label>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 whitespace-nowrap">PKR</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={cartItem.discountAmount || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateDiscountAmount(cartItem.itemStock.id, 0, false);
+                                    } else {
+                                      updateDiscountAmount(cartItem.itemStock.id, Number(value), false);
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateDiscountAmount(cartItem.itemStock.id, 0, true);
+                                    } else {
+                                      updateDiscountAmount(cartItem.itemStock.id, Number(value), true);
+                                    }
+                                  }}
+                                  onWheel={(e) => e.currentTarget.blur()}
+                                  className="w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  placeholder="0.00"
+                                />
+                              </div>
+                            </div>
+                            {/* Discount Percentage */}
+                            <div className="space-y-1 min-w-0">
+                              <label className="block text-xs text-gray-600">Discount %:</label>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="number"
                                   min="0"
                                   max="100"
-                                  value={cartItem.discount || ""}
+                                  step="0.01"
+                                  value={cartItem.discountPercentage || ""}
                                   onChange={(e) => {
                                     const value = e.target.value;
                                     if (value === "") {
-                                      updateDiscount(cartItem.itemStock.id, 0);
+                                      updateDiscountPercentage(cartItem.itemStock.id, 0, false);
                                     } else {
-                                      updateDiscount(cartItem.itemStock.id, Number(value));
+                                      updateDiscountPercentage(cartItem.itemStock.id, Number(value), false);
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const value = e.target.value;
+                                    if (value === "") {
+                                      updateDiscountPercentage(cartItem.itemStock.id, 0, true);
+                                    } else {
+                                      // Round to 2 decimal places on blur
+                                      const roundedValue = Math.round(Number(value) * 100) / 100;
+                                      updateDiscountPercentage(cartItem.itemStock.id, roundedValue, true);
                                     }
                                   }}
                                   onWheel={(e) => e.currentTarget.blur()}
@@ -1075,6 +1318,16 @@ export default function PointOfSalePage() {
                           </div>
                           {/* Pricing Breakdown */}
                           <div className="pt-2 border-t border-gray-100 space-y-1">
+                            {item.last_purchase_price !== null && (
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-600">Cost Price:</span>
+                                <span className="font-medium text-orange-600">
+                                  PKR {item.last_purchase_price.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex items-center justify-between text-xs">
                               <span className="text-gray-600">Original Unit Price:</span>
                               <span className="font-medium text-gray-900">
@@ -1084,17 +1337,17 @@ export default function PointOfSalePage() {
                               </span>
                             </div>
                             <div className="flex items-center justify-between text-xs">
-                              <span className="text-gray-600">Per Unit Discount:</span>
-                              <span className={`font-medium ${cartItem.originalPrice - cartItem.discountedPrice > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                                - PKR {(cartItem.originalPrice - cartItem.discountedPrice).toLocaleString(undefined, {
+                              <span className="text-gray-600">Discount Amount:</span>
+                              <span className={`font-medium ${cartItem.discountAmount > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                - PKR {cartItem.discountAmount.toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                 })}
                               </span>
                             </div>
                             <div className="flex items-center justify-between text-xs">
                               <span className="text-gray-600">Total Discount:</span>
-                              <span className={`font-semibold ${(cartItem.originalPrice - cartItem.discountedPrice) * cartItem.quantity > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                                - PKR {((cartItem.originalPrice - cartItem.discountedPrice) * cartItem.quantity).toLocaleString(undefined, {
+                              <span className={`font-semibold ${cartItem.discountAmount * cartItem.quantity > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                - PKR {(cartItem.discountAmount * cartItem.quantity).toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                 })}
                               </span>
