@@ -37,7 +37,6 @@ export default function CustomerDetailContent({
   
   // Customer payments list
   const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
-  const [loadingPaymentList, setLoadingPaymentList] = useState(false);
   const [invoiceItemSummaries, setInvoiceItemSummaries] = useState<Record<number, string>>({});
   const fetchedSaleIdsRef = useRef<Set<number>>(new Set());
   const itemNamesCache = useRef<Record<number, string>>({});
@@ -371,7 +370,6 @@ export default function CustomerDetailContent({
   const fetchCustomerPayments = useCallback(async () => {
     if (!customerId || activeTab !== "customer-payments") return;
     
-    setLoadingPaymentList(true);
     try {
       const response = await customerPaymentsApi.getCustomerPayments({
         customer_id: Number(customerId),
@@ -401,8 +399,6 @@ export default function CustomerDetailContent({
     } catch (error) {
       console.error("Failed to fetch customer payments:", error);
       setCustomerPayments([]);
-    } finally {
-      setLoadingPaymentList(false);
     }
   }, [customerId, activeTab, extractPayments]);
 
@@ -647,7 +643,9 @@ export default function CustomerDetailContent({
                               PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {invoice.invoice_type === 'walk-in' ? 'Walk-in' : 'Delivery'}
+                              {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale') 
+                                ? (invoice.metadata?.sale_type === 'walk-in' ? 'Walk-in' : 'Delivery')
+                                : invoice.invoice_type}
                             </p>
                             <div className="flex justify-end gap-2 mt-2">
                               <button
@@ -745,7 +743,9 @@ export default function CustomerDetailContent({
                         PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {invoice.invoice_type === 'walk-in' ? 'Walk-in' : 'Delivery'}
+                        {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale') 
+                          ? (invoice.metadata?.sale_type === 'walk-in' ? 'Walk-in' : 'Delivery')
+                          : invoice.invoice_type}
                       </p>
                       <div className="flex justify-end gap-2 mt-2">
                         <button
