@@ -237,13 +237,23 @@ export const accountsApi = {
     });
   },
 
-  getAccountTransactions(id: number, params?: { page?: number; per_page?: number; start_date?: string; end_date?: string; sort_direction?: 'asc' | 'desc' }) {
+  getAccountTransactions(id: number, params?: { 
+    page?: number; 
+    per_page?: number; 
+    start_date?: string; 
+    end_date?: string; 
+    sort_direction?: 'asc' | 'desc';
+    exclude_opening_balances?: boolean;
+    opening_balances_only?: boolean;
+  }) {
     const query = new URLSearchParams();
     if (params?.page) query.set("page", String(params.page));
     if (params?.per_page) query.set("per_page", String(params.per_page));
     if (params?.start_date) query.set("start_date", params.start_date);
     if (params?.end_date) query.set("end_date", params.end_date);
     if (params?.sort_direction) query.set("sort_direction", params.sort_direction);
+    if (params?.exclude_opening_balances !== undefined) query.set("exclude_opening_balances", String(params.exclude_opening_balances));
+    if (params?.opening_balances_only !== undefined) query.set("opening_balances_only", String(params.opening_balances_only));
 
     const path = `/accounts/${id}/transactions?${query.toString()}`;
     return apiClient.get<Paginated<Transaction>>(path);
@@ -251,6 +261,74 @@ export const accountsApi = {
 
   getAccountBalance(id: number) {
     return apiClient.get<{ balance: number }>(`/accounts/${id}/balance`);
+  },
+
+  async downloadAccountStatement(accountId: number, params?: { start_date?: string; end_date?: string }): Promise<Blob> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const query = new URLSearchParams();
+    if (params?.start_date) query.set("start_date", params.start_date);
+    if (params?.end_date) query.set("end_date", params.end_date);
+    
+    const queryString = query.toString();
+    const path = `/accounts/${accountId}/statement${queryString ? `?${queryString}` : ""}`;
+    const headers: HeadersInit = {
+      Accept: "application/pdf",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "GET",
+      credentials: "include",
+      headers,
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "Failed to download account statement" }));
+      throw new ApiError(errorData.message || "Failed to download account statement", response.status, errorData);
+    }
+    
+    return await response.blob();
+  },
+
+  async downloadChartOfAccountsStatement(
+    companyId: number,
+    params?: {
+      include_balances?: boolean;
+      as_of_date?: string;
+      root_type?: string;
+      include_disabled?: boolean;
+    }
+  ): Promise<Blob> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const query = new URLSearchParams();
+    query.set("company_id", companyId.toString());
+    if (params?.include_balances !== undefined) query.set("include_balances", params.include_balances.toString());
+    if (params?.as_of_date) query.set("as_of_date", params.as_of_date);
+    if (params?.root_type) query.set("root_type", params.root_type);
+    if (params?.include_disabled !== undefined) query.set("include_disabled", params.include_disabled.toString());
+    
+    const path = `/accounts/statement?${query.toString()}`;
+    const headers: HeadersInit = {
+      Accept: "application/pdf",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "GET",
+      credentials: "include",
+      headers,
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "Failed to download chart of accounts statement" }));
+      throw new ApiError(errorData.message || "Failed to download chart of accounts statement", response.status, errorData);
+    }
+    
+    return await response.blob();
   },
 
   async deleteAccount(id: number, reallocateToAccountId?: number | null) {
@@ -495,7 +573,7 @@ export const attendanceApi = {
   bulkUpsert(payload: { date: string; entries: Array<Omit<AttendanceEntry, "id" | "date" | "name" | "designation"> & { note?: string }> }) {
     return apiClient.post<{ data: AttendanceEntry[] }>("/attendance/bulk", payload);
   },
-  update(id: string | number, payload: Partial<Pick<AttendanceEntry, "status" | "note"> & { date?: string }>) {
+  update(id: string | number, payload: Partial<Pick<AttendanceEntry, "status" | "note" | "late_time"> & { date?: string }>) {
     return apiClient.patch<{ attendance: AttendanceEntry }>(`/attendance/${id}`, payload);
   },
   markAll(payload: {
@@ -2354,13 +2432,15 @@ export interface CreateOrUpdateRentalItemPayload {
   sku?: string | null;
   quantity_total: number;
   quantity_available?: number | null;
-  rental_price_total: number;
-  rental_period_type: "daily" | "weekly" | "monthly" | "custom";
-  rental_period_length: number;
-  auto_divide_rent?: boolean;
-  rent_per_period?: number | null;
+  cost_price?: number | null;
   security_deposit_amount?: number | null;
   status?: "available" | "rented" | "maintenance";
+  // Legacy fields (deprecated - kept for backward compatibility during migration)
+  rental_price_total?: number;
+  rental_period_type?: "daily" | "weekly" | "monthly" | "custom";
+  rental_period_length?: number;
+  auto_divide_rent?: boolean;
+  rent_per_period?: number | null;
 }
 
 export interface GetRentalAgreementsParams {
@@ -2378,18 +2458,14 @@ export interface CreateRentalAgreementPayload {
   rental_item_id: number;
   quantity_rented: number;
   rental_start_date: string;
-  rental_end_date?: string | null;
-  rental_period_type: "daily" | "weekly" | "monthly" | "custom";
-  rental_period_length: number;
-  total_rent_amount: number;
-  rent_per_period: number;
+  rental_period_type: "daily" | "weekly" | "monthly";
+  rent_amount: number;
   security_deposit_amount?: number | null;
   collect_security_deposit?: boolean;
   security_deposit_payment_account_id?: number | null;
 }
 
 export interface RecordRentalPaymentPayload {
-  payment_id: number;
   amount_paid: number;
   payment_date?: string | null;
   payment_account_id: number;

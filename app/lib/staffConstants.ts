@@ -13,6 +13,7 @@ export const ATTENDANCE_STATUS_COLORS = {
   absent: "bg-red-100 text-red-700",
   paid_leave: "bg-blue-100 text-blue-700",
   unpaid_leave: "bg-amber-100 text-amber-800",
+  late: "bg-orange-100 text-orange-800",
 } as const;
 
 export const PAY_FREQUENCY_OPTIONS = [

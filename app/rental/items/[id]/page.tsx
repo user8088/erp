@@ -21,11 +21,8 @@ export default function RentalItemDetailPage() {
     sku: "",
     quantity_total: "",
     quantity_available: "",
-    rental_price_total: "",
-    rental_period_type: "monthly" as "daily" | "weekly" | "monthly" | "custom",
-    rental_period_length: "1",
-    auto_divide_rent: false,
-    rent_per_period: "",
+    cost_price: "",
+    security_deposit_amount: "",
     status: "available" as "available" | "rented" | "maintenance",
   });
   
@@ -44,11 +41,8 @@ export default function RentalItemDetailPage() {
           sku: res.item.sku,
           quantity_total: String(res.item.quantity_total),
           quantity_available: String(res.item.quantity_available),
-          rental_price_total: String(res.item.rental_price_total),
-          rental_period_type: res.item.rental_period_type,
-          rental_period_length: String(res.item.rental_period_length),
-          auto_divide_rent: res.item.auto_divide_rent,
-          rent_per_period: String(res.item.rent_per_period),
+          cost_price: res.item.cost_price ? String(res.item.cost_price) : "",
+          security_deposit_amount: res.item.security_deposit_amount ? String(res.item.security_deposit_amount) : "",
           status: res.item.status,
         });
       } catch (e) {
@@ -71,19 +65,6 @@ export default function RentalItemDetailPage() {
     void loadCategories();
   }, [id, addToast]);
 
-  // Auto-calculate rent_per_period if auto_divide_rent is enabled
-  useEffect(() => {
-    if (formData.auto_divide_rent && formData.rental_price_total && formData.rental_period_length) {
-      const priceTotal = parseFloat(formData.rental_price_total);
-      const periodLength = parseInt(formData.rental_period_length);
-      if (!isNaN(priceTotal) && !isNaN(periodLength) && periodLength > 0) {
-        setFormData(prev => ({
-          ...prev,
-          rent_per_period: (priceTotal / periodLength).toFixed(2),
-        }));
-      }
-    }
-  }, [formData.auto_divide_rent, formData.rental_price_total, formData.rental_period_length]);
 
   const handleChange = (
     field: keyof typeof formData
@@ -111,12 +92,6 @@ export default function RentalItemDetailPage() {
     if (!formData.quantity_total || parseFloat(formData.quantity_total) < 1) {
       localErrors.quantity_total = ["Total quantity must be at least 1."];
     }
-    if (!formData.rental_price_total || parseFloat(formData.rental_price_total) <= 0) {
-      localErrors.rental_price_total = ["Rental price must be greater than 0."];
-    }
-    if (!formData.rental_period_length || parseInt(formData.rental_period_length) < 1) {
-      localErrors.rental_period_length = ["Period length must be at least 1."];
-    }
 
     if (Object.keys(localErrors).length > 0) {
       setErrors(localErrors);
@@ -131,11 +106,8 @@ export default function RentalItemDetailPage() {
         sku: formData.sku.trim() || undefined,
         quantity_total: parseFloat(formData.quantity_total),
         quantity_available: formData.quantity_available ? parseFloat(formData.quantity_available) : undefined,
-        rental_price_total: parseFloat(formData.rental_price_total),
-        rental_period_type: formData.rental_period_type,
-        rental_period_length: parseInt(formData.rental_period_length),
-        auto_divide_rent: formData.auto_divide_rent,
-        rent_per_period: formData.rent_per_period ? parseFloat(formData.rent_per_period) : undefined,
+        cost_price: formData.cost_price ? parseFloat(formData.cost_price) : undefined,
+        security_deposit_amount: formData.security_deposit_amount ? parseFloat(formData.security_deposit_amount) : undefined,
         status: formData.status,
       };
 
@@ -287,92 +259,43 @@ export default function RentalItemDetailPage() {
             />
           </div>
 
-          {/* Rental Price Total */}
+          {/* Cost Price */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Total Rental Price <span className="text-red-500">*</span>
+              Cost Price (Asset)
             </label>
             <input
               type="number"
               step="0.01"
               min="0"
-              value={formData.rental_price_total}
-              onChange={handleChange("rental_price_total")}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                errors.rental_price_total ? "border-red-500" : "border-gray-300"
-              }`}
-            />
-            {errors.rental_price_total && (
-              <p className="mt-1 text-sm text-red-600">{errors.rental_price_total[0]}</p>
-            )}
-          </div>
-
-          {/* Period Type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Period Type <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={formData.rental_period_type}
-              onChange={handleChange("rental_period_type")}
+              value={formData.cost_price}
+              onChange={handleChange("cost_price")}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="custom">Custom</option>
-            </select>
+              placeholder="0.00"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Original purchase cost - treated as asset in accounting
+            </p>
           </div>
 
-          {/* Period Length */}
+          {/* Security Deposit Amount */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Period Length <span className="text-red-500">*</span>
+              Security Deposit Amount (per unit)
             </label>
             <input
               type="number"
-              min="1"
-              value={formData.rental_period_length}
-              onChange={handleChange("rental_period_length")}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                errors.rental_period_length ? "border-red-500" : "border-gray-300"
-              }`}
+              step="0.01"
+              min="0"
+              value={formData.security_deposit_amount}
+              onChange={handleChange("security_deposit_amount")}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="0.00"
             />
-            {errors.rental_period_length && (
-              <p className="mt-1 text-sm text-red-600">{errors.rental_period_length[0]}</p>
-            )}
+            <p className="mt-1 text-xs text-gray-500">
+              Default security deposit amount per unit (optional)
+            </p>
           </div>
-
-          {/* Auto Divide Rent */}
-          <div className="md:col-span-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formData.auto_divide_rent}
-                onChange={handleChange("auto_divide_rent")}
-                className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-              />
-              <span className="text-sm font-medium text-gray-700">Auto Divide Rent</span>
-            </label>
-          </div>
-
-          {/* Rent Per Period */}
-          {formData.auto_divide_rent && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rent Per Period
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.rent_per_period}
-                onChange={handleChange("rent_per_period")}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 bg-gray-50"
-                readOnly
-              />
-            </div>
-          )}
 
           {/* Status */}
           <div>

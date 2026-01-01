@@ -146,7 +146,8 @@ export type AttendanceStatus =
   | "present"
   | "absent"
   | "paid_leave"
-  | "unpaid_leave";
+  | "unpaid_leave"
+  | "late";
 
 export interface AttendanceEntry {
   id: string | number;
@@ -157,6 +158,7 @@ export interface AttendanceEntry {
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
   note?: string | null;
+  late_time?: string | null; // HH:MM format (e.g., "09:30")
 }
 
 export interface StaffSalaryRun {
@@ -196,6 +198,14 @@ export interface Attachment {
   mime_type: string;
   size_bytes: number;
   created_at: string;
+}
+
+export interface TransactionTotals {
+  total_debit: number;
+  total_credit: number;
+  net_change: number;
+  page_total_debit?: number;
+  page_total_credit?: number;
 }
 
 export interface Paginated<T> {
@@ -289,6 +299,13 @@ export interface Transaction {
   entry_date?: string; // Y-m-d format
   entry_time?: string; // H:i:s format
   entry_datetime?: string; // Y-m-d H:i:s format
+  is_opening_balance?: boolean; // Flag to identify opening balance transactions
+  created_by?: number; // User ID who created the transaction
+  creator?: {
+    id: number;
+    full_name: string;
+    email?: string;
+  }; // Creator user details
 }
 
 export interface JournalEntryLine {
@@ -827,6 +844,7 @@ export interface RentalItem {
   sku: string;
   quantity_total: number;
   quantity_available: number;
+  cost_price?: number | null;
   rental_price_total: number;
   rental_period_type: "daily" | "weekly" | "monthly" | "custom";
   rental_period_length: number;

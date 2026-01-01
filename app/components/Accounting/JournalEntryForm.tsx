@@ -82,6 +82,60 @@ export default function JournalEntryForm({ accounts, onSuccess, onCancel }: Jour
   const totalCredit = lines.reduce((sum, line) => sum + (line.credit || 0), 0);
   const isBalanced = totalDebit === totalCredit && totalDebit > 0;
 
+  // Validate that accounts don't go negative based on account type rules
+  const validateAccountBalances = (): { isValid: boolean; errorMessage?: string } => {
+    // Account types that cannot go negative
+    const cannotGoNegative: Array<"asset" | "income" | "expense"> = ["asset", "income", "expense"];
+    
+    for (const line of lines) {
+      if (!line.account_id) continue;
+      
+      const account = accounts.find(acc => acc.id === line.account_id);
+      if (!account || account.is_group) continue;
+      
+      // Check for net-zero transactions (both debit and credit on same account)
+      // This is unusual and often indicates an error
+      if ((line.debit || 0) > 0 && (line.credit || 0) > 0) {
+        return {
+          isValid: false,
+          errorMessage: `Account "${account.name}" has both debit (${(line.debit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}) and credit (${(line.credit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}) amounts. This results in a net-zero effect and is unusual. Please use separate accounts or remove one of the amounts.`
+        };
+      }
+      
+      // Skip validation if account type allows negative balances
+      if (account.root_type === "liability" || account.root_type === "equity") {
+        continue;
+      }
+      
+      // Check if this account type cannot go negative
+      if (!cannotGoNegative.includes(account.root_type)) {
+        continue;
+      }
+      
+      // Calculate new balance after this transaction
+      const currentBalance = account.balance ?? 0;
+      let newBalance: number;
+      
+      if (account.normal_balance === "debit") {
+        // For debit normal accounts (assets, expenses): balance increases with debits, decreases with credits
+        newBalance = currentBalance + (line.debit || 0) - (line.credit || 0);
+      } else {
+        // For credit normal accounts (income): balance increases with credits, decreases with debits
+        newBalance = currentBalance + (line.credit || 0) - (line.debit || 0);
+      }
+      
+      // Check if balance would go negative
+      if (newBalance < 0) {
+        return {
+          isValid: false,
+          errorMessage: `Account "${account.name}" (${account.root_type}) cannot have a negative balance. Current balance: ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}. This transaction would result in: ${newBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
+        };
+      }
+    }
+    
+    return { isValid: true };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -93,6 +147,13 @@ export default function JournalEntryForm({ accounts, onSuccess, onCancel }: Jour
     // Validate all lines have accounts selected
     if (lines.some(line => !line.account_id)) {
       addToast("Please select an account for all lines.", "error");
+      return;
+    }
+
+    // Validate account balances won't go negative
+    const balanceValidation = validateAccountBalances();
+    if (!balanceValidation.isValid) {
+      addToast(balanceValidation.errorMessage || "Account balance validation failed.", "error");
       return;
     }
 
@@ -156,6 +217,7 @@ export default function JournalEntryForm({ accounts, onSuccess, onCancel }: Jour
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="Journal Entry">Journal Entry</option>
+            <option value="Opening Balance">Opening Balance</option>
             <option value="Payment">Payment</option>
             <option value="Receipt">Receipt</option>
             <option value="Contra">Contra</option>

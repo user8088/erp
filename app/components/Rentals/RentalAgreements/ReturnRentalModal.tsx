@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
-import { useRouter } from "next/navigation";
-import type { RentalAgreement } from "../../../lib/types";
-import { rentalApi } from "../../../lib/apiClient";
+import type { RentalAgreement, Account } from "../../../lib/types";
+import { rentalApi, accountsApi } from "../../../lib/apiClient";
 import { useToast } from "../../ui/ToastProvider";
 import { useRentalAccountMappings } from "../Shared/useRentalAccountMappings";
 
@@ -21,9 +20,8 @@ export default function ReturnRentalModal({
   agreement,
   onReturnProcessed,
 }: ReturnRentalModalProps) {
-  const router = useRouter();
   const { addToast } = useToast();
-  const { mappings, loading: loadingMappings, getRefundAccounts, isConfigured } = useRentalAccountMappings();
+  const { mappings, loading: loadingMappings, isConfigured } = useRentalAccountMappings();
   const [returnDate, setReturnDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [returnCondition, setReturnCondition] = useState<"returned_safely" | "damaged" | "lost">("returned_safely");
   const [damageChargeAmount, setDamageChargeAmount] = useState<string>("0");
@@ -33,25 +31,80 @@ export default function ReturnRentalModal({
   const [notes, setNotes] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [refundAccounts, setRefundAccounts] = useState<Account[]>([]);
+  const [loadingRefundAccounts, setLoadingRefundAccounts] = useState(false);
 
-  const refundAccounts = getRefundAccounts();
+  // Fetch refund accounts - show all asset accounts (dynamic COA)
+  // Always prioritize the security deposit payment account from the agreement
+  useEffect(() => {
+    const fetchRefundAccounts = async () => {
+      if (!isOpen) return;
+      
+      setLoadingRefundAccounts(true);
+      try {
+        const response = await accountsApi.getAccounts({
+          company_id: 1,
+          root_type: 'asset',
+          is_group: false,
+          per_page: 1000,
+        });
+        
+        // Filter out disabled accounts only
+        const allAssetAccounts = response.data.filter(acc => !acc.is_disabled);
+        
+        // Sort: security deposit payment account first, then others
+        const sortedAccounts = [...allAssetAccounts].sort((a, b) => {
+          if (agreement.security_deposit_payment_account_id) {
+            if (a.id === agreement.security_deposit_payment_account_id) return -1;
+            if (b.id === agreement.security_deposit_payment_account_id) return 1;
+          }
+          return 0;
+        });
+        
+        setRefundAccounts(sortedAccounts);
+      } catch (error) {
+        console.error("Failed to fetch refund accounts:", error);
+        addToast("Failed to load refund accounts", "error");
+      } finally {
+        setLoadingRefundAccounts(false);
+      }
+    };
+
+    if (isOpen) {
+      fetchRefundAccounts();
+    }
+  }, [isOpen, agreement.security_deposit_payment_account_id, addToast]);
 
   useEffect(() => {
-    if (isOpen) {
-      // Set default refund account from mappings
-      if (mappings.cashAccount) {
+    if (isOpen && refundAccounts.length > 0) {
+      // ALWAYS prioritize the security deposit payment account from the agreement
+      if (agreement.security_deposit_payment_account_id) {
+        const depositAccount = refundAccounts.find(
+          acc => acc.id === agreement.security_deposit_payment_account_id
+        );
+        if (depositAccount) {
+          setRefundAccountId(depositAccount.id);
+          // Calculate default refund
+          const defaultRefund = agreement.security_deposit_amount - parseFloat(damageChargeAmount || "0");
+          setSecurityDepositRefunded(String(Math.max(0, defaultRefund)));
+          return;
+        }
+      }
+      
+      // Fallback to mapped accounts or first available
+      if (mappings.cashAccount && refundAccounts.find(a => a.id === mappings.cashAccount!.id)) {
         setRefundAccountId(mappings.cashAccount.id);
-      } else if (mappings.bankAccount) {
+      } else if (mappings.bankAccount && refundAccounts.find(a => a.id === mappings.bankAccount!.id)) {
         setRefundAccountId(mappings.bankAccount.id);
       } else if (refundAccounts.length > 0) {
         setRefundAccountId(refundAccounts[0].id);
-          }
+      }
 
       // Calculate default refund
       const defaultRefund = agreement.security_deposit_amount - parseFloat(damageChargeAmount || "0");
       setSecurityDepositRefunded(String(Math.max(0, defaultRefund)));
     }
-  }, [isOpen, agreement, mappings, refundAccounts, damageChargeAmount]);
+  }, [isOpen, agreement.security_deposit_payment_account_id, agreement.security_deposit_amount, mappings, refundAccounts, damageChargeAmount]);
 
   // Recalculate refund when damage charge changes
   useEffect(() => {
@@ -69,11 +122,9 @@ export default function ReturnRentalModal({
       return;
     }
 
-    // Check if refund accounts are configured
-    if (!isConfigured.cash && !isConfigured.bank) {
-      setErrors({ 
-        account: "Refund accounts are not configured. Please configure rental cash or bank account in Rental Settings." 
-      });
+    // Check if refund account is selected
+    if (!refundAccountId) {
+      setErrors({ account: "Please select a refund account." });
       return;
     }
 
@@ -264,20 +315,25 @@ export default function ReturnRentalModal({
             <select
               value={refundAccountId || ""}
               onChange={(e) => setRefundAccountId(Number(e.target.value))}
-              disabled={loadingMappings}
+              disabled={loadingRefundAccounts || loadingMappings}
               className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                 errors.account ? "border-red-500" : "border-gray-300"
               }`}
             >
               <option value="">Select refund account</option>
-              {refundAccounts.length === 0 ? (
+              {loadingRefundAccounts ? (
                 <option value="" disabled>
-                  {loadingMappings ? "Loading accounts..." : "No refund accounts configured. Please configure in Rental Settings."}
+                  Loading accounts...
+                </option>
+              ) : refundAccounts.length === 0 ? (
+                <option value="" disabled>
+                  No refund accounts available. Please configure cash or bank accounts in Chart of Accounts.
                 </option>
               ) : (
                 refundAccounts.map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.number ? `${account.number} - ` : ""}{account.name}
+                  {agreement.security_deposit_payment_account_id === account.id ? " (Original deposit account)" : ""}
                 </option>
                 ))
               )}
@@ -285,19 +341,9 @@ export default function ReturnRentalModal({
             {errors.account && (
               <p className="mt-1 text-sm text-red-600">{errors.account}</p>
             )}
-            {refundAccounts.length === 0 && !loadingMappings && (
-              <p className="mt-1 text-xs text-orange-600">
-                No refund accounts configured.{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    router.push("/rental/settings");
-                  }}
-                  className="underline hover:text-orange-700"
-                >
-                  Configure in Rental Settings
-                </button>
+            {!loadingRefundAccounts && agreement.security_deposit_payment_account_id && (
+              <p className="mt-1 text-xs text-gray-500">
+                The original security deposit account has been auto-selected. You can change it if needed.
               </p>
             )}
           </div>

@@ -24,9 +24,6 @@ export default function RecordPaymentModal({
   const router = useRouter();
   const { addToast } = useToast();
   const { mappings, loading: loadingMappings, getPaymentAccounts, isConfigured } = useRentalAccountMappings();
-  const [fullAgreement, setFullAgreement] = useState<RentalAgreement | null>(null);
-  const [loadingAgreement, setLoadingAgreement] = useState(false);
-  const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null);
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentAccountId, setPaymentAccountId] = useState<number | null>(null);
@@ -36,47 +33,10 @@ export default function RecordPaymentModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const paymentAccounts = getPaymentAccounts();
-  const agreementToUse = fullAgreement || agreement;
 
-  // Fetch full agreement details when modal opens to get latest payments
-  // Note: If agreement already has payments array (from list response), we can use those initially
-  // but still fetch to ensure we have the latest payment data
+  // Set default payment account when modal opens
   useEffect(() => {
-    if (isOpen && agreement.id) {
-      // If agreement already has payments, use them initially (no loading state)
-      if (agreement.payments && agreement.payments.length > 0) {
-        // We have payments, but still fetch to get latest data in background
-        const fetchFullAgreement = async () => {
-          try {
-            const response = await rentalApi.getAgreement(agreement.id);
-            setFullAgreement(response.agreement);
-          } catch (error) {
-            console.error("Failed to fetch agreement details:", error);
-            // Continue with the agreement we have (which already has payments)
-          }
-        };
-        void fetchFullAgreement();
-      } else {
-        // No payments in prop, need to fetch
-        const fetchFullAgreement = async () => {
-          setLoadingAgreement(true);
-          try {
-            const response = await rentalApi.getAgreement(agreement.id);
-            setFullAgreement(response.agreement);
-          } catch (error) {
-            console.error("Failed to fetch agreement details:", error);
-            // Continue with the agreement we have
-          } finally {
-            setLoadingAgreement(false);
-          }
-        };
-        void fetchFullAgreement();
-      }
-    }
-  }, [isOpen, agreement.id, agreement.payments]);
-
-  useEffect(() => {
-    if (isOpen && agreementToUse) {
+    if (isOpen) {
       // Set default payment account from mappings
       if (mappings.cashAccount) {
         setPaymentAccountId(mappings.cashAccount.id);
@@ -85,27 +45,13 @@ export default function RecordPaymentModal({
       } else if (paymentAccounts.length > 0) {
         setPaymentAccountId(paymentAccounts[0].id);
       }
-
-      // Set default payment to first unpaid payment
-      const firstUnpaid = agreementToUse.payment_schedule?.find(p => p.payment_status !== "paid");
-      if (firstUnpaid && agreementToUse.payments && agreementToUse.payments.length > 0) {
-        const paymentRecord = agreementToUse.payments.find(p => p.due_date === firstUnpaid.due_date);
-        if (paymentRecord) {
-          setSelectedPaymentId(paymentRecord.id);
-          setAmountPaid(String(firstUnpaid.amount_due));
-        }
-      }
     }
-  }, [isOpen, agreementToUse, mappings, paymentAccounts]);
+  }, [isOpen, mappings, paymentAccounts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
-    if (!selectedPaymentId) {
-      setErrors({ payment: "Please select a payment period." });
-      return;
-    }
     if (!amountPaid || parseFloat(amountPaid) <= 0) {
       setErrors({ amount: "Amount paid must be greater than 0." });
       return;
@@ -125,8 +71,7 @@ export default function RecordPaymentModal({
 
     setSubmitting(true);
     try {
-      await rentalApi.recordPayment(agreementToUse.id, {
-        payment_id: selectedPaymentId,
+      await rentalApi.recordPayment(agreement.id, {
         amount_paid: parseFloat(amountPaid),
         payment_date: paymentDate,
         payment_account_id: paymentAccountId,
@@ -208,52 +153,7 @@ export default function RecordPaymentModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Agreement
             </label>
-            <p className="text-sm text-gray-900">{agreementToUse.agreement_number}</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Select Payment Period <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={selectedPaymentId || ""}
-              onChange={(e) => {
-                const paymentId = Number(e.target.value);
-                setSelectedPaymentId(paymentId);
-                const payment = agreementToUse.payments?.find(p => p.id === paymentId);
-                if (payment) {
-                  setAmountPaid(String(payment.amount_due));
-                }
-              }}
-              disabled={loadingAgreement}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${
-                errors.payment ? "border-red-500" : "border-gray-300"
-              }`}
-            >
-              <option value="">
-                {loadingAgreement ? "Loading payment periods..." : "Select payment period"}
-              </option>
-              {loadingAgreement ? null : agreementToUse.payments && agreementToUse.payments.length > 0 ? (
-                agreementToUse.payments.map((payment) => (
-                <option key={payment.id} value={payment.id}>
-                  {payment.period_identifier} - Due: {new Date(payment.due_date).toLocaleDateString()} - 
-                  {formatCurrency(payment.amount_due)} ({payment.payment_status})
-                </option>
-                ))
-              ) : (
-                <option value="" disabled>
-                  No payment periods available
-                </option>
-              )}
-            </select>
-            {errors.payment && (
-              <p className="mt-1 text-sm text-red-600">{errors.payment}</p>
-            )}
-            {!loadingAgreement && agreementToUse.payments && agreementToUse.payments.length === 0 && (
-              <p className="mt-1 text-sm text-orange-600">
-                No payment periods found. Payment records should be created automatically when the agreement is created.
-              </p>
-            )}
+            <p className="text-sm text-gray-900">{agreement.agreement_number}</p>
           </div>
 
           <div>

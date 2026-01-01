@@ -49,9 +49,13 @@ export default function AttendanceDeductionModal({
     const presentDays = monthEntries.filter(
       (e) => e.status === "present"
     ).length;
+    const lateDays = monthEntries.filter(
+      (e) => e.status === "late"
+    ).length;
 
     return {
       present: presentDays,
+      late: lateDays,
       absent: absentDays,
       paid_leave: paidLeaveDays,
       unpaid_leave: unpaidLeaveDays,
@@ -62,6 +66,7 @@ export default function AttendanceDeductionModal({
   // Use summary if available, otherwise use calculated breakdown
   const effectiveSummary = attendanceSummary || {
     present: attendanceBreakdown.present,
+    late: attendanceBreakdown.late || 0,
     absent: attendanceBreakdown.absent,
     paid_leave: attendanceBreakdown.paid_leave,
     unpaid_leave: attendanceBreakdown.unpaid_leave,

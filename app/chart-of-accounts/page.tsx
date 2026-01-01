@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Plus,
   Trash2,
+  Download,
 } from "lucide-react";
 import { accountsApi } from "../lib/apiClient";
 import type { Account, AccountTreeNode } from "../lib/types";
@@ -483,6 +484,27 @@ export default function ChartOfAccountsPage() {
     loadAccounts();
   };
 
+  const handleDownloadStatement = async () => {
+    try {
+      // TODO: wire real company_id from user/company selection when available
+      const blob = await accountsApi.downloadChartOfAccountsStatement(1, {
+        include_balances: true,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `chart-of-accounts-statement-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      addToast("Chart of Accounts statement downloaded successfully", "success");
+    } catch (error) {
+      console.error("Failed to download chart of accounts statement:", error);
+      addToast("Failed to download chart of accounts statement", "error");
+    }
+  };
+
   if (!canReadAccounting) {
     return (
       <div className="max-w-3xl mx-auto min-h-full py-8">
@@ -533,6 +555,16 @@ export default function ChartOfAccountsPage() {
               <span>List</span>
             </button>
           </div>
+          {canReadAccounting && (
+            <button
+              type="button"
+              onClick={handleDownloadStatement}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download E-Statement</span>
+            </button>
+          )}
           {canWriteAccounting && (
             <button
               type="button"

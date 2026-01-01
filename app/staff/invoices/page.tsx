@@ -199,24 +199,20 @@ export default function StaffInvoicesPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center justify-end gap-2">
-                            {invoice.has_pdf && (
-                              <>
-                                <button
-                                  onClick={() => handleViewInvoice(invoice.id)}
-                                  className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
-                                  title="View Invoice"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDownloadInvoice(invoice.id, invoice.invoice_number)}
-                                  className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
-                                  title="Download Invoice"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
+                            <button
+                              onClick={() => handleViewInvoice(invoice.id)}
+                              className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
+                              title="View Invoice"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDownloadInvoice(invoice.id, invoice.invoice_number)}
+                              className="text-orange-600 hover:text-orange-900 p-1 rounded hover:bg-orange-50"
+                              title="Download Invoice"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>

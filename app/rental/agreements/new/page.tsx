@@ -26,11 +26,8 @@ export default function NewRentalAgreementPage() {
     rental_item_id: "",
     quantity_rented: "",
     rental_start_date: new Date().toISOString().split('T')[0],
-    rental_end_date: "",
-    rental_period_type: "monthly" as "daily" | "weekly" | "monthly" | "custom",
-    rental_period_length: "1",
-    total_rent_amount: "",
-    rent_per_period: "",
+    rental_period_type: "monthly" as "daily" | "weekly" | "monthly",
+    rent_amount: "",
     security_deposit_amount: "",
   });
 
@@ -84,45 +81,8 @@ export default function NewRentalAgreementPage() {
     if (formData.rental_item_id) {
       const item = availableItems.find(i => i.id === Number(formData.rental_item_id));
       setSelectedItem(item || null);
-      if (item) {
-        // Auto-calculate amounts
-        const quantity = parseFloat(formData.quantity_rented || "0");
-        const rentPerPeriod = item.rent_per_period * quantity;
-        const totalRent = rentPerPeriod * parseInt(formData.rental_period_length || "1");
-
-        setFormData(prev => ({
-          ...prev,
-          rent_per_period: rentPerPeriod.toFixed(2),
-          total_rent_amount: totalRent.toFixed(2),
-        }));
-      }
     }
-  }, [formData.rental_item_id, formData.quantity_rented, formData.rental_period_length, availableItems]);
-
-  // Calculate end date based on start date and period
-  useEffect(() => {
-    if (formData.rental_start_date && formData.rental_period_length && formData.rental_period_type) {
-      const startDate = new Date(formData.rental_start_date);
-      const periodLength = parseInt(formData.rental_period_length);
-      
-      const endDate = new Date(startDate);
-      if (formData.rental_period_type === "daily") {
-        endDate.setDate(endDate.getDate() + periodLength - 1);
-      } else if (formData.rental_period_type === "weekly") {
-        endDate.setDate(endDate.getDate() + (periodLength * 7) - 1);
-      } else if (formData.rental_period_type === "monthly") {
-        endDate.setMonth(endDate.getMonth() + periodLength);
-        endDate.setDate(endDate.getDate() - 1);
-      } else {
-        endDate.setDate(endDate.getDate() + periodLength - 1);
-      }
-
-      setFormData(prev => ({
-        ...prev,
-        rental_end_date: endDate.toISOString().split('T')[0],
-      }));
-    }
-  }, [formData.rental_start_date, formData.rental_period_length, formData.rental_period_type]);
+  }, [formData.rental_item_id, availableItems]);
 
   // Set default payment account when available
   useEffect(() => {
@@ -150,6 +110,9 @@ export default function NewRentalAgreementPage() {
     }
     if (stepNum === 3 && !formData.rental_start_date) {
       newErrors.rental_start_date = "Start date is required.";
+    }
+    if (stepNum === 3 && (!formData.rent_amount || parseFloat(formData.rent_amount) <= 0)) {
+      newErrors.rent_amount = "Rent amount must be greater than 0.";
     }
     if (stepNum === 4 && collectSecurityDeposit && !securityDepositPaymentAccountId) {
       newErrors.security_deposit_account = "Please select a payment account for security deposit.";
@@ -186,11 +149,8 @@ export default function NewRentalAgreementPage() {
         rental_item_id: Number(formData.rental_item_id),
         quantity_rented: parseFloat(formData.quantity_rented),
         rental_start_date: formData.rental_start_date,
-        rental_end_date: formData.rental_end_date || undefined,
         rental_period_type: formData.rental_period_type,
-        rental_period_length: parseInt(formData.rental_period_length),
-        total_rent_amount: parseFloat(formData.total_rent_amount),
-        rent_per_period: parseFloat(formData.rent_per_period),
+        rent_amount: parseFloat(formData.rent_amount),
         security_deposit_amount: formData.security_deposit_amount ? parseFloat(formData.security_deposit_amount) : undefined,
         collect_security_deposit: collectSecurityDeposit,
         security_deposit_payment_account_id: collectSecurityDeposit && securityDepositPaymentAccountId ? securityDepositPaymentAccountId : undefined,
@@ -360,9 +320,6 @@ export default function NewRentalAgreementPage() {
             {selectedItem && (
               <div className="bg-gray-50 p-4 rounded-md">
                 <p className="text-sm text-gray-600">
-                  <strong>Rental Price per Period:</strong> {formatCurrency(selectedItem.rent_per_period)}
-                </p>
-                <p className="text-sm text-gray-600">
                   <strong>Available Quantity:</strong> {selectedItem.quantity_available}
                 </p>
               </div>
@@ -394,10 +351,10 @@ export default function NewRentalAgreementPage() {
           </div>
         )}
 
-        {/* Step 3: Rental Period */}
+        {/* Step 3: Rental Period & Rent Amount */}
         {step === 3 && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Step 3: Rental Period</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Step 3: Rental Period & Rent Amount</h2>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Start Date <span className="text-red-500">*</span>
@@ -414,45 +371,41 @@ export default function NewRentalAgreementPage() {
                 <p className="mt-1 text-sm text-red-600">{errors.rental_start_date}</p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Period Type <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formData.rental_period_type}
-                  onChange={(e) => setFormData({ ...formData, rental_period_type: e.target.value as "daily" | "weekly" | "monthly" | "custom" })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Period Length <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={formData.rental_period_length}
-                  onChange={(e) => setFormData({ ...formData, rental_period_length: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Period Type <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.rental_period_type}
+                onChange={(e) => setFormData({ ...formData, rental_period_type: e.target.value as "daily" | "weekly" | "monthly" })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Date (Auto-calculated)
+                Rent Amount (per period) <span className="text-red-500">*</span>
               </label>
               <input
-                type="date"
-                value={formData.rental_end_date}
-                onChange={(e) => setFormData({ ...formData, rental_end_date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.rent_amount}
+                onChange={(e) => setFormData({ ...formData, rent_amount: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                  errors.rent_amount ? "border-red-500" : "border-gray-300"
+                }`}
+                placeholder="0.00"
               />
+              {errors.rent_amount && (
+                <p className="mt-1 text-sm text-red-600">{errors.rent_amount}</p>
+              )}
+              <p className="mt-1 text-xs text-gray-500">
+                Enter the rent amount manually
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -464,7 +417,6 @@ export default function NewRentalAgreementPage() {
                 min="0"
                 value={formData.security_deposit_amount}
                 onChange={(e) => setFormData({ ...formData, security_deposit_amount: e.target.value })}
-
                 className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                   errors.security_deposit_amount ? "border-red-500" : "border-gray-300"
                 }`}
@@ -499,31 +451,21 @@ export default function NewRentalAgreementPage() {
                   <p className="text-sm text-gray-900">{formData.quantity_rented}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500">Period</p>
-                  <p className="text-sm text-gray-900">{formData.rental_period_length} {formData.rental_period_type}</p>
+                  <p className="text-sm font-medium text-gray-500">Period Type</p>
+                  <p className="text-sm text-gray-900 capitalize">{formData.rental_period_type}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">Start Date</p>
                   <p className="text-sm text-gray-900">{formData.rental_start_date}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500">End Date</p>
-                  <p className="text-sm text-gray-900">{formData.rental_end_date}</p>
+                  <p className="text-sm font-medium text-gray-500">Rent Amount</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatCurrency(parseFloat(formData.rent_amount || "0"))}</p>
                 </div>
-              </div>
-              <div className="border-t border-gray-200 pt-4 mt-4">
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Rent Per Period</span>
-                  <span className="text-sm text-gray-900">{formatCurrency(parseFloat(formData.rent_per_period || "0"))}</span>
-                </div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Total Rent Amount</span>
-                  <span className="text-sm font-semibold text-gray-900">{formatCurrency(parseFloat(formData.total_rent_amount || "0"))}</span>
-                </div>
-                {formData.security_deposit_amount && (
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium text-gray-700">Security Deposit</span>
-                    <span className="text-sm text-gray-900">{formatCurrency(parseFloat(formData.security_deposit_amount))}</span>
+                {formData.security_deposit_amount && parseFloat(formData.security_deposit_amount) > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Security Deposit</p>
+                    <p className="text-sm text-gray-900">{formatCurrency(parseFloat(formData.security_deposit_amount))}</p>
                   </div>
                 )}
               </div>

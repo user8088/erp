@@ -62,6 +62,7 @@ export default function StaffDetailContent({
 
   const attendanceTotals = {
     present: attendanceSummary?.present ?? 0,
+    late: attendanceSummary?.late ?? 0,
     absent: attendanceSummary?.absent ?? 0,
     paid_leave: attendanceSummary?.paid_leave ?? 0,
     unpaid_leave: attendanceSummary?.unpaid_leave ?? 0,
@@ -459,12 +460,18 @@ export default function StaffDetailContent({
 
         {activeTab === "attendance" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <SummaryCard
                 title="Present"
                 value={attendanceLoading ? "..." : `${attendanceTotals.present}`}
                 subtitle="Marked present this period"
                 icon={<Clock className="w-8 h-8 text-green-400" />}
+              />
+              <SummaryCard
+                title="Late"
+                value={attendanceLoading ? "..." : `${attendanceTotals.late}`}
+                subtitle="Arrived late this period"
+                icon={<Clock className="w-8 h-8 text-orange-400" />}
               />
               <SummaryCard
                 title="Absent"
@@ -512,6 +519,9 @@ export default function StaffDetailContent({
                           Status
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                          Arrival Time
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
                           Note
                         </th>
                       </tr>
@@ -522,6 +532,13 @@ export default function StaffDetailContent({
                           <td className="px-4 py-3 text-sm text-gray-900">{entry.date}</td>
                           <td className="px-4 py-3">
                             <AttendanceStatusPill status={entry.status} />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            {entry.status === "late" && entry.late_time ? (
+                              <span className="font-medium text-orange-700">{entry.late_time}</span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700">
                             {entry.note || "—"}
@@ -601,12 +618,14 @@ function StatusPill({ status }: { status: StaffSalary["status"] }) {
 function AttendanceStatusPill({ status }: { status: AttendanceEntry["status"] }) {
   const map = {
     present: "bg-green-100 text-green-700",
+    late: "bg-orange-100 text-orange-800",
     absent: "bg-red-100 text-red-700",
     paid_leave: "bg-blue-100 text-blue-700",
     unpaid_leave: "bg-amber-100 text-amber-800",
   } as const;
   const labels: Record<AttendanceEntry["status"], string> = {
     present: "Present",
+    late: "Late",
     absent: "Absent",
     paid_leave: "Paid leave",
     unpaid_leave: "Unpaid leave",
