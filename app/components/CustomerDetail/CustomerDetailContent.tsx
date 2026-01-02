@@ -602,13 +602,10 @@ export default function CustomerDetailContent({
                         const invoiceNumber = invoice?.invoice_number || transaction.payment?.invoice?.invoice_number;
                         
                         // Get sale information if available
-                        const sale = transaction.sale || invoice?.sale;
+                        const sale = transaction.sale || (invoice?.metadata?.sale as Sale | undefined);
                         const saleItems = sale?.items || [];
                         const saleDescription = saleItems.length > 0 
-                          ? saleItems.map((item: { 
-                              quantity?: number; 
-                              item?: { name?: string } | null;
-                            }) => {
+                          ? saleItems.map((item: SaleItem) => {
                               const itemName = item.item?.name || 'item';
                               const quantity = item.quantity || 1;
                               const unit = item.unit || '';
@@ -879,7 +876,7 @@ export default function CustomerDetailContent({
           onClose={() => setShowPaymentModal(false)}
           customer={customer}
           outstandingInvoices={effectiveSummary.outstanding_invoices}
-          customerAdvanceBalance={effectiveSummary.advance_balance || customer?.advance_balance || 0}
+          customerAdvanceBalance={effectiveSummary.advance_balance || 0}
           onPaymentRecorded={handlePaymentRecorded}
         />
       )}

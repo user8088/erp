@@ -49,7 +49,7 @@ export default function RecordPaymentModal({
         });
 
         // Include all asset accounts
-        let relevantAccounts = response.data.filter(acc => !acc.is_disabled);
+        const relevantAccounts = response.data.filter(acc => !acc.is_disabled);
 
         // Prioritize mapped accounts by putting them first
         if (mappings.cashAccount) {
