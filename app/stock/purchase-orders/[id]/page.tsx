@@ -81,6 +81,7 @@ export default function PurchaseOrderDetailPage() {
       amount: number;
       account_id?: number | null;
     }>;
+    delivery_charge?: number;
     supplier_invoice_file?: File | null;
   }): Promise<{
     purchase_order: PurchaseOrder;

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { X, DollarSign, CreditCard, Calendar, FileText, AlertCircle } from "lucide-react";
 import { customerPaymentsApi, accountsApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
-import type { Customer, Invoice, Account } from "../../lib/types";
+import type { Customer, Account } from "../../lib/types";
 
 interface RecordPaymentModalProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ interface RecordPaymentModalProps {
     due_amount: number;
     invoice_date: string;
   }>;
+  customerAdvanceBalance?: number; // Customer's available advance balance
   onPaymentRecorded?: () => void;
 }
 
@@ -28,6 +29,7 @@ export default function RecordPaymentModal({
   onClose,
   customer,
   outstandingInvoices = [],
+  customerAdvanceBalance = 0,
   onPaymentRecorded,
 }: RecordPaymentModalProps) {
   const { addToast } = useToast();
@@ -38,6 +40,7 @@ export default function RecordPaymentModal({
   const [amount, setAmount] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentAccountId, setPaymentAccountId] = useState<number | null>(null);
+  const [useCustomerAdvance, setUseCustomerAdvance] = useState(false);
   const [paymentDate, setPaymentDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
@@ -48,6 +51,24 @@ export default function RecordPaymentModal({
   const [submitting, setSubmitting] = useState(false);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([]);
+  
+  // Payment response state (for showing advance payment summary)
+  const [paymentResponse, setPaymentResponse] = useState<{
+    auto_applied_payments?: Array<{
+      id: number;
+      invoice_id: number;
+      invoice_number: string;
+      amount_applied: number;
+      invoice_status_after: 'paid' | 'partially_paid';
+      remaining_invoice_balance: number;
+    }>;
+    advance_summary?: {
+      total_advance_received: number;
+      amount_applied_to_invoices: number;
+      remaining_advance_balance: number;
+      customer_new_advance_balance: number;
+    };
+  } | null>(null);
   
   // Validation
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -96,10 +117,12 @@ export default function RecordPaymentModal({
       setSelectedInvoiceId(null);
       setAmount("");
       setPaymentMethod('cash');
+      setUseCustomerAdvance(false);
       setPaymentDate(new Date().toISOString().split('T')[0]);
       setReferenceNumber("");
       setNotes("");
       setErrors({});
+      setPaymentResponse(null);
     } else {
       // Auto-select first outstanding invoice if available
       if (outstandingInvoices.length > 0) {
@@ -131,7 +154,16 @@ export default function RecordPaymentModal({
       newErrors.amount = "Amount must be greater than 0";
     }
 
-    if (!paymentAccountId) {
+    // Validate advance balance if using customer advance
+    if (paymentType === 'invoice_payment' && useCustomerAdvance) {
+      const paymentAmount = parseFloat(amount) || 0;
+      if (paymentAmount > customerAdvanceBalance) {
+        newErrors.advance = `Insufficient advance balance. Available: PKR ${customerAdvanceBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+      }
+    }
+
+    // Payment account is required only if not using customer advance
+    if (!useCustomerAdvance && !paymentAccountId) {
       newErrors.account = "Please select a payment account";
     }
 
@@ -167,7 +199,7 @@ export default function RecordPaymentModal({
         ...(paymentType === 'invoice_payment' && { invoice_id: selectedInvoiceId! }),
         amount: parseFloat(amount),
         payment_method: paymentMethod,
-        payment_account_id: paymentAccountId!,
+        ...(useCustomerAdvance ? { use_advance: true } : { payment_account_id: paymentAccountId! }),
         payment_date: paymentDate,
         ...(referenceNumber && { reference_number: referenceNumber }),
         ...(notes && { notes }),
@@ -184,14 +216,47 @@ export default function RecordPaymentModal({
         paymentType === 'invoice_payment' ? 'Invoice payment' :
         paymentType === 'advance_payment' ? 'Advance payment' : 'Refund';
       
-      addToast(`${paymentTypeLabel} recorded successfully!`, "success");
-      
-      // Callback to refresh data
-      if (onPaymentRecorded) {
-        onPaymentRecorded();
+      // Handle advance payment with auto-applied invoices - show detailed summary
+      if (paymentType === 'advance_payment' && (response.auto_applied_payments || response.advance_summary)) {
+        // Store response to show detailed summary
+        setPaymentResponse({
+          auto_applied_payments: response.auto_applied_payments,
+          advance_summary: response.advance_summary,
+        });
+        
+        // Show brief success message
+        if (response.auto_applied_payments && response.auto_applied_payments.length > 0) {
+          const summary = response.advance_summary;
+          const invoicesCount = response.auto_applied_payments.length;
+          const appliedAmount = summary?.amount_applied_to_invoices || 0;
+          const remainingBalance = summary?.remaining_advance_balance || 0;
+          
+          addToast(
+            `Advance payment recorded! Applied PKR ${appliedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} to ${invoicesCount} invoice(s). Remaining balance: PKR ${remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            "success"
+          );
+        } else if (response.advance_summary) {
+          // Advance payment with no invoices to pay
+          const remainingBalance = response.advance_summary.remaining_advance_balance || 0;
+          addToast(
+            `Advance payment recorded! Added PKR ${remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} to advance balance.`,
+            "success"
+          );
+        }
+        
+        // Don't close modal yet - show summary first
+        // User will close it after viewing summary
+      } else {
+        // Regular payment - close immediately
+        addToast(`${paymentTypeLabel} recorded successfully!`, "success");
+        
+        // Callback to refresh data
+        if (onPaymentRecorded) {
+          onPaymentRecorded();
+        }
+        
+        onClose();
       }
-      
-      onClose();
     } catch (error) {
       console.error("Failed to record payment:", error);
       
@@ -249,8 +314,9 @@ export default function RecordPaymentModal({
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {/* Form (hidden when showing advance payment summary) */}
+        {!paymentResponse && (
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Payment Type Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -344,6 +410,44 @@ export default function RecordPaymentModal({
                   </p>
                 </div>
               )}
+
+              {/* Use Customer Advance Option */}
+              {customerAdvanceBalance > 0 && (
+                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useCustomerAdvance}
+                      onChange={(e) => {
+                        setUseCustomerAdvance(e.target.checked);
+                        if (e.target.checked) {
+                          setPaymentAccountId(null);
+                        }
+                      }}
+                      className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-green-900">Use Customer Advance</span>
+                        <span className="text-sm font-semibold text-green-700">
+                          Available: PKR {customerAdvanceBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-green-700 mt-1">
+                        Pay this invoice using the customer&apos;s advance balance. No payment account required.
+                      </p>
+                      {useCustomerAdvance && selectedInvoice && parseFloat(amount) > customerAdvanceBalance && (
+                        <p className="text-xs text-red-600 mt-2 font-medium">
+                          ⚠️ Payment amount exceeds available advance balance
+                        </p>
+                      )}
+                    </div>
+                  </label>
+                  {errors.advance && (
+                    <p className="text-xs text-red-500 mt-2">{errors.advance}</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -355,7 +459,7 @@ export default function RecordPaymentModal({
                 <div>
                   <p className="text-sm font-medium text-green-900">Advance Payment</p>
                   <p className="text-xs text-green-700 mt-1">
-                    This amount will be added to the customer's advance balance and can be used for future purchases.
+                    This amount will be added to the customer&apos;s advance balance and can be used for future purchases.
                   </p>
                 </div>
               </div>
@@ -418,33 +522,35 @@ export default function RecordPaymentModal({
             </select>
           </div>
 
-          {/* Payment Account */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Payment Account <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={paymentAccountId || ""}
-              onChange={(e) => setPaymentAccountId(Number(e.target.value))}
-              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.account ? 'border-red-500' : 'border-gray-300'
-              }`}
-              disabled={loadingAccounts}
-            >
-              <option value="">Select payment account</option>
-              {paymentAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.number ? `${account.number} - ` : ""}{account.name}
-                </option>
-              ))}
-            </select>
-            {errors.account && (
-              <p className="text-xs text-red-500 mt-1">{errors.account}</p>
-            )}
-            <p className="text-xs text-gray-500 mt-1">
-              The account where this payment will be deposited
-            </p>
-          </div>
+          {/* Payment Account (only if not using customer advance) */}
+          {!(paymentType === 'invoice_payment' && useCustomerAdvance) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Payment Account <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={paymentAccountId || ""}
+                onChange={(e) => setPaymentAccountId(Number(e.target.value))}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  errors.account ? 'border-red-500' : 'border-gray-300'
+                }`}
+                disabled={loadingAccounts}
+              >
+                <option value="">Select payment account</option>
+                {paymentAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.number ? `${account.number} - ` : ""}{account.name}
+                  </option>
+                ))}
+              </select>
+              {errors.account && (
+                <p className="text-xs text-red-500 mt-1">{errors.account}</p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                The account where this payment will be deposited
+              </p>
+            </div>
+          )}
 
           {/* Payment Date */}
           <div>
@@ -537,6 +643,107 @@ export default function RecordPaymentModal({
             </button>
           </div>
         </form>
+        )}
+
+        {/* Advance Payment Summary (shown after successful advance payment) */}
+        {paymentResponse && (paymentResponse.auto_applied_payments || paymentResponse.advance_summary) && (
+          <div className="p-6 border-t border-gray-200 bg-green-50">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                  <DollarSign className="w-4 h-4 text-white" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Advance Payment Summary</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setPaymentResponse(null);
+                  if (onPaymentRecorded) {
+                    onPaymentRecorded();
+                  }
+                  onClose();
+                }}
+                className="p-1 hover:bg-green-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {paymentResponse.advance_summary && (
+              <div className="space-y-3 mb-4">
+                <div className="bg-white rounded-lg p-4 border border-green-200">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-600 mb-1">Advance Received</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        PKR {paymentResponse.advance_summary.total_advance_received.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600 mb-1">Applied to Invoices</p>
+                      <p className="text-sm font-semibold text-blue-600">
+                        PKR {paymentResponse.advance_summary.amount_applied_to_invoices.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600 mb-1">Remaining Advance</p>
+                      <p className="text-sm font-semibold text-green-600">
+                        PKR {paymentResponse.advance_summary.remaining_advance_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600 mb-1">New Advance Balance</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        PKR {paymentResponse.advance_summary.customer_new_advance_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {paymentResponse.auto_applied_payments && paymentResponse.auto_applied_payments.length > 0 && (
+              <div className="bg-white rounded-lg p-4 border border-green-200">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">Invoices Paid</h4>
+                <div className="space-y-2">
+                  {paymentResponse.auto_applied_payments.map((payment, index) => (
+                    <div key={payment.id || index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          {payment.invoice_number}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          Status: {payment.invoice_status_after === 'paid' ? 'Fully Paid' : 'Partially Paid'}
+                          {payment.remaining_invoice_balance > 0 && (
+                            <span className="ml-2">(Remaining: PKR {payment.remaining_invoice_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })})</span>
+                          )}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-blue-600">
+                        PKR {payment.amount_applied.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => {
+                  setPaymentResponse(null);
+                  if (onPaymentRecorded) {
+                    onPaymentRecorded();
+                  }
+                  onClose();
+                }}
+                className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

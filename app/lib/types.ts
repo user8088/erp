@@ -447,6 +447,7 @@ export interface PurchaseOrder {
   journal_entry?: JournalEntry | null;
   supplier_invoice_path?: string | null; // Path to uploaded supplier invoice
   other_costs_total?: number; // Sum of other costs
+  delivery_charge?: number; // Delivery charge from supplier (increases amount owed)
   final_total?: number; // Final amount after adjustments
   supplier_invoice_id?: number | null; // ID of created supplier invoice
   supplier_invoice?: Invoice | null; // Created supplier invoice
@@ -477,6 +478,7 @@ export interface ReceiveStockPayload {
     amount: number;
     account_id?: number | null;
   }>;
+  delivery_charge?: number; // Delivery charge from supplier (increases amount owed)
   supplier_invoice_file?: File | null;
 }
 

@@ -1315,6 +1315,7 @@ export interface ReceivePurchaseOrderPayload {
     amount: number;
     account_id?: number | null;
   }>;
+  delivery_charge?: number; // Delivery charge from supplier (increases amount owed)
   supplier_invoice_file?: File | null;
 }
 
@@ -1372,6 +1373,11 @@ export const purchaseOrdersApi = {
       // Add other costs if present
       if (payload.other_costs && payload.other_costs.length > 0) {
         formData.append('other_costs', JSON.stringify(payload.other_costs));
+      }
+      
+      // Add delivery charge if present
+      if (payload.delivery_charge !== undefined && payload.delivery_charge !== null) {
+        formData.append('delivery_charge', String(payload.delivery_charge));
       }
       
       // Add the file
@@ -2085,7 +2091,8 @@ export interface CreateCustomerPaymentPayload {
   invoice_id?: number;
   amount: number;
   payment_method: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
-  payment_account_id: number;
+  payment_account_id?: number; // Optional when use_advance is true
+  use_advance?: boolean; // Use customer advance balance for invoice payment
   payment_date: string;
   reference_number?: string | null;
   notes?: string | null;
@@ -2116,11 +2123,41 @@ export const customerPaymentsApi = {
     payment: CustomerPayment;
     journal_entries: unknown[];
     advance_transaction?: CustomerAdvance | null;
+    auto_applied_payments?: Array<{
+      id: number;
+      invoice_id: number;
+      invoice_number: string;
+      amount_applied: number;
+      invoice_status_after: 'paid' | 'partially_paid';
+      remaining_invoice_balance: number;
+    }>;
+    advance_summary?: {
+      total_advance_received: number;
+      amount_applied_to_invoices: number;
+      remaining_advance_balance: number;
+      customer_new_advance_balance: number;
+    };
+    message?: string;
   }> {
     return await apiClient.post<{
       payment: CustomerPayment;
       journal_entries: unknown[];
       advance_transaction?: CustomerAdvance | null;
+      auto_applied_payments?: Array<{
+        id: number;
+        invoice_id: number;
+        invoice_number: string;
+        amount_applied: number;
+        invoice_status_after: 'paid' | 'partially_paid';
+        remaining_invoice_balance: number;
+      }>;
+      advance_summary?: {
+        total_advance_received: number;
+        amount_applied_to_invoices: number;
+        remaining_advance_balance: number;
+        customer_new_advance_balance: number;
+      };
+      message?: string;
     }>("/customer-payments", payload);
   },
 };
@@ -2182,6 +2219,31 @@ export const customerPaymentSummaryApi = {
     return await apiClient.get<{ payment_summary: CustomerPaymentSummary }>(
       `/customers/${customerId}/payment-summary`
     );
+  },
+
+  async downloadAdvanceTransactions(customerId: number): Promise<Blob> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const headers: HeadersInit = {
+      Accept: "application/pdf",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL.replace(/\/api\/?$/, "")}/api/customers/${customerId}/advance-transactions/download`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "Failed to download advance transactions" }));
+      throw new ApiError(errorData.message || "Failed to download advance transactions", response.status, errorData);
+    }
+
+    return await response.blob();
   },
 };
 

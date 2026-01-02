@@ -30,6 +30,7 @@ interface ReceiveStockModalProps {
       amount: number;
       account_id?: number | null;
     }>;
+    delivery_charge?: number;
     supplier_invoice_file?: File | null;
   }) => Promise<{
     purchase_order: PurchaseOrder;
@@ -57,6 +58,9 @@ export default function ReceiveStockModal({
   
   // Other costs
   const [otherCosts, setOtherCosts] = useState<OtherCost[]>([]);
+  
+  // Delivery charge
+  const [deliveryCharge, setDeliveryCharge] = useState<number>(0);
   
   // Invoice upload
   const [supplierInvoiceFile, setSupplierInvoiceFile] = useState<File | null>(null);
@@ -107,6 +111,7 @@ export default function ReceiveStockModal({
       setQuantities(initialQuantities);
       setFinalPrices(initialPrices);
       setOtherCosts([]);
+      setDeliveryCharge(0);
       setSupplierInvoiceFile(null);
       setCurrentStep('items');
       setError(null);
@@ -155,14 +160,16 @@ export default function ReceiveStockModal({
     });
 
     const otherCostsTotal = otherCosts.reduce((sum, cost) => sum + cost.amount, 0);
-    const finalTotal = itemsSubtotal - otherCostsTotal;
+    const deliveryChargeAmount = deliveryCharge || 0;
+    const finalTotal = itemsSubtotal - otherCostsTotal + deliveryChargeAmount;
 
     return {
       itemsSubtotal,
       otherCostsTotal,
+      deliveryChargeAmount,
       finalTotal,
     };
-  }, [checkedItems, quantities, finalPrices, otherCosts]);
+  }, [checkedItems, quantities, finalPrices, otherCosts, deliveryCharge]);
 
   const totals = calculateTotals();
 
@@ -217,6 +224,7 @@ export default function ReceiveStockModal({
       await onReceive({
         items: itemsPayload,
         other_costs: otherCostsPayload,
+        delivery_charge: deliveryCharge > 0 ? deliveryCharge : undefined,
         supplier_invoice_file: supplierInvoiceFile || undefined,
       });
 
@@ -351,13 +359,50 @@ export default function ReceiveStockModal({
 
           {/* Step 2: Other Costs */}
           {currentStep === 'costs' && (
-            <div>
+            <div className="space-y-6">
               <OtherCostsSection
                 costs={otherCosts}
                 onCostsChange={setOtherCosts}
                 accounts={accounts}
                 loadingAccounts={loadingAccounts}
               />
+              
+              {/* Delivery Charge Section */}
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold text-gray-900">Delivery Charge</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Delivery charge from supplier (increases amount owed to supplier)
+                  </p>
+                </div>
+                <div className="max-w-md">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Delivery Charge (PKR)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={deliveryCharge || ""}
+                    onChange={(e) => setDeliveryCharge(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter the delivery charge amount charged by the supplier
+                  </p>
+                  {deliveryCharge > 0 && (
+                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Delivery Charge:</span>
+                        <span className="text-sm font-semibold text-green-700">
+                          + PKR {deliveryCharge.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -419,6 +464,7 @@ export default function ReceiveStockModal({
                 {otherCosts.length > 0 && (
                   <div className="bg-white border border-gray-200 rounded-lg p-6 mb-4">
                     <h4 className="text-sm font-semibold text-gray-900 mb-3">Other Costs</h4>
+                    <p className="text-xs text-gray-500 mb-3">Costs that reduce the amount owed to supplier</p>
                     <div className="space-y-2">
                       {otherCosts.map((cost) => (
                         <div key={cost.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
@@ -435,6 +481,20 @@ export default function ReceiveStockModal({
                           </p>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Delivery Charge Summary */}
+                {totals.deliveryChargeAmount > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 mb-4">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Delivery Charge</h4>
+                    <p className="text-xs text-gray-500 mb-3">Charge from supplier that increases the amount owed</p>
+                    <div className="flex items-center justify-between py-2">
+                      <p className="text-sm text-gray-900">Delivery Charge</p>
+                      <p className="text-sm font-medium text-green-600">
+                        + PKR {totals.deliveryChargeAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -472,6 +532,14 @@ export default function ReceiveStockModal({
                         </span>
                       </div>
                     )}
+                    {totals.deliveryChargeAmount > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Delivery Charge:</span>
+                        <span className="font-medium text-green-600">
+                          + PKR {totals.deliveryChargeAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-base font-semibold pt-2 border-t border-orange-300">
                       <span className="text-gray-900">Final Amount Owed:</span>
                       <span className="text-orange-600">
@@ -488,6 +556,9 @@ export default function ReceiveStockModal({
                     <p>DR Inventory: PKR {totals.itemsSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     {totals.otherCostsTotal > 0 && (
                       <p>DR Expense Accounts: PKR {totals.otherCostsTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    )}
+                    {totals.deliveryChargeAmount > 0 && (
+                      <p className="text-green-700">Note: Delivery charge increases Accounts Payable</p>
                     )}
                     <p>CR Accounts Payable: PKR {totals.finalTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                   </div>

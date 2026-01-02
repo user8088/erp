@@ -568,33 +568,107 @@ export default function CustomerDetailContent({
                 {/* Advance Transactions */}
                 {effectiveSummary.advance_transactions && effectiveSummary.advance_transactions.length > 0 && (
                   <div className="border-t border-gray-200 pt-6">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-4">Advance Transactions</h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-semibold text-gray-900">Advance Transactions</h3>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const blob = await customerPaymentSummaryApi.downloadAdvanceTransactions(Number(customerId));
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `advance-transactions-${customer?.serial_number || customerId}-${new Date().toISOString().split('T')[0]}.pdf`;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                            addToast("Advance transactions downloaded successfully", "success");
+                          } catch (error) {
+                            console.error("Failed to download advance transactions:", error);
+                            addToast("Failed to download advance transactions", "error");
+                          }
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        title="Download advance transactions record"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Record
+                      </button>
+                    </div>
                     <div className="space-y-2">
-                      {effectiveSummary.advance_transactions.slice(0, 10).map((transaction) => (
-                        <div key={transaction.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {transaction.transaction_type === 'received' ? 'Received' : 
-                               transaction.transaction_type === 'used' ? 'Used' : 'Refunded'}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {new Date(transaction.transaction_date).toLocaleDateString()}
-                            </p>
+                      {effectiveSummary.advance_transactions.slice(0, 10).map((transaction) => {
+                        // Get invoice information if available
+                        const invoice = transaction.payment?.invoice;
+                        const invoiceNumber = invoice?.invoice_number || transaction.payment?.invoice?.invoice_number;
+                        
+                        // Get sale information if available
+                        const sale = transaction.sale || invoice?.sale;
+                        const saleItems = sale?.items || [];
+                        const saleDescription = saleItems.length > 0 
+                          ? saleItems.map((item: { 
+                              quantity?: number; 
+                              item?: { name?: string } | null;
+                            }) => {
+                              const itemName = item.item?.name || 'item';
+                              const quantity = item.quantity || 1;
+                              const unit = item.unit || '';
+                              return `${quantity} ${unit} ${itemName}`.trim();
+                            }).join(', ')
+                          : null;
+                        
+                        // Get description from notes or reference
+                        const description = transaction.notes || transaction.reference || 
+                          (transaction.transaction_type === 'used' && invoiceNumber 
+                            ? `Used to pay Invoice #${invoiceNumber}${saleDescription ? ` - ${saleDescription}` : ''}`
+                            : null) ||
+                          (transaction.transaction_type === 'received' 
+                            ? 'Advance payment received'
+                            : transaction.transaction_type === 'refunded'
+                            ? 'Advance refunded'
+                            : null);
+
+                        return (
+                          <div key={transaction.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {transaction.transaction_type === 'received' ? 'Received' : 
+                                   transaction.transaction_type === 'used' ? 'Used' : 'Refunded'}
+                                </p>
+                                {invoiceNumber && transaction.transaction_type === 'used' && (
+                                  <span className="text-xs px-2 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 rounded">
+                                    Invoice #{invoiceNumber}
+                                  </span>
+                                )}
+                              </div>
+                              {description && (
+                                <p className="text-xs text-gray-600 mb-1 line-clamp-2">
+                                  {description}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-500">
+                                {new Date(transaction.transaction_date).toLocaleDateString('en-US', { 
+                                  year: 'numeric', 
+                                  month: 'short', 
+                                  day: 'numeric' 
+                                })}
+                              </p>
+                            </div>
+                            <div className="text-right ml-4 flex-shrink-0">
+                              <p className={`text-sm font-semibold ${
+                                transaction.transaction_type === 'received' ? 'text-green-600' :
+                                transaction.transaction_type === 'used' ? 'text-red-600' : 'text-blue-600'
+                              }`}>
+                                {transaction.transaction_type === 'received' ? '+' : '-'}
+                                PKR {Math.abs(transaction.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Balance: PKR {transaction.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className={`text-sm font-semibold ${
-                              transaction.transaction_type === 'received' ? 'text-green-600' :
-                              transaction.transaction_type === 'used' ? 'text-red-600' : 'text-blue-600'
-                            }`}>
-                              {transaction.transaction_type === 'received' ? '+' : '-'}
-                              PKR {Math.abs(transaction.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Balance: PKR {transaction.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -805,6 +879,7 @@ export default function CustomerDetailContent({
           onClose={() => setShowPaymentModal(false)}
           customer={customer}
           outstandingInvoices={effectiveSummary.outstanding_invoices}
+          customerAdvanceBalance={effectiveSummary.advance_balance || customer?.advance_balance || 0}
           onPaymentRecorded={handlePaymentRecorded}
         />
       )}
