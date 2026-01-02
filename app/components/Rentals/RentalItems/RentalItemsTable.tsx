@@ -97,8 +97,6 @@ export default function RentalItemsTable({ items, loading, onDelete, onBulkDelet
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Total Qty</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Available</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Rented</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Rental Price</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Period</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Status</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Actions</th>
             </tr>
@@ -143,12 +141,6 @@ export default function RentalItemsTable({ items, loading, onDelete, onBulkDelet
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
                     {formatQuantity(currentlyRented)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
-                    {formatCurrency(item.rent_per_period)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                    {item.rental_period_length} {item.rental_period_type}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item)}`}>

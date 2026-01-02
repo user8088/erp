@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { RentalAgreement } from "../../../lib/types";
-import { rentalApi } from "../../../lib/apiClient";
+import type { RentalAgreement, Account } from "../../../lib/types";
+import { rentalApi, accountsApi } from "../../../lib/apiClient";
 import { useToast } from "../../ui/ToastProvider";
 import { useRentalAccountMappings } from "../Shared/useRentalAccountMappings";
 
@@ -23,7 +23,7 @@ export default function RecordPaymentModal({
 }: RecordPaymentModalProps) {
   const router = useRouter();
   const { addToast } = useToast();
-  const { mappings, loading: loadingMappings, getPaymentAccounts, isConfigured } = useRentalAccountMappings();
+  const { mappings, loading: loadingMappings } = useRentalAccountMappings();
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentAccountId, setPaymentAccountId] = useState<number | null>(null);
@@ -31,16 +31,65 @@ export default function RecordPaymentModal({
   const [notes, setNotes] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
 
-  const paymentAccounts = getPaymentAccounts();
+  // Fetch payment accounts (all asset accounts)
+  useEffect(() => {
+    const fetchPaymentAccounts = async () => {
+      if (!isOpen) return;
+
+      setLoadingAccounts(true);
+      try {
+        const response = await accountsApi.getAccounts({
+          company_id: 1,
+          root_type: 'asset',
+          is_group: false,
+          per_page: 1000,
+        });
+
+        // Include all asset accounts
+        let relevantAccounts = response.data.filter(acc => !acc.is_disabled);
+
+        // Prioritize mapped accounts by putting them first
+        if (mappings.cashAccount) {
+          const cashIndex = relevantAccounts.findIndex(acc => acc.id === mappings.cashAccount!.id);
+          if (cashIndex > 0) {
+            const cashAccount = relevantAccounts.splice(cashIndex, 1)[0];
+            relevantAccounts.unshift(cashAccount);
+          }
+        }
+        if (mappings.bankAccount) {
+          const bankIndex = relevantAccounts.findIndex(acc => acc.id === mappings.bankAccount!.id);
+          if (bankIndex > 0) {
+            const bankAccount = relevantAccounts.splice(bankIndex, 1)[0];
+            // Insert after cash account if it exists, otherwise at the start
+            const insertIndex = mappings.cashAccount ? 1 : 0;
+            relevantAccounts.splice(insertIndex, 0, bankAccount);
+          }
+        }
+
+        setPaymentAccounts(relevantAccounts);
+      } catch (error) {
+        console.error("Failed to fetch payment accounts:", error);
+        addToast("Failed to load payment accounts", "error");
+      } finally {
+        setLoadingAccounts(false);
+      }
+    };
+
+    if (isOpen) {
+      fetchPaymentAccounts();
+    }
+  }, [isOpen, mappings.cashAccount, mappings.bankAccount, addToast]);
 
   // Set default payment account when modal opens
   useEffect(() => {
-    if (isOpen) {
-      // Set default payment account from mappings
-      if (mappings.cashAccount) {
+    if (isOpen && paymentAccounts.length > 0) {
+      // Prioritize mapped accounts for auto-selection
+      if (mappings.cashAccount && paymentAccounts.find(a => a.id === mappings.cashAccount!.id)) {
         setPaymentAccountId(mappings.cashAccount.id);
-      } else if (mappings.bankAccount) {
+      } else if (mappings.bankAccount && paymentAccounts.find(a => a.id === mappings.bankAccount!.id)) {
         setPaymentAccountId(mappings.bankAccount.id);
       } else if (paymentAccounts.length > 0) {
         setPaymentAccountId(paymentAccounts[0].id);
@@ -58,14 +107,6 @@ export default function RecordPaymentModal({
     }
     if (!paymentAccountId) {
       setErrors({ account: "Please select a payment account." });
-      return;
-    }
-
-    // Check if payment accounts are configured
-    if (!isConfigured.cash && !isConfigured.bank) {
-      setErrors({ 
-        account: "Payment accounts are not configured. Please configure rental cash or bank account in Rental Settings." 
-      });
       return;
     }
 
@@ -119,7 +160,7 @@ export default function RecordPaymentModal({
         }
       }
       
-      addToast("Failed to record payment. Please check that all required account mappings are configured in Rental Settings.", "error");
+      addToast("Failed to record payment. Please try again.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -212,7 +253,7 @@ export default function RecordPaymentModal({
             <select
               value={paymentAccountId || ""}
               onChange={(e) => setPaymentAccountId(Number(e.target.value))}
-              disabled={loadingMappings}
+              disabled={loadingAccounts || loadingMappings}
               className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                 errors.account ? "border-red-500" : "border-gray-300"
               }`}
@@ -220,33 +261,18 @@ export default function RecordPaymentModal({
               <option value="">Select payment account</option>
               {paymentAccounts.length === 0 ? (
                 <option value="" disabled>
-                  {loadingMappings ? "Loading accounts..." : "No payment accounts configured. Please configure in Rental Settings."}
+                  {loadingAccounts || loadingMappings ? "Loading accounts..." : "No payment accounts available."}
                 </option>
               ) : (
                 paymentAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.number ? `${account.number} - ` : ""}{account.name}
-                </option>
+                  <option key={account.id} value={account.id}>
+                    {account.number ? `${account.number} - ` : ""}{account.name}
+                  </option>
                 ))
               )}
             </select>
             {errors.account && (
               <p className="mt-1 text-sm text-red-600">{errors.account}</p>
-            )}
-            {paymentAccounts.length === 0 && !loadingMappings && (
-              <p className="mt-1 text-xs text-orange-600">
-                No payment accounts configured.{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    router.push("/rental/settings");
-                  }}
-                  className="underline hover:text-orange-700"
-                >
-                  Configure in Rental Settings
-                </button>
-              </p>
             )}
           </div>
 

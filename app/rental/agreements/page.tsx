@@ -39,18 +39,28 @@ export default function RentalAgreementsPage() {
   };
 
   const handleRecordPayment = (agreement: RentalAgreement) => {
+    setShowDetailModal(false);
     setSelectedAgreement(agreement);
     setShowPaymentModal(true);
   };
 
   const handleReturnRental = (agreement: RentalAgreement) => {
+    setShowDetailModal(false);
     setSelectedAgreement(agreement);
     setShowReturnModal(true);
   };
 
-  const handleCloseModals = () => {
+  const handleCloseDetailModal = () => {
     setShowDetailModal(false);
+    setSelectedAgreement(null);
+  };
+
+  const handleClosePaymentModal = () => {
     setShowPaymentModal(false);
+    setSelectedAgreement(null);
+  };
+
+  const handleCloseReturnModal = () => {
     setShowReturnModal(false);
     setSelectedAgreement(null);
   };
@@ -147,8 +157,6 @@ export default function RentalAgreementsPage() {
         agreements={agreements}
         loading={loading}
         onViewDetails={handleViewDetails}
-        onRecordPayment={handleRecordPayment}
-        onReturnRental={handleReturnRental}
       />
 
       {/* Pagination */}
@@ -198,7 +206,7 @@ export default function RentalAgreementsPage() {
         <>
           <RentalAgreementDetailModal
             isOpen={showDetailModal}
-            onClose={handleCloseModals}
+            onClose={handleCloseDetailModal}
             agreement={selectedAgreement}
             onRefresh={handleRefresh}
             onRecordPayment={handleRecordPayment}
@@ -206,15 +214,21 @@ export default function RentalAgreementsPage() {
           />
           <RecordPaymentModal
             isOpen={showPaymentModal}
-            onClose={handleCloseModals}
+            onClose={handleClosePaymentModal}
             agreement={selectedAgreement}
-            onPaymentRecorded={handleRefresh}
+            onPaymentRecorded={() => {
+              handleClosePaymentModal();
+              handleRefresh();
+            }}
           />
           <ReturnRentalModal
             isOpen={showReturnModal}
-            onClose={handleCloseModals}
+            onClose={handleCloseReturnModal}
             agreement={selectedAgreement}
-            onReturnProcessed={handleRefresh}
+            onReturnProcessed={() => {
+              handleCloseReturnModal();
+              handleRefresh();
+            }}
           />
         </>
       )}

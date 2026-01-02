@@ -67,21 +67,12 @@ export default function RentalPaymentsPage() {
     if (agreement.outstanding_balance === 0) {
       return "paid";
     }
-    const paidAmount = agreement.total_rent_amount - agreement.outstanding_balance;
-    if (paidAmount > 0 && paidAmount < agreement.total_rent_amount) {
-      const today = new Date();
-      const hasOverdue = agreement.payment_schedule?.some(
-        (schedule) => schedule.payment_status === "late" || 
-        (schedule.payment_status === "unpaid" && new Date(schedule.due_date) < today)
-      );
-      return hasOverdue ? "late" : "partially_paid";
+    // Calculate paid amount from payments
+    const paidAmount = agreement.payments?.reduce((sum, payment) => sum + payment.amount_paid, 0) || 0;
+    if (paidAmount > 0) {
+      return "partially_paid";
     }
-    const today = new Date();
-    const hasOverdue = agreement.payment_schedule?.some(
-      (schedule) => schedule.payment_status === "late" || 
-      (schedule.payment_status === "unpaid" && new Date(schedule.due_date) < today)
-    );
-    return hasOverdue ? "late" : "unpaid";
+    return "unpaid";
   };
 
   const getLastPaymentDate = (agreement: RentalAgreement): string | null => {
@@ -94,7 +85,8 @@ export default function RentalPaymentsPage() {
 
   // Flatten agreements to show payment summary
   const paymentSummaries = agreements.map(agreement => {
-    const paidAmount = agreement.total_rent_amount - agreement.outstanding_balance;
+    // Calculate paid amount from payments
+    const paidAmount = agreement.payments?.reduce((sum, payment) => sum + payment.amount_paid, 0) || 0;
     return {
       agreement,
       paidAmount,
@@ -138,7 +130,6 @@ export default function RentalPaymentsPage() {
             <tr>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Rental ID</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Customer</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Total Rent</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Paid Amount</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Remaining Due</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Last Payment Date</th>
@@ -154,9 +145,6 @@ export default function RentalPaymentsPage() {
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
                   {summary.agreement.customer?.name || "—"}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
-                  {formatCurrency(summary.agreement.total_rent_amount)}
                 </td>
                 <td className="px-4 py-3 text-sm text-green-600 whitespace-nowrap">
                   {formatCurrency(summary.paidAmount)}

@@ -2639,6 +2639,70 @@ export const rentalApi = {
   async processReturn(payload: ProcessRentalReturnPayload): Promise<{ return: RentalReturn; agreement: Partial<RentalAgreement>; message: string }> {
     return await apiClient.post<{ return: RentalReturn; agreement: Partial<RentalAgreement>; message: string }>("/rentals/returns", payload);
   },
+
+  // Download Agreement PDF
+  async downloadAgreement(id: number): Promise<void> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    if (!token) {
+      throw new ApiError("Authentication required. Please log in.", 401, {});
+    }
+
+    const response = await fetch(`${API_BASE_URL}/rentals/agreements/${id}/download`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/pdf",
+      },
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      // Handle authentication errors
+      if (response.status === 401 || response.status === 403) {
+        throw new ApiError("Authentication required. Please log in again.", response.status, {});
+      }
+      
+      // Try to parse error response, but don't fail if it's not JSON
+      let errorData: { message?: string } = { message: "Failed to download rental agreement" };
+      try {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          errorData = await response.json();
+        }
+      } catch {
+        // If response is not JSON, use default error message
+      }
+      
+      throw new ApiError(errorData.message || "Failed to download rental agreement", response.status, errorData);
+    }
+
+    // Check if response is actually PDF
+    const contentType = response.headers.get("content-type");
+    if (contentType && !contentType.includes("application/pdf")) {
+      throw new ApiError("Invalid response format. Expected PDF file.", 500, {});
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    
+    // Extract filename from Content-Disposition header if available, otherwise use agreement number
+    const contentDisposition = response.headers.get("Content-Disposition");
+    let filename = `RENT-${id}.pdf`;
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, "");
+      }
+    }
+    
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
 };
 
 // Financial Reports API
