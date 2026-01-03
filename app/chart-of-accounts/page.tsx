@@ -555,7 +555,7 @@ export default function ChartOfAccountsPage() {
               <span>List</span>
             </button>
           </div>
-          {canReadAccounting && (
+          {/* {canReadAccounting && (
             <button
               type="button"
               onClick={handleDownloadStatement}
@@ -564,7 +564,7 @@ export default function ChartOfAccountsPage() {
               <Download className="w-4 h-4" />
               <span>Download E-Statement</span>
             </button>
-          )}
+          )} */}
           {canWriteAccounting && (
             <button
               type="button"
