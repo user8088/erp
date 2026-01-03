@@ -1448,6 +1448,56 @@ export const purchaseOrdersApi = {
     return await apiClient.delete<{ message: string }>(`/purchase-orders/${id}`);
   },
 
+  async getPurchaseOrderTrends(params?: {
+    start_date?: string;
+    end_date?: string;
+    period_type?: "monthly" | "weekly" | "quarterly" | "yearly";
+    supplier_id?: number;
+    status?: string;
+  }): Promise<{
+    data: Array<{
+      period: string;
+      month_abbr: string;
+      value: number;
+      count: number;
+    }>;
+    summary: {
+      total_amount: number;
+      total_orders: number;
+      average_order_value: number;
+      period_start: string;
+      period_end: string;
+    };
+    generated_at: string;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.start_date) queryParams.append("start_date", params.start_date);
+    if (params?.end_date) queryParams.append("end_date", params.end_date);
+    if (params?.period_type) queryParams.append("period_type", params.period_type);
+    if (params?.supplier_id) queryParams.append("supplier_id", String(params.supplier_id));
+    if (params?.status) queryParams.append("status", params.status);
+    
+    const queryString = queryParams.toString();
+    const url = `/purchase-orders/trends${queryString ? `?${queryString}` : ""}`;
+    
+    return await apiClient.get<{
+      data: Array<{
+        period: string;
+        month_abbr: string;
+        value: number;
+        count: number;
+      }>;
+      summary: {
+        total_amount: number;
+        total_orders: number;
+        average_order_value: number;
+        period_start: string;
+        period_end: string;
+      };
+      generated_at: string;
+    }>(url);
+  },
+
   async downloadSupplierInvoiceAttachment(poId: number): Promise<Blob> {
     const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
     const headers: HeadersInit = {
