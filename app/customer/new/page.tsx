@@ -164,6 +164,7 @@ export default function NewCustomerPage() {
           <div className="relative">
             <div className="w-32 h-32 rounded-full overflow-hidden bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center">
               {profilePicture ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={profilePicture}
                   alt="Profile preview"
@@ -301,7 +302,9 @@ export default function NewCustomerPage() {
               <h3 className="text-sm font-semibold text-gray-900">
                 Opening Balances <span className="text-gray-500 font-normal">(Optional)</span>
               </h3>
-              <Info className="w-4 h-4 text-gray-400" title="Add previous payment records for this customer" />
+              <div title="Add previous payment records for this customer">
+                <Info className="w-4 h-4 text-gray-400" />
+              </div>
             </div>
             {showOpeningBalances ? (
               <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -385,7 +388,7 @@ export default function NewCustomerPage() {
               {formData.opening_due_amount.trim() && parseFloat(formData.opening_due_amount) > 0 && (
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
                   <p className="text-xs text-blue-800">
-                    <strong>Note:</strong> Customer status will be automatically set to "Has Dues" 
+                    <strong>Note:</strong> Customer status will be automatically set to &quot;Has Dues&quot; 
                     because an opening due amount is specified.
                   </p>
                 </div>
