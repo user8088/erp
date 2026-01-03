@@ -31,15 +31,33 @@ export default function NewCustomerPage() {
   const handleChange =
     (field: keyof typeof formData) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      // Clear error for this field when user types
-      if (errors[field]) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors[field];
-          return newErrors;
-        });
+      const value = e.target.value;
+      
+      // Mutually exclusive: If opening due amount is entered, clear advance balance and vice versa
+      if (field === 'opening_due_amount' && value.trim() && parseFloat(value) > 0) {
+        setFormData((prev) => ({ 
+          ...prev, 
+          [field]: value,
+          opening_advance_balance: '' // Clear the other field
+        }));
+      } else if (field === 'opening_advance_balance' && value.trim() && parseFloat(value) > 0) {
+        setFormData((prev) => ({ 
+          ...prev, 
+          [field]: value,
+          opening_due_amount: '' // Clear the other field
+        }));
+      } else {
+        setFormData((prev) => ({ ...prev, [field]: value }));
       }
+      
+      // Clear errors for both fields when either changes
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        delete newErrors.opening_due_amount;
+        delete newErrors.opening_advance_balance;
+        return newErrors;
+      });
     };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -94,6 +112,12 @@ export default function NewCustomerPage() {
 
     if (openingAdvanceBalance !== null && (isNaN(openingAdvanceBalance) || openingAdvanceBalance < 0)) {
       localErrors.opening_advance_balance = ["Opening advance balance must be a non-negative number."];
+    }
+
+    // Validate: Cannot have both opening due amount and advance balance
+    if (openingDueAmount !== null && openingDueAmount > 0 && openingAdvanceBalance !== null && openingAdvanceBalance > 0) {
+      localErrors.opening_due_amount = ["Cannot have both opening due amount and advance balance. They are mutually exclusive."];
+      localErrors.opening_advance_balance = ["Cannot have both opening due amount and advance balance. They are mutually exclusive."];
     }
 
     if (Object.keys(localErrors).length > 0) {
@@ -320,6 +344,12 @@ export default function NewCustomerPage() {
                   Record any outstanding amounts or advance payments from previous transactions. 
                   These will be automatically integrated with your Chart of Accounts.
                 </p>
+                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md">
+                  <p className="text-xs text-amber-800">
+                    <strong>Note:</strong> Opening due amount and advance balance cannot coexist. 
+                    Entering one will automatically clear the other.
+                  </p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -389,7 +419,15 @@ export default function NewCustomerPage() {
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
                   <p className="text-xs text-blue-800">
                     <strong>Note:</strong> Customer status will be automatically set to &quot;Has Dues&quot; 
-                    because an opening due amount is specified.
+                    because an opening due amount is specified. Opening advance balance cannot be set when due amount exists.
+                  </p>
+                </div>
+              )}
+              {formData.opening_advance_balance.trim() && parseFloat(formData.opening_advance_balance) > 0 && (
+                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
+                  <p className="text-xs text-green-800">
+                    <strong>Note:</strong> Opening due amount cannot be set when advance balance exists. 
+                    They are mutually exclusive.
                   </p>
                 </div>
               )}

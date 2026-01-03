@@ -1,456 +1,359 @@
-# Advance Payment Auto-Clear Opening Due Amount - Backend Requirements
+# Purchase Order Trends Chart - Backend Requirements
 
 ## Overview
 
-**CRITICAL BUSINESS RULE:** Advance payments and opening due amounts cannot coexist. When a customer receives an advance payment, it must FIRST be applied to clear the opening due amount (if any), THEN to outstanding invoices, and ONLY THEN should any remaining amount be added to the customer's advance balance.
-
-**Example Scenario:**
-- Customer has opening due amount: PKR 5,000
-- Customer receives advance payment: PKR 5,000
-- Result: Opening due amount cleared (PKR 0), Advance balance: PKR 0 (all used to clear dues)
+The Buying page displays a "Purchase Order Trends" area chart showing monthly purchase order amounts over the last 12 months. Currently, the frontend uses mock data and needs a backend API endpoint to fetch real-time aggregated purchase order data.
 
 ---
 
-## Payment Processing Logic for Advance Payments
+## API Endpoint Requirements
 
-### Updated Algorithm (Including Opening Due Amount)
+### Endpoint: GET `/purchase-orders/trends`
 
-When `payment_type = "advance_payment"`, the backend must follow this priority order:
+**Purpose:** Get monthly aggregated purchase order amounts for the trends chart.
 
-1. **Apply to Opening Due Amount FIRST** (if exists)
-2. **Apply to Outstanding Invoices** (oldest first)
-3. **Add Remaining to Advance Balance** (only after clearing dues)
+**Authentication:** Required (standard Bearer token)
 
-### Payment Processing Steps
+**Query Parameters (Optional):**
+- `start_date` (string, optional, format: YYYY-MM-DD): Start date for the trend period (default: 12 months ago from today)
+- `end_date` (string, optional, format: YYYY-MM-DD): End date for the trend period (default: today)
+- `period_type` (string, optional): Aggregation period - "monthly" (default), "weekly", "quarterly", "yearly"
+- `supplier_id` (integer, optional): Filter by specific supplier
+- `status` (string, optional): Filter by purchase order status ('draft', 'sent', 'partial', 'received', 'cancelled')
 
-```
-Input: Advance Amount = 5,000
-Customer State:
-  - Opening due amount: 5,000
-  - Outstanding Invoices: None
-
-Process:
-1. Apply 5,000 to Opening Due Amount
-   - Opening due amount remaining = 5,000 - 5,000 = 0
-   - Advance remaining = 5,000 - 5,000 = 0
-   - Opening due amount cleared ✅
-
-2. No outstanding invoices to pay
-3. No remaining advance (all used to clear opening due)
-   - Advance balance = 0 ✅
-
-Final Result:
-- Opening due amount: 0 (cleared)
-- Advance balance: 0 (all used to clear dues)
-- Customer status: "clear" (no dues)
-```
-
-### More Complex Example
-
-```
-Input: Advance Amount = 10,000
-Customer State:
-  - Opening due amount: 5,000
-  - Outstanding Invoices:
-    - Invoice #001: 2,000
-    - Invoice #002: 1,000
-
-Process:
-1. Apply 5,000 to Opening Due Amount
-   - Opening due amount remaining = 0 ✅
-   - Advance remaining = 10,000 - 5,000 = 5,000
-
-2. Apply 2,000 to Invoice #001
-   - Invoice #001: Paid ✅
-   - Advance remaining = 5,000 - 2,000 = 3,000
-
-3. Apply 1,000 to Invoice #002
-   - Invoice #002: Paid ✅
-   - Advance remaining = 3,000 - 1,000 = 2,000
-
-4. Remaining advance = 2,000
-   - Add 2,000 to customer advance balance ✅
-
-Final Result:
-- Opening due amount: 0 (cleared)
-- Invoice #001: Paid
-- Invoice #002: Paid
-- Advance balance: 2,000
-```
-
----
-
-## Implementation Details
-
-### Database Updates Required
-
-#### 1. Update Customer Opening Due Amount
-
-**When advance payment clears opening due amount:**
-
-```php
-// After processing advance payment
-if ($customer->opening_due_amount > 0 && $amountAppliedToOpening > 0) {
-    $customer->opening_due_amount = max(0, $customer->opening_due_amount - $amountAppliedToOpening);
-    $customer->status = ($customer->opening_due_amount == 0 && $unpaidInvoicesCount == 0) 
-        ? 'clear' 
-        : 'has_dues';
-    $customer->save();
-}
-```
-
-#### 2. Create Payment Records
-
-For opening due amount payment (using advance):
-```php
-CustomerPayment::create([
-    'customer_id' => $customer->id,
-    'payment_type' => 'invoice_payment', // Treat as invoice payment
-    'invoice_id' => null, // No invoice - it's opening balance
-    'amount' => $amountAppliedToOpening,
-    'use_advance' => true,
-    'payment_account_id' => null,
-    'payment_date' => $payment->payment_date,
-    'payment_method' => $payment->payment_method,
-    'reference_number' => $payment->reference_number,
-    'notes' => 'Auto-applied from advance payment to clear opening due amount',
-]);
-```
-
-**Note:** Since there's no actual invoice, you may need to handle this differently:
-- Option 1: Create payment record with `invoice_id = NULL` and special flag
-- Option 2: Create a virtual/synthetic invoice record for opening balance
-- Option 3: Track opening balance payments separately
-
-### Response Structure Updates
-
-**When `payment_type = "advance_payment"` with opening due amount cleared:**
+**Response Structure:**
 
 ```json
 {
-  "payment": {
-    "id": 789,
-    "customer_id": 123,
-    "payment_type": "advance_payment",
-    "amount": 10000.00,
-    "payment_method": "cash",
-    "payment_account_id": 5,
-    "payment_date": "2025-01-15",
-    "reference_number": null,
-    "notes": "Customer advance payment",
-    "created_at": "2025-01-15T10:30:00Z",
-    "updated_at": "2025-01-15T10:30:00Z"
-  },
-  "opening_due_cleared": {
-    "amount_applied": 5000.00,
-    "opening_due_before": 5000.00,
-    "opening_due_after": 0.00,
-    "cleared": true
-  },
-  "auto_applied_payments": [
+  "data": [
     {
-      "id": 790,
-      "invoice_id": 456,
-      "invoice_number": "INV-20250110-001",
-      "amount_applied": 2000.00,
-      "invoice_status_after": "paid",
-      "remaining_invoice_balance": 0.00
+      "period": "2025-07",
+      "month_abbr": "Jul",
+      "value": 552247.00,
+      "count": 5
+    },
+    {
+      "period": "2025-08",
+      "month_abbr": "Aug",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2025-09",
+      "month_abbr": "Sep",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2025-10",
+      "month_abbr": "Oct",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2025-11",
+      "month_abbr": "Nov",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2025-12",
+      "month_abbr": "Dec",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2026-01",
+      "month_abbr": "Jan",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2026-02",
+      "month_abbr": "Feb",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2026-03",
+      "month_abbr": "Mar",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2026-04",
+      "month_abbr": "Apr",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2026-05",
+      "month_abbr": "May",
+      "value": 0.00,
+      "count": 0
+    },
+    {
+      "period": "2026-06",
+      "month_abbr": "Jun",
+      "value": 0.00,
+      "count": 0
     }
   ],
-  "advance_summary": {
-    "total_advance_received": 10000.00,
-    "amount_applied_to_opening_due": 5000.00,
-    "amount_applied_to_invoices": 2000.00,
-    "remaining_advance_balance": 3000.00,
-    "customer_new_advance_balance": 3000.00
+  "summary": {
+    "total_amount": 552247.00,
+    "total_orders": 5,
+    "average_order_value": 110449.40,
+    "period_start": "2025-07-01",
+    "period_end": "2026-06-30"
   },
-  "message": "Advance payment recorded. Cleared opening due: PKR 5,000.00. Applied PKR 2,000.00 to 1 invoice(s). Remaining balance: PKR 3,000.00"
+  "generated_at": "2026-01-15T10:30:00Z"
 }
 ```
 
-### New Response Fields
-
-Add to advance payment response:
+### Response Field Descriptions
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `opening_due_cleared` | object | Details about opening due amount clearing |
-| `opening_due_cleared.amount_applied` | number | Amount applied to clear opening due |
-| `opening_due_cleared.opening_due_before` | number | Opening due amount before payment |
-| `opening_due_cleared.opening_due_after` | number | Opening due amount after payment |
-| `opening_due_cleared.cleared` | boolean | Whether opening due was fully cleared |
-| `advance_summary.amount_applied_to_opening_due` | number | Total amount applied to opening due |
+| `data` | array | Array of monthly purchase order aggregations |
+| `data[].period` | string | Period identifier in YYYY-MM format (e.g., "2025-07") |
+| `data[].month_abbr` | string | Month abbreviation (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec) |
+| `data[].value` | number | Total purchase order amount for this month (sum of `purchase_orders.total`) |
+| `data[].count` | integer | Number of purchase orders in this month |
+| `summary.total_amount` | number | Total purchase order amount across all periods |
+| `summary.total_orders` | integer | Total number of purchase orders |
+| `summary.average_order_value` | number | Average purchase order value |
+| `summary.period_start` | string | Start date of the period (YYYY-MM-DD) |
+| `summary.period_end` | string | End date of the period (YYYY-MM-DD) |
+| `generated_at` | string | Timestamp when the report was generated (ISO 8601) |
 
 ---
 
-## Chart of Accounts (COA) Integration
+## Data Calculation Logic
 
-### Journal Entry Creation
+### Purchase Order Amount Calculation
 
-#### 1. Advance Payment Received (with auto-clear opening due)
+For each month, calculate:
+1. **Total Amount:** Sum of `purchase_orders.total` for all purchase orders with `order_date` in that month
+   - Formula: `SUM(purchase_orders.total)` WHERE `DATE_FORMAT(order_date, '%Y-%m') = period`
+   - Use `purchase_orders.total` field (includes subtotal, tax, discount)
 
-**Scenario:** Customer receives PKR 10,000 advance, clears PKR 5,000 opening due, pays PKR 2,000 invoice, remaining PKR 3,000 to advance balance.
+2. **Order Count:** Count of purchase orders in that month
+   - Formula: `COUNT(purchase_orders.id)` WHERE `DATE_FORMAT(order_date, '%Y-%m') = period`
 
-**Journal Entries:**
+### Monthly Period Generation
 
-**Entry 1: Opening Due Amount Cleared (using advance)**
-```
-DR Accounts Receivable (Customer)    PKR 5,000.00
-CR Customer Advance (Liability)      PKR 5,000.00
-```
-- **Description:** "Opening due amount cleared using advance payment"
+- Generate data for the last 12 months (default behavior)
+- Include all 12 months even if no purchase orders exist (value = 0, count = 0)
+- Months should be ordered chronologically (oldest to newest)
+- Month abbreviations should match standard English abbreviations (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec)
 
-**Entry 2: Invoice Payment (using advance)**
-```
-DR Accounts Receivable (Customer)    PKR 2,000.00
-CR Customer Advance (Liability)      PKR 2,000.00
-```
-- **Description:** "Invoice payment using advance (auto-applied)"
+### SQL Query Example (Pseudo-code)
 
-**Entry 3: Remaining Advance to Balance**
-```
-DR Cash/Bank Account (Asset)         PKR 10,000.00
-CR Customer Advance (Liability)      PKR 7,000.00  (5,000 + 2,000 used)
-CR Customer Advance (Liability)      PKR 3,000.00  (remaining)
-```
-**OR** (more accurate):
-```
-DR Cash/Bank Account (Asset)         PKR 10,000.00
-CR Accounts Receivable (Customer)    PKR 7,000.00  (clearing AR)
-CR Customer Advance (Liability)      PKR 3,000.00  (remaining to advance)
-```
-
-**Wait - Let me reconsider the accounting flow:**
-
-Actually, the correct flow should be:
-
-**Entry 1: Advance Payment Received**
-```
-DR Cash/Bank Account (Asset)         PKR 10,000.00
-CR Customer Advance (Liability)      PKR 10,000.00
-```
-
-**Entry 2: Opening Due Cleared (using advance)**
-```
-DR Customer Advance (Liability)      PKR 5,000.00
-CR Accounts Receivable (Customer)    PKR 5,000.00
-```
-
-**Entry 3: Invoice Payment (using advance)**
-```
-DR Customer Advance (Liability)      PKR 2,000.00
-CR Accounts Receivable (Customer)    PKR 2,000.00
-```
-
-**Net Result:**
-- Cash Account: +PKR 10,000 (debit)
-- Customer Advance Account: +PKR 3,000 (credit) [10,000 - 5,000 - 2,000]
-- Accounts Receivable: -PKR 7,000 (credit/debit) [reduced by 7,000]
-
-### Implementation Code
-
-```php
-// When payment_type = "advance_payment"
-$advanceAmount = $payment->amount;
-$remainingAdvance = $advanceAmount;
-
-// Step 1: Receive advance payment
-$cashAccountId = $payment->payment_account_id;
-$advanceAccountId = getAccountMapping('pos_advance');
-
-JournalEntryService::create([
-    'date' => $payment->payment_date,
-    'voucher_type' => 'Advance Payment',
-    'reference_type' => 'customer_payment',
-    'reference_id' => $payment->id,
-    'description' => "Advance payment received from customer",
-    'lines' => [
-        [
-            'account_id' => $cashAccountId,
-            'debit' => $advanceAmount,
-            'credit' => 0,
-            'party_type' => 'customer',
-            'party_id' => $payment->customer_id,
-        ],
-        [
-            'account_id' => $advanceAccountId,
-            'debit' => 0,
-            'credit' => $advanceAmount,
-            'party_type' => 'customer',
-            'party_id' => $payment->customer_id,
-        ]
-    ]
-]);
-
-// Step 2: Apply to opening due amount
-$amountAppliedToOpening = 0;
-if ($customer->opening_due_amount > 0 && $remainingAdvance > 0) {
-    $amountAppliedToOpening = min($customer->opening_due_amount, $remainingAdvance);
-    
-    $arAccountId = getAccountMapping('pos_ar');
-    
-    JournalEntryService::create([
-        'date' => $payment->payment_date,
-        'voucher_type' => 'Opening Balance Payment (Advance)',
-        'reference_type' => 'customer_payment',
-        'reference_id' => $payment->id,
-        'description' => "Opening due amount cleared using advance payment",
-        'lines' => [
-            [
-                'account_id' => $advanceAccountId,
-                'debit' => $amountAppliedToOpening,
-                'credit' => 0,
-                'party_type' => 'customer',
-                'party_id' => $payment->customer_id,
-            ],
-            [
-                'account_id' => $arAccountId,
-                'debit' => 0,
-                'credit' => $amountAppliedToOpening,
-                'party_type' => 'customer',
-                'party_id' => $payment->customer_id,
-            ]
-        ]
-    ]);
-    
-    // Update customer opening due amount
-    $customer->opening_due_amount = max(0, $customer->opening_due_amount - $amountAppliedToOpening);
-    $remainingAdvance -= $amountAppliedToOpening;
-}
-
-// Step 3: Apply to outstanding invoices (existing logic)
-// ... (continue with invoice payment logic)
-
-// Step 4: Remaining advance already in Customer Advance account
-// (No additional journal entry needed - already credited in Step 1)
+```sql
+-- Generate last 12 months
+WITH months AS (
+  SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n MONTH), '%Y-%m') AS period,
+         DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n MONTH), '%b') AS month_abbr
+  FROM (
+    SELECT 0 AS n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION
+    SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11
+  ) months
+)
+SELECT 
+  m.period,
+  m.month_abbr,
+  COALESCE(SUM(po.total), 0) AS value,
+  COALESCE(COUNT(po.id), 0) AS count
+FROM months m
+LEFT JOIN purchase_orders po 
+  ON DATE_FORMAT(po.order_date, '%Y-%m') = m.period
+  AND po.status != 'cancelled'  -- Exclude cancelled orders
+  AND (po.supplier_id = :supplier_id OR :supplier_id IS NULL)
+  AND (po.status = :status OR :status IS NULL)
+GROUP BY m.period, m.month_abbr
+ORDER BY m.period ASC;
 ```
 
 ---
 
 ## Business Rules
 
-### 1. Priority Order (MUST BE FOLLOWED)
+1. **Order Date:** Use `purchase_orders.order_date` to determine which month a purchase order belongs to
+2. **Cancelled Orders:** Exclude purchase orders with `status = 'cancelled'` from calculations (unless explicitly requested)
+3. **Amount Field:** Use `purchase_orders.total` field (already includes subtotal, tax, and discount)
+4. **Month Format:** Month abbreviations should be 3-letter uppercase (JUL, AUG, etc.) - frontend will handle formatting
+5. **Zero Values:** Include months with zero purchase orders (value = 0, count = 0) to maintain chart continuity
+6. **Date Range:** Default to last 12 months if `start_date` and `end_date` are not provided
+7. **Precision:** Purchase order amounts should be returned with 2 decimal places
 
-1. **Opening Due Amount** - Apply advance to clear opening due amount FIRST
-2. **Outstanding Invoices** - Then apply to invoices (oldest first)
-3. **Advance Balance** - Only remaining amount goes to advance balance
+---
 
-### 2. Opening Due Amount Cannot Be Negative
+## Filtering Options
 
-- Opening due amount should never go below 0
-- If advance amount > opening due amount, use exact amount to clear it
-- Example: Opening due = 3,000, Advance = 5,000 → Clear 3,000, remaining 2,000
+### By Supplier
+- If `supplier_id` is provided, filter purchase orders by `purchase_orders.supplier_id`
+- Useful for supplier-specific trend analysis
 
-### 3. Customer Status Update
+### By Status
+- If `status` is provided, filter purchase orders by `purchase_orders.status`
+- Valid values: 'draft', 'sent', 'partial', 'received', 'cancelled'
+- By default, exclude 'cancelled' orders
 
-- If opening due amount is cleared AND no unpaid invoices: `status = "clear"`
-- Otherwise: `status = "has_dues"`
+### By Date Range
+- If `start_date` and `end_date` are provided, generate periods for that range
+- If only one date is provided, use default range
+- Ensure all months in the range are included (even with zero values)
 
-### 4. Payment Records
+---
 
-- Create payment record for opening due amount clearing
-- Link to original advance payment
-- Track amount applied for reporting
+## Error Handling
+
+**400 Bad Request:**
+- Invalid date format
+- Invalid status value
+- Invalid supplier_id
+
+**401 Unauthorized:**
+- Missing or invalid authentication token
+
+**500 Internal Server Error:**
+- Database errors
+- Calculation errors
+
+**Response Format for Errors:**
+```json
+{
+  "message": "Error description",
+  "errors": {
+    "field_name": ["Error detail"]
+  }
+}
+```
+
+---
+
+## Frontend Integration
+
+The frontend component `PurchaseOrderTrendsChart.tsx` expects:
+
+1. **Data Format:** Array of objects with `month` (string) and `value` (number) properties
+2. **Month Format:** Frontend will format as "{month_abbr} (Amt)" (e.g., "Jul (Amt)")
+3. **Mapping:** Frontend will map:
+   - `month_abbr` → `month` (with "(Amt)" suffix added)
+   - `value` → `value`
+4. **Chart Type:** Area chart with pink gradient fill
+5. **Y-Axis:** Automatically scales based on max value (default domain 0-600000, but will adjust)
+
+**Frontend API Call (to be implemented):**
+```typescript
+// In app/lib/apiClient.ts
+async getPurchaseOrderTrends(params?: {
+  start_date?: string;
+  end_date?: string;
+  period_type?: "monthly" | "weekly" | "quarterly" | "yearly";
+  supplier_id?: number;
+  status?: string;
+}): Promise<{
+  data: Array<{
+    period: string;
+    month_abbr: string;
+    value: number;
+    count: number;
+  }>;
+  summary: {
+    total_amount: number;
+    total_orders: number;
+    average_order_value: number;
+    period_start: string;
+    period_end: string;
+  };
+  generated_at: string;
+}> {
+  const queryParams = new URLSearchParams();
+  if (params?.start_date) queryParams.append("start_date", params.start_date);
+  if (params?.end_date) queryParams.append("end_date", params.end_date);
+  if (params?.period_type) queryParams.append("period_type", params.period_type);
+  if (params?.supplier_id) queryParams.append("supplier_id", String(params.supplier_id));
+  if (params?.status) queryParams.append("status", params.status);
+  
+  const queryString = queryParams.toString();
+  const url = `/purchase-orders/trends${queryString ? `?${queryString}` : ""}`;
+  
+  return await apiClient.get(url);
+}
+```
 
 ---
 
 ## Testing Scenarios
 
-### Test Case 1: Advance Exactly Clears Opening Due
-- **Setup:** Opening due = 5,000
-- **Action:** Receive advance = 5,000
-- **Expected:**
-  - Opening due: 0 (cleared)
-  - Advance balance: 0
-  - Customer status: "clear"
+### Test Case 1: Basic Monthly Aggregation
+- **Setup:** Multiple purchase orders across different months
+- **Expected:** Returns all months with aggregated amounts
 
-### Test Case 2: Advance More Than Opening Due
-- **Setup:** Opening due = 5,000
-- **Action:** Receive advance = 10,000
-- **Expected:**
-  - Opening due: 0 (cleared)
-  - Advance balance: 5,000 (remaining)
-  - Journal entries: Correct debits/credits
+### Test Case 2: Empty Months
+- **Setup:** Some months have no purchase orders
+- **Expected:** Includes all months with value = 0 and count = 0
 
-### Test Case 3: Advance Less Than Opening Due
-- **Setup:** Opening due = 10,000
-- **Action:** Receive advance = 5,000
-- **Expected:**
-  - Opening due: 5,000 (reduced)
-  - Advance balance: 0 (all used)
-  - Customer status: "has_dues"
+### Test Case 3: Single Month
+- **Setup:** All purchase orders in one month
+- **Expected:** Returns that month with correct total, all others with zero
 
-### Test Case 4: Opening Due + Invoices
-- **Setup:** Opening due = 5,000, Invoice = 2,000
-- **Action:** Receive advance = 10,000
-- **Expected:**
-  - Opening due: 0 (cleared)
-  - Invoice: Paid
-  - Advance balance: 3,000 (remaining)
+### Test Case 4: Filtered by Supplier
+- **Setup:** Purchase orders from multiple suppliers
+- **Expected:** Only includes purchase orders from specified supplier
 
-### Test Case 5: No Opening Due (Existing Behavior)
-- **Setup:** Opening due = 0
-- **Action:** Receive advance = 5,000
-- **Expected:**
-  - Opening due: 0 (unchanged)
-  - Advance balance: 5,000
-  - Existing auto-apply to invoices logic works
+### Test Case 5: Filtered by Status
+- **Setup:** Purchase orders with different statuses
+- **Expected:** Only includes purchase orders with specified status
 
----
+### Test Case 6: Cancelled Orders
+- **Setup:** Purchase orders including cancelled ones
+- **Expected:** Cancelled orders excluded by default (value = 0 for those months)
 
-## Frontend Considerations
-
-The frontend already handles advance payment auto-apply responses. It expects:
-- `auto_applied_payments` array (for invoices)
-- `advance_summary` object (with totals)
-
-**Update Required:**
-- Frontend should display `opening_due_cleared` information if provided
-- Update advance summary display to show opening due amount cleared
-
-**No Breaking Changes:** If backend doesn't provide `opening_due_cleared`, frontend should continue to work (backward compatible).
+### Test Case 7: Date Range
+- **Setup:** Purchase orders across multiple years
+- **Expected:** Only includes months within the specified date range
 
 ---
 
 ## Implementation Checklist
 
-- [ ] Update advance payment processing to check opening due amount first
-- [ ] Apply advance to opening due amount before invoices
-- [ ] Update customer opening_due_amount field when cleared
-- [ ] Create journal entries for opening due clearing
-- [ ] Update customer status when opening due is cleared
-- [ ] Add `opening_due_cleared` to response structure
-- [ ] Add `amount_applied_to_opening_due` to advance_summary
-- [ ] Update payment records creation (handle NULL invoice_id for opening balance)
-- [ ] Update COA journal entries (proper debits/credits)
-- [ ] Unit tests for all scenarios
-- [ ] Integration tests for complete flow
-- [ ] Manual testing
+- [ ] Create `/purchase-orders/trends` endpoint
+- [ ] Implement SQL query to aggregate purchase orders by month
+- [ ] Generate last 12 months (or date range) with zero values for empty months
+- [ ] Add query parameter support (start_date, end_date, period_type, supplier_id, status)
+- [ ] Calculate summary totals (total_amount, total_orders, average_order_value)
+- [ ] Exclude cancelled orders by default
+- [ ] Format month abbreviations correctly
+- [ ] Sort results chronologically
+- [ ] Add error handling and validation
+- [ ] Write unit tests for aggregation logic
+- [ ] Write integration tests for API endpoint
+- [ ] Update API documentation
+- [ ] Test with real data
 
 ---
 
 ## Important Notes
 
-1. **Opening Due Amount is NOT an Invoice:** It's stored in `customers.opening_due_amount` field, not as an invoice record. Handle it separately.
-
-2. **COA Accounting:** When advance clears opening due:
-   - Customer Advance account is debited (reduced)
-   - Accounts Receivable is credited (reduced)
-   - Cash account was already debited when advance received
-
-3. **No Double Counting:** Make sure opening due amount is only cleared once per advance payment.
-
-4. **Atomic Transactions:** All operations (payment creation, customer update, journal entries) must be in a single database transaction.
+1. **Performance:** Consider adding database indexes on `purchase_orders.order_date` and `purchase_orders.supplier_id` if not already present
+2. **Caching:** This endpoint is a good candidate for caching (cache for 5-10 minutes) since purchase order trends don't change frequently
+3. **Real-time Updates:** The chart should refresh when new purchase orders are created (frontend will handle refresh)
+4. **Consistency:** Ensure `purchase_orders.total` field is always up-to-date and accurate
+5. **Month Ordering:** Always return months in chronological order (oldest to newest) for proper chart display
 
 ---
 
 ## Summary
 
 **Key Points:**
-- Advance payments MUST clear opening due amounts FIRST
-- Only remaining advance goes to advance balance
-- COA must reflect all transactions correctly
-- Customer status must update appropriately
-- Response must include opening due clearing details
+- Endpoint: `GET /purchase-orders/trends`
+- Aggregates `purchase_orders.total` by month based on `order_date`
+- Returns last 12 months by default (or specified date range)
+- Includes all months even with zero values
+- Excludes cancelled orders by default
+- Supports filtering by supplier and status
+- Returns summary statistics (total amount, count, average)
+- Month format: 3-letter abbreviation (Jan, Feb, Mar, etc.)
 
-**The backend must ensure that advance and due amounts never coexist - advance always clears dues first.**
