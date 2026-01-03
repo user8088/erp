@@ -151,8 +151,14 @@ export default function PurchaseOrderDetailPage() {
     return null;
   }
 
-  const totalReceived = po.items?.reduce((sum, item) => sum + item.quantity_received, 0) || 0;
-  const totalOrdered = po.items?.reduce((sum, item) => sum + item.quantity_ordered, 0) || 0;
+  const totalReceived = po.items?.reduce((sum, item) => {
+    const qty = Number(item.quantity_received) || 0;
+    return sum + qty;
+  }, 0) || 0;
+  const totalOrdered = po.items?.reduce((sum, item) => {
+    const qty = Number(item.quantity_ordered) || 0;
+    return sum + qty;
+  }, 0) || 0;
 
   return (
     <div className="max-w-6xl mx-auto">

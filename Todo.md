@@ -1,517 +1,130 @@
-# Customer Invoice Payment Using Advance Balance - Backend Requirements
+# Advance Payment Auto-Clear Opening Due Amount - Backend Requirements
 
 ## Overview
 
-The frontend now supports paying customer invoices using the customer's advance balance/credit. This document specifies the backend API requirements for implementing this feature.
-
-## Feature Description
-
-When recording an invoice payment, users can now choose to pay using the customer's existing advance balance instead of requiring a payment account. This allows customers to use their prepaid/advance credits to settle invoices.
-
-## API Changes
-
-### Update `POST /api/customers/{customer_id}/payments` Endpoint
-
-#### Request Payload Updates
-
-The endpoint should accept a new `use_advance` boolean field for invoice payments.
-
-**Updated Request Payload Structure:**
-
-```json
-{
-  "customer_id": number (required),
-  "payment_type": "invoice_payment" | "advance_payment" | "refund" (required),
-  "invoice_id": number (required if payment_type is "invoice_payment"),
-  "amount": number (required, > 0),
-  "payment_method": "cash" | "bank_transfer" | "cheque" | "card" | "other" (optional),
-  "payment_account_id": number (required if use_advance is false or not provided),
-  "use_advance": boolean (optional, default: false, only valid for invoice_payment),
-  "payment_date": string (required, format: YYYY-MM-DD),
-  "reference_number": string (optional),
-  "notes": string (optional)
-}
-```
-
-**Validation Rules:**
-
-1. **Payment Mode Selection:**
-   - If `use_advance` is `true`:
-     - `payment_type` must be `"invoice_payment"`
-     - `payment_account_id` is NOT required (should be ignored if provided)
-     - `invoice_id` is required
-   - If `use_advance` is `false` or not provided:
-     - `payment_account_id` is required
-     - Normal payment processing applies
-
-2. **Advance Balance Validation:**
-   - Customer must have sufficient advance balance
-   - `amount` must be <= customer's available advance balance
-   - If insufficient balance, return error: `"Insufficient advance balance. Available: PKR {balance}"`
-   - Status: 422 Unprocessable Entity
-
-3. **Invoice Validation:**
-   - Invoice must exist and belong to the customer
-   - Invoice must have outstanding balance >= `amount`
-   - Invoice status must allow payment (e.g., not cancelled)
-
-## Payment Processing Logic
-
-### When `use_advance = true`:
-
-1. **Validate Advance Balance:**
-   - Check customer's current advance balance
-   - Ensure `amount <= advance_balance`
-   - Return error if insufficient
-
-2. **Process Payment:**
-   - Create payment record with:
-     - `payment_type = "invoice_payment"`
-     - `invoice_id` (from request)
-     - `amount` (from request)
-     - `payment_account_id = NULL` (no account needed)
-     - `use_advance = true` (store this flag for tracking)
-   - Update invoice:
-     - Reduce invoice outstanding balance by `amount`
-     - Update invoice status if fully paid
-   - Update customer advance balance:
-     - Reduce `customer.advance_balance` by `amount`
-     - Create advance transaction record with `transaction_type = "used"`
-
-3. **Accounting Entries:**
-   - **Debit:** Accounts Receivable (Customer) - `amount`
-   - **Credit:** Customer Advance (Liability Account) - `amount`
-   - **Note:** No cash/bank account involved since advance is being used
-
-### When `use_advance = false` (Normal Payment):
-
-- Process as before:
-  - Create payment record with `payment_account_id`
-  - Update invoice outstanding balance
-  - Create journal entry:
-    - DR Cash/Bank Account (from `payment_account_id`)
-    - CR Accounts Receivable (Customer)
-
-## Database Schema Considerations
-
-### Customer Payments Table
-
-Ensure the `customer_payments` table supports the `use_advance` flag:
-
-```sql
--- Add column if not exists
-ALTER TABLE customer_payments 
-ADD COLUMN use_advance BOOLEAN DEFAULT FALSE;
-
--- Add index for querying advance payments
-CREATE INDEX idx_customer_payments_use_advance ON customer_payments(use_advance) WHERE use_advance = TRUE;
-```
-
-**Business Rules:**
-- `use_advance` can only be `true` when `payment_type = 'invoice_payment'`
-- When `use_advance = true`, `payment_account_id` should be `NULL`
-- When `use_advance = false`, `payment_account_id` is required
-
-### Customer Advance Transactions
-
-Ensure advance transactions are properly tracked:
-
-- When `use_advance = true`, create an advance transaction record:
-  - `transaction_type = "used"`
-  - `amount = payment amount`
-  - `reference_type = "customer_payment"`
-  - `reference_id = payment.id`
-  - `description = "Used for invoice payment"`
-
-## Response Updates
-
-**Response Structure (unchanged):**
-
-```json
-{
-  "payment": {
-    "id": number,
-    "customer_id": number,
-    "payment_type": "invoice_payment",
-    "invoice_id": number,
-    "amount": number,
-    "payment_method": string | null,
-    "payment_account_id": number | null,
-    "use_advance": boolean,
-    "payment_date": "YYYY-MM-DD",
-    "reference_number": string | null,
-    "notes": string | null,
-    "created_at": "YYYY-MM-DD HH:MM:SS",
-    "updated_at": "YYYY-MM-DD HH:MM:SS"
-  },
-  "message": "Payment recorded successfully."
-}
-```
-
-**Response Notes:**
-- Include `use_advance` field in response
-- If `use_advance = true`, `payment_account_id` will be `null`
-- Include updated customer advance balance in response (optional but recommended)
-
-## Error Handling
-
-Return appropriate validation errors with clear messages:
-
-1. **Insufficient Advance Balance:**
-   - Error: `"Insufficient advance balance. Available: PKR {balance}"`
-   - Status: 422 Unprocessable Entity
-
-2. **Invalid Payment Type:**
-   - Error: `"use_advance can only be used with invoice_payment"`
-   - Status: 422 Unprocessable Entity
-
-3. **Missing Invoice:**
-   - Error: `"Invoice ID is required when use_advance is true"`
-   - Status: 422 Unprocessable Entity
-
-4. **Invalid Invoice:**
-   - Error: `"Invoice not found or does not belong to this customer"`
-   - Status: 404 Not Found or 422 Unprocessable Entity
-
-## Accounting Integration
-
-### Account Mappings Required
-
-The system requires these account mappings:
-
-| Mapping Type | Account Type | Required | Description |
-|--------------|--------------|----------|-------------|
-| `customer_advance` | Liability | Yes | Customer Advance/Credit Account |
-
-### Journal Entry Creation
-
-**When `use_advance = true`:**
-
-```
-Journal Entry:
-  DR Accounts Receivable (Customer) - amount
-  CR Customer Advance (Liability Account) - amount
-```
-
-**When `use_advance = false` (Normal Payment):**
-
-```
-Journal Entry:
-  DR Cash/Bank Account (from payment_account_id) - amount
-  CR Accounts Receivable (Customer) - amount
-```
-
-## Business Rules
-
-1. **Advance Balance Calculation:**
-   - Customer advance balance = Sum of all advance payments received - Sum of all advance used - Sum of all advance refunded
-   - Must be recalculated after each payment using advance
-
-2. **Payment Priority:**
-   - Users can choose to use advance or regular payment
-   - Cannot use both simultaneously (either advance OR payment account)
-
-3. **Partial Payments:**
-   - Can use partial advance balance if amount > available advance
-   - User must pay remaining amount through regular payment account
-   - **Note:** Frontend currently doesn't support split payments (advance + cash), but backend should be prepared for this
-
-4. **Advance Transaction Tracking:**
-   - Every use of advance must create a transaction record
-   - Link transaction to the payment record
-   - Maintain audit trail
-
-## Testing Requirements
-
-1. **Unit Tests:**
-   - Advance balance validation
-   - Payment processing with advance
-   - Accounting entry creation
-   - Advance transaction recording
-
-2. **Integration Tests:**
-   - Full payment flow using advance
-   - Insufficient balance handling
-   - Multiple payments using advance
-   - Advance balance updates
-
-3. **API Tests:**
-   - Valid payment with `use_advance = true`
-   - Invalid payment (insufficient balance)
-   - Invalid payment type with `use_advance = true`
-   - Missing invoice with `use_advance = true`
-
-## Example Request/Response
-
-### Example Request (Using Advance)
-
-```json
-POST /api/customers/123/payments
-{
-  "customer_id": 123,
-  "payment_type": "invoice_payment",
-  "invoice_id": 456,
-  "amount": 5000.00,
-  "use_advance": true,
-  "payment_date": "2025-01-15",
-  "notes": "Paid using customer advance balance"
-}
-```
-
-### Example Response
-
-```json
-{
-  "payment": {
-    "id": 789,
-    "customer_id": 123,
-    "payment_type": "invoice_payment",
-    "invoice_id": 456,
-    "amount": 5000.00,
-    "payment_method": null,
-    "payment_account_id": null,
-    "use_advance": true,
-    "payment_date": "2025-01-15",
-    "reference_number": null,
-    "notes": "Paid using customer advance balance",
-    "created_at": "2025-01-15T10:30:00Z",
-    "updated_at": "2025-01-15T10:30:00Z"
-  },
-  "customer": {
-    "advance_balance": 3000.00
-  },
-  "message": "Payment recorded successfully using customer advance."
-}
-```
-
-## Important Notes
-
-### Authentication & CORS
-
-**CRITICAL:** The endpoint should:
-- **NOT redirect** unauthenticated requests to `/login` (this causes CORS errors in the frontend)
-- Return HTTP status codes instead:
-  - `401 Unauthorized` if the user is not authenticated
-  - `403 Forbidden` if the user doesn't have permission
-- Include proper CORS headers in the response (especially `Access-Control-Allow-Origin`)
-- Accept Bearer token authentication via `Authorization: Bearer {token}` header
-
-### Backward Compatibility
-
-- The endpoint must maintain backward compatibility
-- If `use_advance` is not provided or `false`, process as normal payment
-- Existing payment records without `use_advance` field should default to `false`
-
-### Chart of Accounts Integration
-
-- Customer advance must be tracked as a liability account
-- All advance transactions must be properly recorded
-- Journal entries must follow double-entry bookkeeping principles
+**CRITICAL BUSINESS RULE:** Advance payments and opening due amounts cannot coexist. When a customer receives an advance payment, it must FIRST be applied to clear the opening due amount (if any), THEN to outstanding invoices, and ONLY THEN should any remaining amount be added to the customer's advance balance.
+
+**Example Scenario:**
+- Customer has opening due amount: PKR 5,000
+- Customer receives advance payment: PKR 5,000
+- Result: Opening due amount cleared (PKR 0), Advance balance: PKR 0 (all used to clear dues)
 
 ---
 
-## Advance Payment Auto-Apply to Outstanding Invoices
+## Payment Processing Logic for Advance Payments
 
-### Overview
+### Updated Algorithm (Including Opening Due Amount)
 
-When recording an `advance_payment`, the system should automatically check for outstanding invoices and apply the advance amount to pay them first. Only the remaining amount (after paying invoices) should be added to the customer's advance balance.
+When `payment_type = "advance_payment"`, the backend must follow this priority order:
 
-### Problem Statement
+1. **Apply to Opening Due Amount FIRST** (if exists)
+2. **Apply to Outstanding Invoices** (oldest first)
+3. **Add Remaining to Advance Balance** (only after clearing dues)
 
-**Current Issue:** When advance payment is recorded and there are outstanding invoices:
-- Backend automatically applies advance to invoices (correct behavior)
-- However, remaining advance balance is not calculated correctly
-- Example: Adding 3300 advance that clears a 1700 invoice should show 1600 remaining, but currently shows 3300
-- Users have no visibility into what happened (which invoices were paid, how much was applied)
+### Payment Processing Steps
 
-### Payment Processing Logic for Advance Payments
+```
+Input: Advance Amount = 5,000
+Customer State:
+  - Opening due amount: 5,000
+  - Outstanding Invoices: None
 
-#### When `payment_type = "advance_payment"`:
+Process:
+1. Apply 5,000 to Opening Due Amount
+   - Opening due amount remaining = 5,000 - 5,000 = 0
+   - Advance remaining = 5,000 - 5,000 = 0
+   - Opening due amount cleared ✅
 
-**New Behavior:**
+2. No outstanding invoices to pay
+3. No remaining advance (all used to clear opening due)
+   - Advance balance = 0 ✅
 
-1. **Auto-Apply to Outstanding Invoices:**
-   - When advance payment is recorded, automatically check for outstanding invoices
-   - Get all outstanding invoices for the customer (ordered by invoice_date ASC or due_date ASC)
-   - Apply advance amount to pay invoices sequentially until advance is exhausted or all invoices are paid
-   - Only the remaining amount (after paying invoices) should be added to advance balance
+Final Result:
+- Opening due amount: 0 (cleared)
+- Advance balance: 0 (all used to clear dues)
+- Customer status: "clear" (no dues)
+```
 
-2. **Payment Processing Algorithm:**
-   ```
-   Input: Advance Amount = 3300
-   Outstanding Invoices:
-     - Invoice #001: 1700 (due)
-     - Invoice #002: 500 (due)
-   
-   Process:
-   1. Apply 1700 to Invoice #001 (fully paid)
-      - Advance remaining = 3300 - 1700 = 1600
-   2. Apply 500 to Invoice #002 (fully paid)
-      - Advance remaining = 1600 - 500 = 1100
-   3. Remaining advance = 1100
-   4. Add 1100 to customer advance balance
-   5. Create payment records for each invoice paid (using advance)
-   6. Create advance transaction for remaining amount
-   ```
+### More Complex Example
 
-3. **Create Multiple Payment Records:**
-   - For each invoice paid: Create a payment record with:
-     - `payment_type = "invoice_payment"`
-     - `invoice_id = {invoice_id}`
-     - `amount = {amount_applied_to_invoice}`
-     - `use_advance = true`
-     - `payment_account_id = NULL`
-     - `payment_date = {advance_payment_date}`
-     - `payment_method = {from_advance_payment}`
-     - `reference_number = {from_advance_payment}`
-     - `notes = "Auto-applied from advance payment" or {from_advance_payment}`
-   - For remaining advance: Create advance transaction with:
-     - `transaction_type = "received"`
-     - `amount = {remaining_advance_amount}`
-     - `reference_type = "customer_payment"`
-     - `reference_id = {advance_payment.id}`
-     - `description = "Advance payment (remaining after invoice payments)"`
+```
+Input: Advance Amount = 10,000
+Customer State:
+  - Opening due amount: 5,000
+  - Outstanding Invoices:
+    - Invoice #001: 2,000
+    - Invoice #002: 1,000
 
-4. **Invoice Payment Logic:**
-   - For each invoice:
-     - If `advance_remaining >= invoice_due_amount`:
-       - Pay full invoice: `amount_applied = invoice_due_amount`
-       - Update invoice: `outstanding_balance = 0`, `status = "paid"`
-       - Advance remaining = advance_remaining - invoice_due_amount
-     - If `advance_remaining < invoice_due_amount`:
-       - Pay partial invoice: `amount_applied = advance_remaining`
-       - Update invoice: `outstanding_balance = invoice_due_amount - advance_remaining`, `status = "partially_paid"`
-       - Advance remaining = 0
+Process:
+1. Apply 5,000 to Opening Due Amount
+   - Opening due amount remaining = 0 ✅
+   - Advance remaining = 10,000 - 5,000 = 5,000
 
-5. **Accounting Entries:**
-   - For each invoice paid (using advance):
-     - DR Accounts Receivable (Customer) - amount applied
-     - CR Customer Advance (Liability Account) - amount applied
-   - For remaining advance:
-     - DR Cash/Bank Account (from `payment_account_id` of advance payment) - remaining amount
-     - CR Customer Advance (Liability Account) - remaining amount
+2. Apply 2,000 to Invoice #001
+   - Invoice #001: Paid ✅
+   - Advance remaining = 5,000 - 2,000 = 3,000
 
-### Updated Response Structure for Advance Payments
+3. Apply 1,000 to Invoice #002
+   - Invoice #002: Paid ✅
+   - Advance remaining = 3,000 - 1,000 = 2,000
 
-**When `payment_type = "advance_payment"`:**
+4. Remaining advance = 2,000
+   - Add 2,000 to customer advance balance ✅
 
-```json
-{
-  "payment": {
-    "id": number,
-    "customer_id": number,
-    "payment_type": "advance_payment",
-    "amount": number,
-    "payment_method": string,
-    "payment_account_id": number,
-    "payment_date": "YYYY-MM-DD",
-    "reference_number": string | null,
-    "notes": string | null,
-    "created_at": "YYYY-MM-DD HH:MM:SS",
-    "updated_at": "YYYY-MM-DD HH:MM:SS"
-  },
-  "auto_applied_payments": [
-    {
-      "id": number,
-      "invoice_id": number,
-      "invoice_number": string,
-      "amount_applied": number,
-      "invoice_status_after": "paid" | "partially_paid",
-      "remaining_invoice_balance": number
-    }
-  ],
-  "advance_summary": {
-    "total_advance_received": number,
-    "amount_applied_to_invoices": number,
-    "remaining_advance_balance": number,
-    "customer_new_advance_balance": number
-  },
-  "message": "Advance payment recorded. Applied PKR {amount} to {count} invoice(s). Remaining balance: PKR {remaining}"
+Final Result:
+- Opening due amount: 0 (cleared)
+- Invoice #001: Paid
+- Invoice #002: Paid
+- Advance balance: 2,000
+```
+
+---
+
+## Implementation Details
+
+### Database Updates Required
+
+#### 1. Update Customer Opening Due Amount
+
+**When advance payment clears opening due amount:**
+
+```php
+// After processing advance payment
+if ($customer->opening_due_amount > 0 && $amountAppliedToOpening > 0) {
+    $customer->opening_due_amount = max(0, $customer->opening_due_amount - $amountAppliedToOpening);
+    $customer->status = ($customer->opening_due_amount == 0 && $unpaidInvoicesCount == 0) 
+        ? 'clear' 
+        : 'has_dues';
+    $customer->save();
 }
 ```
 
-**Response Fields:**
+#### 2. Create Payment Records
 
-- `auto_applied_payments`: Array of payment records created for invoices paid using advance
-  - Only included if invoices were paid
-  - Empty array if no outstanding invoices or advance was insufficient
-- `advance_summary`: Summary of advance application
-  - `total_advance_received`: Original advance payment amount
-  - `amount_applied_to_invoices`: Sum of all amounts applied to invoices
-  - `remaining_advance_balance`: Amount added to customer advance balance
-  - `customer_new_advance_balance`: Customer's new total advance balance after this transaction
-
-### Business Rules
-
-1. **Invoice Priority:**
-   - Apply advance to invoices in order: oldest first (by `invoice_date` ASC)
-   - Or by due date if available (earliest due date first)
-   - Continue until advance is exhausted or all invoices are paid
-
-2. **Advance Balance Calculation:**
-   - Customer advance balance = Previous balance + Remaining advance (after invoice payments)
-   - Remaining advance = Total advance received - Sum of all invoice payments
-   - Must be recalculated accurately after each advance payment
-
-3. **Payment Records:**
-   - Each invoice payment using advance creates a separate payment record
-   - All payment records should be linked to the original advance payment (via notes or reference)
-   - Maintain audit trail of which advance payment paid which invoices
-
-4. **Partial Invoice Payments:**
-   - If advance is insufficient to pay an invoice fully, pay partial amount
-   - Invoice status should be updated to "partially_paid"
-   - Remaining invoice balance should be tracked correctly
-
-5. **No Outstanding Invoices:**
-   - If no outstanding invoices exist, entire advance amount goes to advance balance
-   - `auto_applied_payments` will be empty array
-   - `amount_applied_to_invoices` will be 0
-
-### Database Considerations
-
-- Ensure all payment records are created in a single transaction
-- Update invoice statuses atomically
-- Recalculate customer advance balance correctly
-- Maintain referential integrity between payments and invoices
-- Track which payments were auto-applied vs manually created
-
-### Error Handling
-
-1. **No Outstanding Invoices:**
-   - Process normally: Add entire amount to advance balance
-   - Return response with empty `auto_applied_payments` array
-   - Status: 200 OK
-
-2. **Insufficient Advance for All Invoices:**
-   - Apply advance to invoices until exhausted
-   - Pay partial amount to last invoice if needed
-   - Add 0 to advance balance (all used)
-   - Return response with details of what was paid
-
-3. **Database Transaction Failure:**
-   - Rollback all changes if any part fails
-   - Return error: `"Failed to process advance payment. Please try again."`
-   - Status: 500 Internal Server Error
-
-### Example Request/Response
-
-#### Example Request (Advance Payment with Outstanding Invoices)
-
-```json
-POST /api/customers/123/payments
-{
-  "customer_id": 123,
-  "payment_type": "advance_payment",
-  "amount": 3300.00,
-  "payment_method": "cash",
-  "payment_account_id": 5,
-  "payment_date": "2025-01-15",
-  "notes": "Customer advance payment"
-}
+For opening due amount payment (using advance):
+```php
+CustomerPayment::create([
+    'customer_id' => $customer->id,
+    'payment_type' => 'invoice_payment', // Treat as invoice payment
+    'invoice_id' => null, // No invoice - it's opening balance
+    'amount' => $amountAppliedToOpening,
+    'use_advance' => true,
+    'payment_account_id' => null,
+    'payment_date' => $payment->payment_date,
+    'payment_method' => $payment->payment_method,
+    'reference_number' => $payment->reference_number,
+    'notes' => 'Auto-applied from advance payment to clear opening due amount',
+]);
 ```
 
-#### Example Response (With Auto-Applied Payments)
+**Note:** Since there's no actual invoice, you may need to handle this differently:
+- Option 1: Create payment record with `invoice_id = NULL` and special flag
+- Option 2: Create a virtual/synthetic invoice record for opening balance
+- Option 3: Track opening balance payments separately
+
+### Response Structure Updates
+
+**When `payment_type = "advance_payment"` with opening due amount cleared:**
 
 ```json
 {
@@ -519,7 +132,7 @@ POST /api/customers/123/payments
     "id": 789,
     "customer_id": 123,
     "payment_type": "advance_payment",
-    "amount": 3300.00,
+    "amount": 10000.00,
     "payment_method": "cash",
     "payment_account_id": 5,
     "payment_date": "2025-01-15",
@@ -527,625 +140,317 @@ POST /api/customers/123/payments
     "notes": "Customer advance payment",
     "created_at": "2025-01-15T10:30:00Z",
     "updated_at": "2025-01-15T10:30:00Z"
+  },
+  "opening_due_cleared": {
+    "amount_applied": 5000.00,
+    "opening_due_before": 5000.00,
+    "opening_due_after": 0.00,
+    "cleared": true
   },
   "auto_applied_payments": [
     {
       "id": 790,
       "invoice_id": 456,
       "invoice_number": "INV-20250110-001",
-      "amount_applied": 1700.00,
-      "invoice_status_after": "paid",
-      "remaining_invoice_balance": 0.00
-    }
-  ],
-  "advance_summary": {
-    "total_advance_received": 3300.00,
-    "amount_applied_to_invoices": 1700.00,
-    "remaining_advance_balance": 1600.00,
-    "customer_new_advance_balance": 1600.00
-  },
-  "message": "Advance payment recorded. Applied PKR 1,700.00 to 1 invoice(s). Remaining balance: PKR 1,600.00"
-}
-```
-
-#### Example Response (No Outstanding Invoices)
-
-```json
-{
-  "payment": {
-    "id": 791,
-    "customer_id": 123,
-    "payment_type": "advance_payment",
-    "amount": 5000.00,
-    "payment_method": "bank_transfer",
-    "payment_account_id": 8,
-    "payment_date": "2025-01-15",
-    "reference_number": "TXN-12345",
-    "notes": "Customer advance payment",
-    "created_at": "2025-01-15T10:30:00Z",
-    "updated_at": "2025-01-15T10:30:00Z"
-  },
-  "auto_applied_payments": [],
-  "advance_summary": {
-    "total_advance_received": 5000.00,
-    "amount_applied_to_invoices": 0.00,
-    "remaining_advance_balance": 5000.00,
-    "customer_new_advance_balance": 5000.00
-  },
-  "message": "Advance payment recorded. No outstanding invoices. Added PKR 5,000.00 to advance balance."
-}
-```
-
-#### Example Response (Multiple Invoices Paid)
-
-```json
-{
-  "payment": {
-    "id": 792,
-    "customer_id": 123,
-    "payment_type": "advance_payment",
-    "amount": 5000.00,
-    "payment_method": "cash",
-    "payment_account_id": 5,
-    "payment_date": "2025-01-15",
-    "reference_number": null,
-    "notes": "Customer advance payment",
-    "created_at": "2025-01-15T10:30:00Z",
-    "updated_at": "2025-01-15T10:30:00Z"
-  },
-  "auto_applied_payments": [
-    {
-      "id": 793,
-      "invoice_id": 456,
-      "invoice_number": "INV-20250110-001",
-      "amount_applied": 1700.00,
-      "invoice_status_after": "paid",
-      "remaining_invoice_balance": 0.00
-    },
-    {
-      "id": 794,
-      "invoice_id": 457,
-      "invoice_number": "INV-20250112-002",
-      "amount_applied": 500.00,
-      "invoice_status_after": "paid",
-      "remaining_invoice_balance": 0.00
-    },
-    {
-      "id": 795,
-      "invoice_id": 458,
-      "invoice_number": "INV-20250114-003",
       "amount_applied": 2000.00,
-      "invoice_status_after": "partially_paid",
-      "remaining_invoice_balance": 500.00
+      "invoice_status_after": "paid",
+      "remaining_invoice_balance": 0.00
     }
   ],
   "advance_summary": {
-    "total_advance_received": 5000.00,
-    "amount_applied_to_invoices": 4200.00,
-    "remaining_advance_balance": 800.00,
-    "customer_new_advance_balance": 800.00
+    "total_advance_received": 10000.00,
+    "amount_applied_to_opening_due": 5000.00,
+    "amount_applied_to_invoices": 2000.00,
+    "remaining_advance_balance": 3000.00,
+    "customer_new_advance_balance": 3000.00
   },
-  "message": "Advance payment recorded. Applied PKR 4,200.00 to 3 invoice(s). Remaining balance: PKR 800.00"
+  "message": "Advance payment recorded. Cleared opening due: PKR 5,000.00. Applied PKR 2,000.00 to 1 invoice(s). Remaining balance: PKR 3,000.00"
 }
 ```
 
-### Testing Scenarios
+### New Response Fields
 
-1. **Advance payment with no outstanding invoices:**
-   - All amount goes to advance balance
-   - `auto_applied_payments` is empty array
-   - `amount_applied_to_invoices` is 0
+Add to advance payment response:
 
-2. **Advance payment that fully pays one invoice:**
-   - Invoice is fully paid
-   - Remaining advance goes to advance balance
-   - `auto_applied_payments` contains one entry
-
-3. **Advance payment that partially pays invoice:**
-   - Invoice is partially paid
-   - No remaining advance (all used)
-   - `remaining_advance_balance` is 0
-
-4. **Advance payment that pays multiple invoices:**
-   - All invoices paid (fully or partially)
-   - Remaining advance goes to advance balance
-   - `auto_applied_payments` contains multiple entries
-
-5. **Advance payment larger than all invoices:**
-   - All invoices fully paid
-   - Large remaining advance balance
-   - Verify correct calculation
-
-### Important Notes
-
-- All operations must be atomic (use database transactions)
-- Invoice status updates must be accurate
-- Customer advance balance must be recalculated correctly
-- Payment records must be properly linked and auditable
-- Response must provide clear visibility into what happened
+| Field | Type | Description |
+|-------|------|-------------|
+| `opening_due_cleared` | object | Details about opening due amount clearing |
+| `opening_due_cleared.amount_applied` | number | Amount applied to clear opening due |
+| `opening_due_cleared.opening_due_before` | number | Opening due amount before payment |
+| `opening_due_cleared.opening_due_after` | number | Opening due amount after payment |
+| `opening_due_cleared.cleared` | boolean | Whether opening due was fully cleared |
+| `advance_summary.amount_applied_to_opening_due` | number | Total amount applied to opening due |
 
 ---
 
-## Advance Transaction Details Enhancement
+## Chart of Accounts (COA) Integration
 
-### Overview
+### Journal Entry Creation
 
-The frontend now displays detailed information about advance transactions, including which invoices were paid and what items were purchased. The backend must ensure that advance transaction responses include all necessary related data.
+#### 1. Advance Payment Received (with auto-clear opening due)
 
-### API Response Requirements
+**Scenario:** Customer receives PKR 10,000 advance, clears PKR 5,000 opening due, pays PKR 2,000 invoice, remaining PKR 3,000 to advance balance.
 
-#### `GET /api/customers/{customer_id}/payment-summary` Endpoint
+**Journal Entries:**
 
-**Updated Response Structure:**
+**Entry 1: Opening Due Amount Cleared (using advance)**
+```
+DR Accounts Receivable (Customer)    PKR 5,000.00
+CR Customer Advance (Liability)      PKR 5,000.00
+```
+- **Description:** "Opening due amount cleared using advance payment"
 
-The `advance_transactions` array in the payment summary response must include full details:
+**Entry 2: Invoice Payment (using advance)**
+```
+DR Accounts Receivable (Customer)    PKR 2,000.00
+CR Customer Advance (Liability)      PKR 2,000.00
+```
+- **Description:** "Invoice payment using advance (auto-applied)"
 
-```json
-{
-  "payment_summary": {
-    "advance_transactions": [
-      {
-        "id": number,
-        "customer_id": number,
-        "payment_id": number | null,
-        "payment": {
-          "id": number,
-          "payment_type": "invoice_payment" | "advance_payment" | "refund",
-          "invoice_id": number | null,
-          "invoice": {
-            "id": number,
-            "invoice_number": string,
-            "sale": {
-              "id": number,
-              "sale_type": "walk-in" | "delivery",
-              "items": [
-                {
-                  "id": number,
-                  "item_name": string,
-                  "quantity": number,
-                  "unit_price": number,
-                  "total_price": number
-                }
-              ]
-            }
-          } | null
-        } | null,
-        "sale_id": number | null,
-        "sale": {
-          "id": number,
-          "sale_type": "walk-in" | "delivery",
-          "items": [
-            {
-              "id": number,
-              "item_name": string,
-              "quantity": number,
-              "unit_price": number,
-              "total_price": number
-            }
-          ]
-        } | null,
-        "amount": number,
-        "balance": number,
-        "transaction_type": "received" | "used" | "refunded",
-        "reference": string | null,
-        "transaction_date": "YYYY-MM-DD",
-        "notes": string | null,
-        "created_at": "YYYY-MM-DD HH:MM:SS",
-        "updated_at": "YYYY-MM-DD HH:MM:SS"
-      }
+**Entry 3: Remaining Advance to Balance**
+```
+DR Cash/Bank Account (Asset)         PKR 10,000.00
+CR Customer Advance (Liability)      PKR 7,000.00  (5,000 + 2,000 used)
+CR Customer Advance (Liability)      PKR 3,000.00  (remaining)
+```
+**OR** (more accurate):
+```
+DR Cash/Bank Account (Asset)         PKR 10,000.00
+CR Accounts Receivable (Customer)    PKR 7,000.00  (clearing AR)
+CR Customer Advance (Liability)      PKR 3,000.00  (remaining to advance)
+```
+
+**Wait - Let me reconsider the accounting flow:**
+
+Actually, the correct flow should be:
+
+**Entry 1: Advance Payment Received**
+```
+DR Cash/Bank Account (Asset)         PKR 10,000.00
+CR Customer Advance (Liability)      PKR 10,000.00
+```
+
+**Entry 2: Opening Due Cleared (using advance)**
+```
+DR Customer Advance (Liability)      PKR 5,000.00
+CR Accounts Receivable (Customer)    PKR 5,000.00
+```
+
+**Entry 3: Invoice Payment (using advance)**
+```
+DR Customer Advance (Liability)      PKR 2,000.00
+CR Accounts Receivable (Customer)    PKR 2,000.00
+```
+
+**Net Result:**
+- Cash Account: +PKR 10,000 (debit)
+- Customer Advance Account: +PKR 3,000 (credit) [10,000 - 5,000 - 2,000]
+- Accounts Receivable: -PKR 7,000 (credit/debit) [reduced by 7,000]
+
+### Implementation Code
+
+```php
+// When payment_type = "advance_payment"
+$advanceAmount = $payment->amount;
+$remainingAdvance = $advanceAmount;
+
+// Step 1: Receive advance payment
+$cashAccountId = $payment->payment_account_id;
+$advanceAccountId = getAccountMapping('pos_advance');
+
+JournalEntryService::create([
+    'date' => $payment->payment_date,
+    'voucher_type' => 'Advance Payment',
+    'reference_type' => 'customer_payment',
+    'reference_id' => $payment->id,
+    'description' => "Advance payment received from customer",
+    'lines' => [
+        [
+            'account_id' => $cashAccountId,
+            'debit' => $advanceAmount,
+            'credit' => 0,
+            'party_type' => 'customer',
+            'party_id' => $payment->customer_id,
+        ],
+        [
+            'account_id' => $advanceAccountId,
+            'debit' => 0,
+            'credit' => $advanceAmount,
+            'party_type' => 'customer',
+            'party_id' => $payment->customer_id,
+        ]
     ]
-  }
+]);
+
+// Step 2: Apply to opening due amount
+$amountAppliedToOpening = 0;
+if ($customer->opening_due_amount > 0 && $remainingAdvance > 0) {
+    $amountAppliedToOpening = min($customer->opening_due_amount, $remainingAdvance);
+    
+    $arAccountId = getAccountMapping('pos_ar');
+    
+    JournalEntryService::create([
+        'date' => $payment->payment_date,
+        'voucher_type' => 'Opening Balance Payment (Advance)',
+        'reference_type' => 'customer_payment',
+        'reference_id' => $payment->id,
+        'description' => "Opening due amount cleared using advance payment",
+        'lines' => [
+            [
+                'account_id' => $advanceAccountId,
+                'debit' => $amountAppliedToOpening,
+                'credit' => 0,
+                'party_type' => 'customer',
+                'party_id' => $payment->customer_id,
+            ],
+            [
+                'account_id' => $arAccountId,
+                'debit' => 0,
+                'credit' => $amountAppliedToOpening,
+                'party_type' => 'customer',
+                'party_id' => $payment->customer_id,
+            ]
+        ]
+    ]);
+    
+    // Update customer opening due amount
+    $customer->opening_due_amount = max(0, $customer->opening_due_amount - $amountAppliedToOpening);
+    $remainingAdvance -= $amountAppliedToOpening;
 }
+
+// Step 3: Apply to outstanding invoices (existing logic)
+// ... (continue with invoice payment logic)
+
+// Step 4: Remaining advance already in Customer Advance account
+// (No additional journal entry needed - already credited in Step 1)
 ```
-
-### Backend Requirements
-
-1. **Include Related Data:**
-   - When returning `advance_transactions`, include:
-     - `payment` object with full details (if `payment_id` exists)
-     - `payment.invoice` object with invoice details (if `invoice_id` exists)
-     - `payment.invoice.sale` object with sale details (if sale exists)
-     - `sale` object with full details (if `sale_id` exists directly on transaction)
-     - `sale.items` array with item details
-
-2. **Transaction Description:**
-   - For "used" transactions: Include invoice number and sale items in `notes` or ensure invoice/sale data is available
-   - For "received" transactions: Include payment method and reference if available
-   - For "refunded" transactions: Include refund reason if available
-
-3. **Performance Considerations:**
-   - Use efficient joins/selects to avoid N+1 queries
-   - Consider caching if transaction data doesn't change frequently
-   - Limit the number of transactions returned (e.g., last 10-20 transactions)
-
-### Frontend Display Logic
-
-The frontend will display:
-
-- **For "Used" transactions:**
-  - Transaction type: "Used"
-  - Invoice number badge (if invoice exists)
-  - Description: "Used to pay Invoice #{invoice_number} - {item descriptions}"
-  - Example: "Used to pay Invoice #INV-001 - 1 bag fauji cement, 2 bags portland cement"
-
-- **For "Received" transactions:**
-  - Transaction type: "Received"
-  - Description: "Advance payment received" or custom notes
-  - Payment method and reference if available
-
-- **For "Refunded" transactions:**
-  - Transaction type: "Refunded"
-  - Description: "Advance refunded" or custom notes
-
-### Example Response
-
-```json
-{
-  "payment_summary": {
-    "advance_transactions": [
-      {
-        "id": 123,
-        "customer_id": 456,
-        "payment_id": 789,
-        "payment": {
-          "id": 789,
-          "payment_type": "invoice_payment",
-          "invoice_id": 101,
-          "invoice": {
-            "id": 101,
-            "invoice_number": "INV-20250115-001",
-            "sale": {
-              "id": 202,
-              "sale_type": "delivery",
-              "items": [
-                {
-                  "id": 301,
-                  "item_name": "fauji cement",
-                  "quantity": 1,
-                  "unit_price": 1700.00,
-                  "total_price": 1700.00
-                }
-              ]
-            }
-          }
-        },
-        "amount": -1700.00,
-        "balance": 1600.00,
-        "transaction_type": "used",
-        "reference": null,
-        "transaction_date": "2025-01-15",
-        "notes": "Used for invoice payment",
-        "created_at": "2025-01-15T10:30:00Z",
-        "updated_at": "2025-01-15T10:30:00Z"
-      }
-    ]
-  }
-}
-```
-
-### Database Considerations
-
-- Ensure foreign key relationships are properly maintained:
-  - `advance_transactions.payment_id` → `customer_payments.id`
-  - `customer_payments.invoice_id` → `invoices.id`
-  - `invoices.sale_id` → `sales.id`
-  - `sales.id` → `sale_items.sale_id`
-
-- Use proper JOIN queries to fetch all related data in a single query
-- Consider adding indexes on foreign key columns for performance
 
 ---
 
-## Advance Transactions Download Feature
+## Business Rules
 
-### Overview
+### 1. Priority Order (MUST BE FOLLOWED)
 
-Users need to download a PDF record of all advance transactions for a customer, showing when advance was paid by the customer and when it was used.
+1. **Opening Due Amount** - Apply advance to clear opening due amount FIRST
+2. **Outstanding Invoices** - Then apply to invoices (oldest first)
+3. **Advance Balance** - Only remaining amount goes to advance balance
 
-### API Endpoint
+### 2. Opening Due Amount Cannot Be Negative
 
-#### `GET /api/customers/{customer_id}/advance-transactions/download`
+- Opening due amount should never go below 0
+- If advance amount > opening due amount, use exact amount to clear it
+- Example: Opening due = 3,000, Advance = 5,000 → Clear 3,000, remaining 2,000
 
-**Purpose:**
-Generate and download a PDF document containing all advance transactions for a specific customer.
+### 3. Customer Status Update
 
-**Request:**
-- Method: `GET`
-- Path: `/api/customers/{customer_id}/advance-transactions/download`
-- Headers:
-  - `Authorization: Bearer {token}` (required)
-  - `Accept: application/pdf`
+- If opening due amount is cleared AND no unpaid invoices: `status = "clear"`
+- Otherwise: `status = "has_dues"`
 
-**Response:**
-- Content-Type: `application/pdf`
-- Body: PDF file binary data
-- Filename suggestion: `advance-transactions-{customer_serial_number}-{date}.pdf`
+### 4. Payment Records
 
-### PDF Document Requirements
-
-#### Document Structure
-
-1. **Header Section:**
-   - Company/Business name and logo (if available)
-   - Document title: "Advance Transactions Record"
-   - Customer information:
-     - Customer name
-     - Customer serial number
-     - Customer contact (phone, email if available)
-   - Generated date and time
-   - Report period (if applicable)
-
-2. **Summary Section:**
-   - Total advance received (sum of all "received" transactions)
-   - Total advance used (sum of all "used" transactions)
-   - Total advance refunded (sum of all "refunded" transactions)
-   - Current advance balance
-   - Number of transactions
-
-3. **Transactions Table:**
-   - Columns:
-     - **Date**: Transaction date (formatted: DD/MM/YYYY or DD MMM YYYY)
-     - **Type**: "Received", "Used", or "Refunded"
-     - **Description**: 
-       - For "Received": "Advance payment received" + payment method + reference number (if available)
-       - For "Used": "Used to pay Invoice #{invoice_number}" + item descriptions (if available)
-       - For "Refunded": "Advance refunded" + reason (if available)
-     - **Amount**: Transaction amount (with + or - sign, formatted as currency)
-     - **Balance**: Running balance after transaction
-     - **Reference**: Invoice number (for "Used"), Payment reference (for "Received")
-
-4. **Transaction Details (for "Used" transactions):**
-   - Invoice number
-   - Invoice date
-   - Items purchased (if available):
-     - Item name
-     - Quantity and unit
-     - Unit price
-     - Total price
-
-5. **Footer Section:**
-   - Page numbers (if multiple pages)
-   - Generated by: User name
-   - Notes: Any additional information
-
-### Data Requirements
-
-The endpoint should return all advance transactions for the customer, including:
-
-- All transaction fields (id, amount, balance, transaction_type, transaction_date, notes, reference)
-- Payment details (if payment_id exists):
-  - Payment method
-  - Payment account
-  - Reference number
-  - Payment date
-- Invoice details (if invoice_id exists):
-  - Invoice number
-  - Invoice date
-  - Invoice amount
-  - Sale details (if available):
-    - Sale items with names, quantities, units, prices
-    - Sale type (walk-in/delivery)
-
-### PDF Formatting Requirements
-
-1. **Layout:**
-   - Professional business document format
-   - Clear sections with proper spacing
-   - Table with borders and alternating row colors for readability
-   - Proper page breaks if content exceeds one page
-
-2. **Styling:**
-   - Company branding (logo, colors) if available
-   - Clear typography (readable fonts, appropriate sizes)
-   - Color coding:
-     - Green for "Received" transactions
-     - Red for "Used" transactions
-     - Blue for "Refunded" transactions
-
-3. **Currency Formatting:**
-   - All amounts in PKR (Pakistani Rupees)
-   - Format: `PKR 1,234.56`
-   - Use thousand separators
-   - Two decimal places
-
-4. **Date Formatting:**
-   - Consistent date format throughout
-   - Example: "15 Jan 2025" or "15/01/2025"
-
-### Example PDF Content Structure
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ [Company Logo]                                          │
-│                                                         │
-│ ADVANCE TRANSACTIONS RECORD                            │
-│                                                         │
-│ Customer: John Doe                                      │
-│ Serial Number: CUST-20250101-001                       │
-│ Phone: +92 300 1234567                                  │
-│                                                         │
-│ Generated: 15 Jan 2025, 10:30 AM                       │
-└─────────────────────────────────────────────────────────┘
-
-SUMMARY
-─────────────────────────────────────────────────────────
-Total Advance Received:    PKR 10,000.00
-Total Advance Used:        PKR 7,000.00
-Total Advance Refunded:    PKR 0.00
-Current Advance Balance:  PKR 3,000.00
-Total Transactions:       5
-
-TRANSACTIONS
-─────────────────────────────────────────────────────────
-Date       Type      Description                    Amount        Balance
-─────────────────────────────────────────────────────────────────────────
-15/01/2025 Received  Advance payment received        +PKR 5,000.00  PKR 5,000.00
-           (Cash)
-           
-10/01/2025 Used      Used to pay Invoice #INV-001  -PKR 1,700.00  PKR 3,300.00
-                     - 1 bag fauji cement
-                     
-05/01/2025 Received  Advance payment received      +PKR 5,000.00  PKR 5,000.00
-           (Bank Transfer, Ref: TXN-12345)
-           
-02/01/2025 Used      Used to pay Invoice #INV-002  -PKR 2,500.00  PKR 2,500.00
-                     - 2 bags portland cement
-                     
-01/01/2025 Used      Used to pay Invoice #INV-003  -PKR 2,800.00  PKR 2,800.00
-                     - 1 bag fauji cement, 1 bag
-                       portland cement
-```
-
-### Backend Implementation Notes
-
-1. **Data Fetching:**
-   - Fetch all advance transactions for the customer
-   - Include related payment, invoice, and sale data
-   - Order by transaction_date DESC (newest first) or ASC (oldest first)
-   - No pagination needed (all transactions should be included)
-
-2. **PDF Generation:**
-   - Use a PDF library (e.g., PDFKit, ReportLab, iText, etc.)
-   - Ensure proper encoding for special characters
-   - Handle long descriptions with text wrapping
-   - Support multiple pages if needed
-
-3. **Performance:**
-   - Consider caching if transactions don't change frequently
-   - Optimize database queries to avoid N+1 problems
-   - Stream PDF generation for large datasets
-
-4. **Error Handling:**
-   - Return 404 if customer not found
-   - Return 401 if user not authenticated
-   - Return 403 if user doesn't have permission
-   - Return 500 with error message if PDF generation fails
-
-### Authentication & Authorization
-
-- User must be authenticated
-- User must have permission to view customer payment information
-- User must have permission to download reports/documents
-
-### Example Request/Response
-
-**Request:**
-```
-GET /api/customers/123/advance-transactions/download
-Authorization: Bearer {token}
-Accept: application/pdf
-```
-
-**Response:**
-```
-HTTP/1.1 200 OK
-Content-Type: application/pdf
-Content-Disposition: attachment; filename="advance-transactions-CUST-20250101-001-2025-01-15.pdf"
-
-[PDF Binary Data]
-```
-
-### Testing Requirements
-
-1. **Unit Tests:**
-   - PDF generation with various transaction counts
-   - PDF generation with missing data (no invoices, no sales)
-   - Currency formatting
-   - Date formatting
-   - Text wrapping for long descriptions
-
-2. **Integration Tests:**
-   - Full download flow
-   - Authentication/authorization checks
-   - Error handling
-   - File download verification
-
-3. **Manual Tests:**
-   - Download PDF and verify content accuracy
-   - Verify formatting and layout
-   - Test with customers having many transactions
-   - Test with customers having no transactions
-   - Verify filename format
+- Create payment record for opening due amount clearing
+- Link to original advance payment
+- Track amount applied for reporting
 
 ---
 
-# Purchase Order Delivery Charge - Backend Implementation Tasks
+## Testing Scenarios
 
-## Overview
+### Test Case 1: Advance Exactly Clears Opening Due
+- **Setup:** Opening due = 5,000
+- **Action:** Receive advance = 5,000
+- **Expected:**
+  - Opening due: 0 (cleared)
+  - Advance balance: 0
+  - Customer status: "clear"
 
-The frontend now supports adding delivery charges when receiving purchase orders. Delivery charges increase the amount owed to the supplier (unlike "other costs" which reduce the amount owed). This section lists the backend implementation tasks required.
+### Test Case 2: Advance More Than Opening Due
+- **Setup:** Opening due = 5,000
+- **Action:** Receive advance = 10,000
+- **Expected:**
+  - Opening due: 0 (cleared)
+  - Advance balance: 5,000 (remaining)
+  - Journal entries: Correct debits/credits
 
-## Backend Tasks
+### Test Case 3: Advance Less Than Opening Due
+- **Setup:** Opening due = 10,000
+- **Action:** Receive advance = 5,000
+- **Expected:**
+  - Opening due: 5,000 (reduced)
+  - Advance balance: 0 (all used)
+  - Customer status: "has_dues"
 
-### 1. Database Migration
+### Test Case 4: Opening Due + Invoices
+- **Setup:** Opening due = 5,000, Invoice = 2,000
+- **Action:** Receive advance = 10,000
+- **Expected:**
+  - Opening due: 0 (cleared)
+  - Invoice: Paid
+  - Advance balance: 3,000 (remaining)
 
-- [ ] Create migration to add `delivery_charge` column to `purchase_orders` table
-  - Column: `delivery_charge DECIMAL(15, 2) DEFAULT 0.00`
-  - Position: After `other_costs_total`
-  - Add comment: "Delivery charge from supplier (increases amount owed)"
-  - Include rollback in `down()` method
+### Test Case 5: No Opening Due (Existing Behavior)
+- **Setup:** Opening due = 0
+- **Action:** Receive advance = 5,000
+- **Expected:**
+  - Opening due: 0 (unchanged)
+  - Advance balance: 5,000
+  - Existing auto-apply to invoices logic works
 
-### 2. API Endpoint Updates
+---
 
-- [ ] Update `POST /api/purchase-orders/{id}/receive` endpoint
-  - [ ] Accept `delivery_charge` in request payload (optional, numeric, min:0)
-  - [ ] Handle `delivery_charge` in both JSON and FormData requests
-  - [ ] Validate `delivery_charge >= 0`
-  - [ ] Default `delivery_charge` to 0.00 if not provided
-  - [ ] Include `delivery_charge` in response
+## Frontend Considerations
 
-### 3. Business Logic Updates
+The frontend already handles advance payment auto-apply responses. It expects:
+- `auto_applied_payments` array (for invoices)
+- `advance_summary` object (with totals)
 
-- [ ] Update final total calculation
-  - [ ] Formula: `final_total = items_subtotal - other_costs_total + delivery_charge`
-  - [ ] Save `delivery_charge` to `purchase_orders.delivery_charge`
-  - [ ] Update `purchase_orders.final_total` with new calculation
-  - [ ] Ensure backward compatibility (handle NULL delivery_charge as 0.00)
+**Update Required:**
+- Frontend should display `opening_due_cleared` information if provided
+- Update advance summary display to show opening due amount cleared
 
-### 4. Supplier Invoice Creation
+**No Breaking Changes:** If backend doesn't provide `opening_due_cleared`, frontend should continue to work (backward compatible).
 
-- [ ] Include delivery charge in supplier invoice
-  - [ ] Add `delivery_charge` to invoice metadata
-  - [ ] Include delivery charge as separate line item in invoice
-  - [ ] Update invoice `total_amount` to include delivery charge
-  - [ ] Show clear breakdown: items_subtotal - other_costs + delivery_charge = final_total
+---
 
-### 5. Accounting/Journal Entries
+## Implementation Checklist
 
-- [ ] Update journal entry creation
-  - [ ] Include delivery charge in Accounts Payable calculation
-  - [ ] Credit Accounts Payable: `items_subtotal - other_costs_total + delivery_charge`
-  - [ ] Verify delivery charge doesn't affect inventory or expense accounts
-  - [ ] Update journal entry description if needed
+- [ ] Update advance payment processing to check opening due amount first
+- [ ] Apply advance to opening due amount before invoices
+- [ ] Update customer opening_due_amount field when cleared
+- [ ] Create journal entries for opening due clearing
+- [ ] Update customer status when opening due is cleared
+- [ ] Add `opening_due_cleared` to response structure
+- [ ] Add `amount_applied_to_opening_due` to advance_summary
+- [ ] Update payment records creation (handle NULL invoice_id for opening balance)
+- [ ] Update COA journal entries (proper debits/credits)
+- [ ] Unit tests for all scenarios
+- [ ] Integration tests for complete flow
+- [ ] Manual testing
 
-### 6. Testing
+---
 
-- [ ] Unit tests
-  - [ ] Test delivery charge = 0 (backward compatibility)
-  - [ ] Test delivery charge > 0
-  - [ ] Test delivery charge with other costs
-  - [ ] Test final_total calculation
-  - [ ] Test validation (negative values should fail)
-  
-- [ ] Integration tests
-  - [ ] Full receiving flow with delivery charge
-  - [ ] Delivery charge with FormData (file upload)
-  - [ ] Delivery charge with JSON (no file upload)
-  - [ ] Supplier invoice creation with delivery charge
-  - [ ] Accounting entries with delivery charge
+## Important Notes
 
-- [ ] Manual tests
-  - [ ] Receive stock with delivery charge
-  - [ ] Verify delivery charge increases final_total
-  - [ ] Verify delivery charge in supplier invoice
-  - [ ] Verify accounting entries are correct
+1. **Opening Due Amount is NOT an Invoice:** It's stored in `customers.opening_due_amount` field, not as an invoice record. Handle it separately.
 
-### 7. Documentation
+2. **COA Accounting:** When advance clears opening due:
+   - Customer Advance account is debited (reduced)
+   - Accounts Receivable is credited (reduced)
+   - Cash account was already debited when advance received
 
-- [ ] Update API documentation with delivery_charge field
-- [ ] Update database schema documentation
-- [ ] Document calculation formula in code comments
+3. **No Double Counting:** Make sure opening due amount is only cleared once per advance payment.
 
-## Reference
+4. **Atomic Transactions:** All operations (payment creation, customer update, journal entries) must be in a single database transaction.
 
-See `docs/PURCHASE-ORDER-DELIVERY-CHARGE-BACKEND-REQUIREMENTS.md` for detailed requirements and specifications.
+---
+
+## Summary
+
+**Key Points:**
+- Advance payments MUST clear opening due amounts FIRST
+- Only remaining advance goes to advance balance
+- COA must reflect all transactions correctly
+- Customer status must update appropriately
+- Response must include opening due clearing details
+
+**The backend must ensure that advance and due amounts never coexist - advance always clears dues first.**

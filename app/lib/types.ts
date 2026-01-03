@@ -351,6 +351,7 @@ export interface Customer {
   rating: number; // 1-10 scale
   status: "clear" | "has_dues";
   picture_url: string | null;
+  opening_due_amount?: number | null; // Opening balance - amount customer owes
   created_at: string;
   updated_at: string;
 }
@@ -811,6 +812,7 @@ export interface AccountMappingStatus {
 export interface CustomerPaymentSummary {
   customer_id: number;
   due_amount: number;
+  opening_due_amount?: number | null; // Opening balance - amount customer owes from before
   prepaid_amount: number;
   total_spent: number;
   total_paid: number;

@@ -34,8 +34,10 @@ export default function ReceiveItemRow({
     setLocalPrice(finalPrice);
   }, [finalPrice]);
 
-  const maxQuantity = item.quantity_ordered - item.quantity_received;
-  const itemTotal = localQuantity * localPrice;
+  const quantityOrdered = Number(item.quantity_ordered) || 0;
+  const quantityReceived = Number(item.quantity_received) || 0;
+  const maxQuantity = quantityOrdered - quantityReceived;
+  const itemTotal = (Number(localQuantity) || 0) * (Number(localPrice) || 0);
 
   const handleQuantityChange = (value: string) => {
     const numValue = Number(value);
@@ -64,14 +66,16 @@ export default function ReceiveItemRow({
 
   return (
     <tr className={`border-b border-gray-200 ${isChecked ? 'bg-blue-50' : 'bg-white'}`}>
+      <td className="px-4 py-3 w-12">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={(e) => onCheckChange(e.target.checked)}
+          className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+        />
+      </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            checked={isChecked}
-            onChange={(e) => onCheckChange(e.target.checked)}
-            className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-          />
           {item.item?.picture_url ? (
             <img
               src={item.item.picture_url}
@@ -95,7 +99,7 @@ export default function ReceiveItemRow({
         </div>
       </td>
       <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">
-        {Math.floor(item.quantity_ordered).toLocaleString()} {item.item?.primary_unit || 'units'}
+        {Math.floor(quantityOrdered).toLocaleString()} {item.item?.primary_unit || 'units'}
       </td>
       {isChecked ? (
         <>

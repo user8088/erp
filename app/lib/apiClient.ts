@@ -636,6 +636,8 @@ export interface CreateOrUpdateCustomerPayload {
   rating: number;
   status: "clear" | "has_dues";
   picture_url?: string | null;
+  opening_due_amount?: number | null;
+  opening_advance_balance?: number | null;
 }
 
 export const customersApi = {
@@ -1274,6 +1276,44 @@ export const stockApi = {
       }
       throw error;
     }
+  },
+
+  async getCategoryStockValueSummary(params?: {
+    warehouse_id?: number;
+    include_empty_categories?: boolean;
+  }): Promise<{
+    data: Array<{
+      category_id: number;
+      category_name: string;
+      stock_value: number;
+      quantity_total: number;
+    }>;
+    summary: {
+      total_value: number;
+      total_categories: number;
+      total_items: number;
+    };
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.warehouse_id) queryParams.append("warehouse_id", String(params.warehouse_id));
+    if (params?.include_empty_categories) queryParams.append("include_empty_categories", "true");
+    
+    const queryString = queryParams.toString();
+    const url = `/stock/category-value-summary${queryString ? `?${queryString}` : ""}`;
+    
+    return await apiClient.get<{
+      data: Array<{
+        category_id: number;
+        category_name: string;
+        stock_value: number;
+        quantity_total: number;
+      }>;
+      summary: {
+        total_value: number;
+        total_categories: number;
+        total_items: number;
+      };
+    }>(url);
   },
 };
 

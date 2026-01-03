@@ -199,9 +199,10 @@ export default function SupplierDetailContent({
         const secondaryUnit = poItem.item?.secondary_unit;
         const conversionRate = poItem.item?.conversion_rate;
         const existing = itemsMap.get(poItem.item_id);
+        const quantity = Number(poItem.quantity_ordered) || 0;
         
         if (existing) {
-          existing.total_quantity += poItem.quantity_ordered;
+          existing.total_quantity += quantity;
           // Update last ordered date if this PO is more recent
           if (new Date(po.order_date) > new Date(existing.last_ordered)) {
             existing.last_ordered = po.order_date;
@@ -210,7 +211,7 @@ export default function SupplierDetailContent({
           itemsMap.set(poItem.item_id, {
             item_id: poItem.item_id,
             item_name: itemName,
-            total_quantity: poItem.quantity_ordered,
+            total_quantity: quantity,
             primary_unit: primaryUnit,
             secondary_unit: secondaryUnit,
             conversion_rate: conversionRate,

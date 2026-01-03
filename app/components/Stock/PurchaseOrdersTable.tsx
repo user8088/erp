@@ -63,11 +63,9 @@ export default function PurchaseOrdersTable({ orders, loading, onDelete }: Purch
         <tbody className="bg-white divide-y divide-gray-200">
           {orders.map((order) => {
             // Format items display with item names and brands: "5 bags Cement (Paidaar), 5 bags Cement (Dewaan)"
+            // Always use quantity_ordered for the purchase orders table - this shows what was ordered, not what was received
             const itemsDisplay = order.items?.map((item) => {
-              // Use quantity_received_final if available (for received orders), otherwise quantity_received, fallback to quantity_ordered
-              const quantity = Math.floor(
-                Number(item.quantity_received_final ?? item.quantity_received ?? item.quantity_ordered) || 0
-              );
+              const quantity = Math.floor(Number(item.quantity_ordered) || 0);
               const unit = item.item?.primary_unit || 'units';
               const itemName = item.item?.name || `Item #${item.item_id}`;
               const brand = item.item?.brand;

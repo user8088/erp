@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Camera } from "lucide-react";
+import { Camera, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { customersApi, type CreateOrUpdateCustomerPayload } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
 import { invalidateCustomersCache } from "../../components/Customers/useCustomersList";
@@ -19,8 +19,11 @@ export default function NewCustomerPage() {
     address: "",
     rating: "5",
     status: "clear" as "clear" | "has_dues",
+    opening_due_amount: "",
+    opening_advance_balance: "",
   });
   
+  const [showOpeningBalances, setShowOpeningBalances] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -77,6 +80,22 @@ export default function NewCustomerPage() {
       localErrors.rating = ["Rating must be between 1 and 10."];
     }
 
+    // Validate opening balances
+    const openingDueAmount = formData.opening_due_amount.trim() 
+      ? parseFloat(formData.opening_due_amount) 
+      : null;
+    const openingAdvanceBalance = formData.opening_advance_balance.trim() 
+      ? parseFloat(formData.opening_advance_balance) 
+      : null;
+
+    if (openingDueAmount !== null && (isNaN(openingDueAmount) || openingDueAmount < 0)) {
+      localErrors.opening_due_amount = ["Opening due amount must be a non-negative number."];
+    }
+
+    if (openingAdvanceBalance !== null && (isNaN(openingAdvanceBalance) || openingAdvanceBalance < 0)) {
+      localErrors.opening_advance_balance = ["Opening advance balance must be a non-negative number."];
+    }
+
     if (Object.keys(localErrors).length > 0) {
       setErrors(localErrors);
       return;
@@ -92,6 +111,8 @@ export default function NewCustomerPage() {
         rating: Number(formData.rating),
         status: formData.status,
         picture_url: profilePicture || null,
+        opening_due_amount: openingDueAmount !== null ? openingDueAmount : undefined,
+        opening_advance_balance: openingAdvanceBalance !== null ? openingAdvanceBalance : undefined,
       };
 
       await customersApi.createCustomer(payload);
@@ -267,6 +288,110 @@ export default function NewCustomerPage() {
               placeholder="Enter customer address"
             />
           </div>
+        </div>
+
+        {/* Opening Balances Section */}
+        <div className="border-t border-gray-200 pt-6">
+          <button
+            type="button"
+            onClick={() => setShowOpeningBalances(!showOpeningBalances)}
+            className="flex items-center justify-between w-full text-left mb-4"
+          >
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Opening Balances <span className="text-gray-500 font-normal">(Optional)</span>
+              </h3>
+              <Info className="w-4 h-4 text-gray-400" title="Add previous payment records for this customer" />
+            </div>
+            {showOpeningBalances ? (
+              <ChevronUp className="w-5 h-5 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-gray-400" />
+            )}
+          </button>
+
+          {showOpeningBalances && (
+            <div className="bg-gray-50 rounded-lg p-4 space-y-4 border border-gray-200">
+              <div className="mb-3">
+                <p className="text-xs text-gray-600">
+                  Record any outstanding amounts or advance payments from previous transactions. 
+                  These will be automatically integrated with your Chart of Accounts.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Opening Due Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Opening Due Amount
+                    <span className="text-xs text-gray-500 font-normal ml-1">
+                      (Outstanding Balance)
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
+                      PKR
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.opening_due_amount}
+                      onChange={handleChange("opening_due_amount")}
+                      className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  {errors.opening_due_amount && (
+                    <p className="mt-1 text-xs text-red-600">{errors.opening_due_amount[0]}</p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    Amount the customer owes from previous transactions
+                  </p>
+                </div>
+
+                {/* Opening Advance Balance */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Opening Customer Credit
+                    <span className="text-xs text-gray-500 font-normal ml-1">
+                      (Advance Balance)
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
+                      PKR
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.opening_advance_balance}
+                      onChange={handleChange("opening_advance_balance")}
+                      className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  {errors.opening_advance_balance && (
+                    <p className="mt-1 text-xs text-red-600">{errors.opening_advance_balance[0]}</p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    Advance payment/credit balance from previous transactions
+                  </p>
+                </div>
+              </div>
+
+              {/* Auto-update status hint */}
+              {formData.opening_due_amount.trim() && parseFloat(formData.opening_due_amount) > 0 && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-xs text-blue-800">
+                    <strong>Note:</strong> Customer status will be automatically set to "Has Dues" 
+                    because an opening due amount is specified.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3 pt-2">

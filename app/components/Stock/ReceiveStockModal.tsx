@@ -99,11 +99,13 @@ export default function ReceiveStockModal({
       const initialPrices: Record<number, number> = {};
 
       purchaseOrder.items.forEach(item => {
-        const remaining = item.quantity_ordered - item.quantity_received;
+        const qtyOrdered = Number(item.quantity_ordered) || 0;
+        const qtyReceived = Number(item.quantity_received) || 0;
+        const remaining = qtyOrdered - qtyReceived;
         if (remaining > 0) {
           initialChecked.add(item.id);
           initialQuantities[item.id] = remaining;
-          initialPrices[item.id] = item.unit_price;
+          initialPrices[item.id] = Number(item.unit_price) || 0;
         }
       });
 
@@ -124,9 +126,11 @@ export default function ReceiveStockModal({
       newChecked.add(itemId);
       const item = purchaseOrder.items?.find(i => i.id === itemId);
       if (item) {
-        const remaining = item.quantity_ordered - item.quantity_received;
+        const qtyOrdered = Number(item.quantity_ordered) || 0;
+        const qtyReceived = Number(item.quantity_received) || 0;
+        const remaining = qtyOrdered - qtyReceived;
         setQuantities({ ...quantities, [itemId]: remaining });
-        setFinalPrices({ ...finalPrices, [itemId]: item.unit_price });
+        setFinalPrices({ ...finalPrices, [itemId]: Number(item.unit_price) || 0 });
       }
     } else {
       newChecked.delete(itemId);
@@ -338,7 +342,11 @@ export default function ReceiveStockModal({
                   </thead>
                   <tbody>
                     {purchaseOrder.items
-                      ?.filter(item => item.quantity_ordered - item.quantity_received > 0)
+                      ?.filter(item => {
+                        const qtyOrdered = Number(item.quantity_ordered) || 0;
+                        const qtyReceived = Number(item.quantity_received) || 0;
+                        return qtyOrdered - qtyReceived > 0;
+                      })
                       .map((item) => (
                         <ReceiveItemRow
                           key={item.id}

@@ -52,6 +52,12 @@ export default function CustomerDetailContent({
 
   // Calculate effective payment summary (from API or calculated from invoices)
   const effectiveSummary = useMemo(() => {
+    // Get opening due amount from customer or payment summary
+    const openingDueAmount = 
+      paymentSummary?.opening_due_amount ?? 
+      customer?.opening_due_amount ?? 
+      0;
+
     if (paymentSummary) {
       // Normalize prepaid/advance fields in case backend omits one of them
       const receivedAdvance = Array.isArray(paymentSummary.advance_transactions)
@@ -78,8 +84,19 @@ export default function CustomerDetailContent({
         computedAdvance ??
         0;
 
+      // IMPORTANT: Backend should already include opening_due_amount in due_amount
+      // If backend returns opening_due_amount separately, due_amount already includes it
+      // So we should use due_amount as-is, and only add opening_due_amount if backend didn't include it
+      // Check if backend provided opening_due_amount - if yes, due_amount already includes it
+      const backendHasOpeningDue = paymentSummary.opening_due_amount !== undefined && paymentSummary.opening_due_amount !== null;
+      const totalDueAmount = backendHasOpeningDue 
+        ? (paymentSummary.due_amount || 0)  // Backend already included it
+        : (paymentSummary.due_amount || 0) + openingDueAmount;  // Backend didn't include it, add it
+
       return {
         ...paymentSummary,
+        due_amount: totalDueAmount,
+        opening_due_amount: paymentSummary.opening_due_amount ?? openingDueAmount,
         prepaid_amount: prepaid,
         advance_balance: paymentSummary.advance_balance ?? prepaid,
         advance_transactions: paymentSummary.advance_transactions || [],
@@ -91,9 +108,12 @@ export default function CustomerDetailContent({
       .filter(inv => inv.status !== 'cancelled')
       .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
     
-    const dueAmount = customerInvoices
+    const invoiceDueAmount = customerInvoices
       .filter(inv => inv.status === 'issued')
       .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+    
+    // Add opening due amount to invoice due amount
+    const totalDueAmount = invoiceDueAmount + openingDueAmount;
     
     const paidAmount = customerInvoices
       .filter(inv => inv.status === 'paid')
@@ -101,7 +121,8 @@ export default function CustomerDetailContent({
     
     return {
       customer_id: Number(customerId),
-      due_amount: dueAmount,
+      due_amount: totalDueAmount,
+      opening_due_amount: openingDueAmount,
       prepaid_amount: 0, // We don't have advance payment data without API
       total_spent: totalSpent,
       total_paid: paidAmount,
@@ -117,12 +138,13 @@ export default function CustomerDetailContent({
       advance_balance: 0,
       advance_transactions: [],
     };
-  }, [paymentSummary, customerInvoices, customerId]);
+  }, [paymentSummary, customerInvoices, customerId, customer]);
 
   // Decide if we should show the summary/payment section (even if values are zero)
   const hasAnyPaymentData =
     effectiveSummary.total_spent > 0 ||
     effectiveSummary.due_amount > 0 ||
+    (effectiveSummary.opening_due_amount ?? 0) > 0 ||
     effectiveSummary.prepaid_amount > 0 ||
     (effectiveSummary.advance_transactions?.length ?? 0) > 0 ||
     customerPayments.length > 0;
@@ -500,7 +522,16 @@ export default function CustomerDetailContent({
                         <p className="text-2xl font-bold text-red-900">
                           PKR {effectiveSummary.due_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </p>
-                        <p className="text-xs text-red-600 mt-1">Unpaid invoices</p>
+                        <p className="text-xs text-red-600 mt-1">
+                          {effectiveSummary.opening_due_amount && effectiveSummary.opening_due_amount > 0
+                            ? `Opening balance + Unpaid invoices`
+                            : `Unpaid invoices`}
+                        </p>
+                        {effectiveSummary.opening_due_amount && effectiveSummary.opening_due_amount > 0 && (
+                          <p className="text-xs text-red-500 mt-0.5">
+                            (Opening: PKR {effectiveSummary.opening_due_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+                          </p>
+                        )}
                       </div>
                       <DollarSign className="w-8 h-8 text-red-400" />
                     </div>

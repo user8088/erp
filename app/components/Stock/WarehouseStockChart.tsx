@@ -1,16 +1,14 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Filter, MoreVertical } from "lucide-react";
+import { Filter, MoreVertical, RefreshCw } from "lucide-react";
+import { stockApi } from "../../lib/apiClient";
 
-// Mock data - will be replaced with real data from API
-const data = [
-  { category: "Construction Material", value: 850000 },
-  { category: "Electronics", value: 520000 },
-  { category: "Hardware", value: 380000 },
-  { category: "Paint & Supplies", value: 240000 },
-  { category: "Tools", value: 180000 },
-];
+interface ChartDataItem {
+  category: string;
+  value: number;
+}
 
 interface TooltipPayload {
   value: number;
@@ -49,7 +47,119 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
 };
 
 export default function CategoryStockChart() {
-  const totalValue = data.reduce((sum, item) => sum + item.value, 0);
+  const [data, setData] = useState<ChartDataItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalValue, setTotalValue] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchData = async (showRefreshing = false) => {
+    try {
+      if (showRefreshing) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      const response = await stockApi.getCategoryStockValueSummary();
+      
+      // Map API response to chart data format
+      const chartData: ChartDataItem[] = response.data.map(item => ({
+        category: item.category_name,
+        value: item.stock_value,
+      }));
+
+      setData(chartData);
+      setTotalValue(response.summary.total_value);
+    } catch (err) {
+      console.error("Failed to fetch category stock value summary:", err);
+      setError("Failed to load chart data");
+      setData([]);
+      setTotalValue(0);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleRefresh = () => {
+    fetchData(true);
+  };
+
+  // Calculate dynamic Y-axis domain based on max value
+  const maxValue = data.length > 0 ? Math.max(...data.map(item => item.value)) : 0;
+  const yAxisMax = maxValue > 0 ? Math.ceil(maxValue * 1.1) : 1000000; // Add 10% padding
+  const yAxisTicks = maxValue > 0 
+    ? [0, yAxisMax * 0.25, yAxisMax * 0.5, yAxisMax * 0.75, yAxisMax]
+    : [0, 250000, 500000, 750000, 1000000];
+
+  if (loading) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Category-wise Stock Value</h2>
+            <p className="text-xs text-gray-500 mt-1">Loading chart data...</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center h-[300px]">
+          <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Category-wise Stock Value</h2>
+            <p className="text-xs text-red-500 mt-1">{error}</p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            className="p-2 hover:bg-gray-50 rounded transition-colors"
+            title="Retry"
+          >
+            <RefreshCw className="w-4 h-4 text-gray-600" />
+          </button>
+        </div>
+        <div className="flex items-center justify-center h-[300px] text-gray-500">
+          <div className="text-center">
+            <p className="mb-2">Unable to load chart data</p>
+            <button
+              onClick={handleRefresh}
+              className="text-sm text-orange-500 hover:text-orange-600 underline"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Category-wise Stock Value</h2>
+            <p className="text-xs text-gray-500 mt-1">No stock data available</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center h-[300px] text-gray-500">
+          No categories with stock found
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
@@ -61,10 +171,18 @@ export default function CategoryStockChart() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="p-2 hover:bg-gray-50 rounded transition-colors">
+          <button 
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="p-2 hover:bg-gray-50 rounded transition-colors disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`w-4 h-4 text-gray-600 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+          <button className="p-2 hover:bg-gray-50 rounded transition-colors" title="Filter">
             <Filter className="w-4 h-4 text-gray-600" />
           </button>
-          <button className="p-2 hover:bg-gray-50 rounded transition-colors">
+          <button className="p-2 hover:bg-gray-50 rounded transition-colors" title="More options">
             <MoreVertical className="w-4 h-4 text-gray-600" />
           </button>
         </div>
@@ -90,8 +208,8 @@ export default function CategoryStockChart() {
               }
               return `${(value / 1000).toFixed(0)}K`;
             }}
-            domain={[0, 1000000]}
-            ticks={[0, 250000, 500000, 750000, 1000000]}
+            domain={[0, yAxisMax]}
+            ticks={yAxisTicks}
           />
           <Tooltip 
             content={<CustomTooltip />}
@@ -107,4 +225,3 @@ export default function CategoryStockChart() {
     </div>
   );
 }
-
