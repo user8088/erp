@@ -237,11 +237,11 @@ export const accountsApi = {
     });
   },
 
-  getAccountTransactions(id: number, params?: { 
-    page?: number; 
-    per_page?: number; 
-    start_date?: string; 
-    end_date?: string; 
+  getAccountTransactions(id: number, params?: {
+    page?: number;
+    per_page?: number;
+    start_date?: string;
+    end_date?: string;
     sort_direction?: 'asc' | 'desc';
     exclude_opening_balances?: boolean;
     opening_balances_only?: boolean;
@@ -268,7 +268,7 @@ export const accountsApi = {
     const query = new URLSearchParams();
     if (params?.start_date) query.set("start_date", params.start_date);
     if (params?.end_date) query.set("end_date", params.end_date);
-    
+
     const queryString = query.toString();
     const path = `/accounts/${accountId}/statement${queryString ? `?${queryString}` : ""}`;
     const headers: HeadersInit = {
@@ -277,18 +277,18 @@ export const accountsApi = {
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
-    
+
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: "GET",
       credentials: "include",
       headers,
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: "Failed to download account statement" }));
       throw new ApiError(errorData.message || "Failed to download account statement", response.status, errorData);
     }
-    
+
     return await response.blob();
   },
 
@@ -308,7 +308,7 @@ export const accountsApi = {
     if (params?.as_of_date) query.set("as_of_date", params.as_of_date);
     if (params?.root_type) query.set("root_type", params.root_type);
     if (params?.include_disabled !== undefined) query.set("include_disabled", params.include_disabled.toString());
-    
+
     const path = `/accounts/statement?${query.toString()}`;
     const headers: HeadersInit = {
       Accept: "application/pdf",
@@ -316,30 +316,30 @@ export const accountsApi = {
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
-    
+
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: "GET",
       credentials: "include",
       headers,
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: "Failed to download chart of accounts statement" }));
       throw new ApiError(errorData.message || "Failed to download chart of accounts statement", response.status, errorData);
     }
-    
+
     return await response.blob();
   },
 
   async deleteAccount(id: number, reallocateToAccountId?: number | null) {
     const url = `/accounts/${id}`;
     const body = reallocateToAccountId ? { reallocate_to_account_id: reallocateToAccountId } : undefined;
-    
+
     const result = await request<{ message: string }>(url, {
       method: "DELETE",
       body,
     });
-    
+
     // Invalidate accounts cache when deleting an account
     invalidateCachedGet("/accounts");
     return result;
@@ -473,7 +473,7 @@ export const staffApi = {
 
     const queryString = queryParams.toString();
     const url = `/staff/${staffId}/advances${queryString ? `?${queryString}` : ""}`;
-    
+
     return apiClient.get<Paginated<StaffAdvance>>(url);
   },
 
@@ -643,7 +643,7 @@ export interface CreateOrUpdateCustomerPayload {
 export const customersApi = {
   async getCustomers(params: GetCustomersParams = {}): Promise<Paginated<Customer>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.search) queryParams.append("search", params.search);
@@ -717,55 +717,55 @@ export const customersApi = {
   ): Promise<{
     customer_id: number;
     customer_name: string;
-      statistics: {
-        // Walk-in Sales
-        walk_in_sales_revenue?: number;
-        walk_in_sales_discount?: number;
-        walk_in_sales_count?: number;
-        
-        // Order/Delivery Sales (ONLY PAID INVOICES)
-        order_sales_revenue?: number;
-        order_sales_discount?: number;
-        order_sales_count?: number;
-        
-        // Rental Agreements
-        rental_revenue?: number;
-        rental_count?: number;
-        
-        // Payment Breakdown
-        total_paid?: number;
-        walk_in_paid?: number;
-        order_paid?: number;
-        rental_paid?: number;
-        
-        // Customer Due (Unpaid Invoices)
-        customer_due?: number;
-        unpaid_invoices_count?: number;
-        
-        // Aggregated Totals (for backward compatibility)
-        total_sales_revenue: number;
-        total_sales_discount: number;
-        total_rental_revenue: number;
-        total_invoice_revenue: number;
-        total_invoice_discount: number;
-        total_earnings: number;
-        total_discounts_given: number;
-        net_earnings?: number;
-        total_orders: number;
-        total_rentals: number;
-        total_invoices: number;
-        period_start?: string;
-        period_end?: string;
-      };
+    statistics: {
+      // Walk-in Sales
+      walk_in_sales_revenue?: number;
+      walk_in_sales_discount?: number;
+      walk_in_sales_count?: number;
+
+      // Order/Delivery Sales (ONLY PAID INVOICES)
+      order_sales_revenue?: number;
+      order_sales_discount?: number;
+      order_sales_count?: number;
+
+      // Rental Agreements
+      rental_revenue?: number;
+      rental_count?: number;
+
+      // Payment Breakdown
+      total_paid?: number;
+      walk_in_paid?: number;
+      order_paid?: number;
+      rental_paid?: number;
+
+      // Customer Due (Unpaid Invoices)
+      customer_due?: number;
+      unpaid_invoices_count?: number;
+
+      // Aggregated Totals (for backward compatibility)
+      total_sales_revenue: number;
+      total_sales_discount: number;
+      total_rental_revenue: number;
+      total_invoice_revenue: number;
+      total_invoice_discount: number;
+      total_earnings: number;
+      total_discounts_given: number;
+      net_earnings?: number;
+      total_orders: number;
+      total_rentals: number;
+      total_invoices: number;
+      period_start?: string;
+      period_end?: string;
+    };
   }> {
     const queryParams = new URLSearchParams();
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
     if (params?.month) queryParams.append('month', params.month);
-    
+
     const queryString = queryParams.toString();
     const url = `/customers/${id}/earnings-stats${queryString ? `?${queryString}` : ''}`;
-    
+
     return await apiClient.get<{
       customer_id: number;
       customer_name: string;
@@ -774,26 +774,26 @@ export const customersApi = {
         walk_in_sales_revenue?: number;
         walk_in_sales_discount?: number;
         walk_in_sales_count?: number;
-        
+
         // Order/Delivery Sales (ONLY PAID INVOICES)
         order_sales_revenue?: number;
         order_sales_discount?: number;
         order_sales_count?: number;
-        
+
         // Rental Agreements
         rental_revenue?: number;
         rental_count?: number;
-        
+
         // Payment Breakdown
         total_paid?: number;
         walk_in_paid?: number;
         order_paid?: number;
         rental_paid?: number;
-        
+
         // Customer Due (Unpaid Invoices)
         customer_due?: number;
         unpaid_invoices_count?: number;
-        
+
         // Aggregated Totals (for backward compatibility)
         total_sales_revenue: number;
         total_sales_discount: number;
@@ -839,10 +839,10 @@ export const customersApi = {
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
     if (params?.month) queryParams.append('month', params.month);
-    
+
     const queryString = queryParams.toString();
     const url = `/customers/${id}/delivery-profitability-stats${queryString ? `?${queryString}` : ''}`;
-    
+
     return await apiClient.get<{
       customer_id: number;
       customer_name: string;
@@ -926,10 +926,10 @@ export const customersApi = {
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
     if (params?.month) queryParams.append('month', params.month);
-    
+
     const queryString = queryParams.toString();
     const url = `/customers/${id}/stock-profit-stats${queryString ? `?${queryString}` : ''}`;
-    
+
     return await apiClient.get<{
       customer_id: number;
       customer_name: string;
@@ -1014,7 +1014,7 @@ export interface CreateOrUpdateItemPayload {
 export const itemsApi = {
   async getItems(params: GetItemsParams = {}): Promise<Paginated<Item>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.search) queryParams.append("search", params.search);
@@ -1092,7 +1092,7 @@ export interface CreateOrUpdateCategoryPayload {
 export const categoriesApi = {
   async getCategories(params: GetCategoriesParams = {}): Promise<Paginated<Category>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.search) queryParams.append("search", params.search);
@@ -1203,10 +1203,10 @@ export const stockApi = {
     });
   },
 
-  async bulkUpdateReorderLevels(updates: Array<{ item_id: number; reorder_level: number }>): Promise<{ 
-    updated_count: number; 
-    errors: string[]; 
-    message: string 
+  async bulkUpdateReorderLevels(updates: Array<{ item_id: number; reorder_level: number }>): Promise<{
+    updated_count: number;
+    errors: string[];
+    message: string
   }> {
     return await apiClient.patch<{ updated_count: number; errors: string[]; message: string }>("/stock/reorder-levels/bulk", {
       updates,
@@ -1260,9 +1260,9 @@ export const stockApi = {
     }
   },
 
-  async saveAccountMappings(payload: { 
-    inventory_account_id: number; 
-    accounts_payable_account_id: number 
+  async saveAccountMappings(payload: {
+    inventory_account_id: number;
+    accounts_payable_account_id: number
   }): Promise<{ mappings: StockAccountMapping; message: string }> {
     return await apiClient.post<{ mappings: StockAccountMapping; message: string }>("/stock/account-mappings", payload);
   },
@@ -1297,10 +1297,10 @@ export const stockApi = {
     const queryParams = new URLSearchParams();
     if (params?.warehouse_id) queryParams.append("warehouse_id", String(params.warehouse_id));
     if (params?.include_empty_categories) queryParams.append("include_empty_categories", "true");
-    
+
     const queryString = queryParams.toString();
     const url = `/stock/category-value-summary${queryString ? `?${queryString}` : ""}`;
-    
+
     return await apiClient.get<{
       data: Array<{
         category_id: number;
@@ -1395,45 +1395,45 @@ export const purchaseOrdersApi = {
   },
 
   async receivePurchaseOrder(
-    id: number, 
+    id: number,
     payload: ReceivePurchaseOrderPayload
-  ): Promise<{ 
-    purchase_order: PurchaseOrder; 
-    stock_movements: StockMovement[]; 
+  ): Promise<{
+    purchase_order: PurchaseOrder;
+    stock_movements: StockMovement[];
     supplier_invoice?: Invoice;
     message: string;
   }> {
     // If there's a file, use FormData; otherwise use JSON
     if (payload.supplier_invoice_file) {
       const formData = new FormData();
-      
+
       // Add items as JSON string
       formData.append('items', JSON.stringify(payload.items));
-      
+
       // Add other costs if present
       if (payload.other_costs && payload.other_costs.length > 0) {
         formData.append('other_costs', JSON.stringify(payload.other_costs));
       }
-      
+
       // Add delivery charge if present
       if (payload.delivery_charge !== undefined && payload.delivery_charge !== null) {
         formData.append('delivery_charge', String(payload.delivery_charge));
       }
-      
+
       // Add the file
       formData.append('supplier_invoice_file', payload.supplier_invoice_file);
-      
-      return await apiClient.post<{ 
-        purchase_order: PurchaseOrder; 
-        stock_movements: StockMovement[]; 
+
+      return await apiClient.post<{
+        purchase_order: PurchaseOrder;
+        stock_movements: StockMovement[];
         supplier_invoice?: Invoice;
         message: string;
       }>(`/purchase-orders/${id}/receive`, formData);
     } else {
       // No file, send as JSON
-      return await apiClient.post<{ 
-        purchase_order: PurchaseOrder; 
-        stock_movements: StockMovement[]; 
+      return await apiClient.post<{
+        purchase_order: PurchaseOrder;
+        stock_movements: StockMovement[];
         supplier_invoice?: Invoice;
         message: string;
       }>(`/purchase-orders/${id}/receive`, payload);
@@ -1476,10 +1476,10 @@ export const purchaseOrdersApi = {
     if (params?.period_type) queryParams.append("period_type", params.period_type);
     if (params?.supplier_id) queryParams.append("supplier_id", String(params.supplier_id));
     if (params?.status) queryParams.append("status", params.status);
-    
+
     const queryString = queryParams.toString();
     const url = `/purchase-orders/trends${queryString ? `?${queryString}` : ""}`;
-    
+
     return await apiClient.get<{
       data: Array<{
         period: string;
@@ -1585,7 +1585,7 @@ export interface CreateOrUpdateSupplierPayload {
 export const suppliersApi = {
   async getSuppliers(params: GetSuppliersParams = {}): Promise<Paginated<Supplier>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.search) queryParams.append("search", params.search);
@@ -1648,10 +1648,10 @@ export const suppliersApi = {
   },
 
   // Supplier Payments
-  async getPayments(supplierId: number, params?: { 
-    page?: number; 
-    per_page?: number; 
-    from_date?: string; 
+  async getPayments(supplierId: number, params?: {
+    page?: number;
+    per_page?: number;
+    from_date?: string;
     to_date?: string;
     sort_by?: string;
     sort_order?: 'asc' | 'desc';
@@ -1749,7 +1749,7 @@ export interface CreateOrUpdateItemTagPayload {
 export const itemTagsApi = {
   async getTags(params: GetItemTagsParams = {}): Promise<Paginated<ItemTag>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.search) queryParams.append("search", params.search);
@@ -1840,7 +1840,7 @@ export interface CreateOrUpdateCustomerTagPayload {
 export const customerTagsApi = {
   async getTags(params: GetCustomerTagsParams = {}): Promise<Paginated<CustomerTag>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.search) queryParams.append("search", params.search);
@@ -1952,7 +1952,7 @@ export const invoicesApi = {
 
     const queryString = queryParams.toString();
     const url = `/invoices${queryString ? `?${queryString}` : ""}`;
-    
+
     return await apiClient.get<{
       invoices: Invoice[];
       pagination: {
@@ -2045,6 +2045,11 @@ export interface ProcessSalePayload {
   payment_method?: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
   payment_account_id?: number;
   amount_paid?: number;
+  payments?: Array<{
+    payment_method: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
+    payment_account_id: number;
+    amount: number;
+  }>;
   use_advance?: boolean;
   is_guest?: boolean; // New field for guest sales validation
   notes?: string | null;
@@ -2065,7 +2070,7 @@ export const salesApi = {
 
     const queryString = queryParams.toString();
     const url = `/sales${queryString ? `?${queryString}` : ""}`;
-    
+
     return await apiClient.get<Paginated<Sale>>(url);
   },
 
@@ -2201,7 +2206,7 @@ export const customerPaymentsApi = {
 
     const queryString = queryParams.toString();
     const url = `/customer-payments${queryString ? `?${queryString}` : ""}`;
-    
+
     return await apiClient.get<Paginated<CustomerPayment>>(url);
   },
 
@@ -2274,7 +2279,7 @@ export const accountMappingsApi = {
 
     const queryString = queryParams.toString();
     const url = `/account-mappings${queryString ? `?${queryString}` : ""}`;
-    
+
     return await apiClient.get<{ data: AccountMapping[] }>(url);
   },
 
@@ -2286,7 +2291,7 @@ export const accountMappingsApi = {
 
     const queryString = queryParams.toString();
     const url = `/account-mappings/status${queryString ? `?${queryString}` : ""}`;
-    
+
     return await apiClient.get<{ data: AccountMappingStatus[] }>(url);
   },
 
@@ -2384,7 +2389,7 @@ export interface GetVehicleOrdersParams {
 export const vehiclesApi = {
   async getVehicles(params: GetVehiclesParams = {}): Promise<Paginated<Vehicle>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.search) queryParams.append("search", params.search);
@@ -2452,10 +2457,10 @@ export const vehiclesApi = {
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
     if (params?.month) queryParams.append('month', params.month);
-    
+
     const queryString = queryParams.toString();
     const url = `/vehicles/${id}/profitability-stats${queryString ? `?${queryString}` : ''}`;
-    
+
     return await apiClient.get<{
       vehicle_id: number;
       vehicle_name: string;
@@ -2466,7 +2471,7 @@ export const vehiclesApi = {
 
   async getVehicleOrders(id: number, params: GetVehicleOrdersParams = {}): Promise<Paginated<VehicleDeliveryOrder>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.status) queryParams.append("status", params.status);
@@ -2496,7 +2501,7 @@ export const vehiclesApi = {
 
   async getVehicleMaintenance(vehicleId: number, params: GetVehicleMaintenanceParams = {}): Promise<Paginated<VehicleMaintenance>> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.page) queryParams.append("page", String(params.page));
     if (params.per_page) queryParams.append("per_page", String(params.per_page));
     if (params.type) queryParams.append("type", params.type);
@@ -2813,7 +2818,7 @@ export const rentalApi = {
       if (response.status === 401 || response.status === 403) {
         throw new ApiError("Authentication required. Please log in again.", response.status, {});
       }
-      
+
       // Try to parse error response, but don't fail if it's not JSON
       let errorData: { message?: string } = { message: "Failed to download rental agreement" };
       try {
@@ -2824,7 +2829,7 @@ export const rentalApi = {
       } catch {
         // If response is not JSON, use default error message
       }
-      
+
       throw new ApiError(errorData.message || "Failed to download rental agreement", response.status, errorData);
     }
 
@@ -2838,7 +2843,7 @@ export const rentalApi = {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    
+
     // Extract filename from Content-Disposition header if available, otherwise use agreement number
     const contentDisposition = response.headers.get("Content-Disposition");
     let filename = `RENT-${id}.pdf`;
@@ -2848,7 +2853,7 @@ export const rentalApi = {
         filename = filenameMatch[1].replace(/['"]/g, "");
       }
     }
-    
+
     a.download = filename;
     document.body.appendChild(a);
     a.click();
