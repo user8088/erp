@@ -1239,10 +1239,7 @@ export default function PointOfSalePage() {
                           className="w-1/3 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
                         >
                           <option value="cash">Cash</option>
-                          <option value="bank_transfer">Bank Transfer</option>
-                          <option value="card">Card</option>
-                          <option value="cheque">Cheque</option>
-                          <option value="other">Other</option>
+                          <option value="bank_transfer">Bank</option>
                         </select>
                         <input
                           type="number"
@@ -1259,11 +1256,23 @@ export default function PointOfSalePage() {
                           className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
                         >
                           <option value="">Select Account</option>
-                          {paymentAccounts.map((account) => (
-                            <option key={account.id} value={account.id}>
-                              {account.number ? `${account.number} - ` : ""}{account.name}
-                            </option>
-                          ))}
+                          {paymentAccounts
+                            .filter(account => {
+                              const name = account.name.toLowerCase();
+                              if (newSplitPaymentMethod === 'cash') {
+                                // Include 'cash' but exclude 'jazz' (JazzCash)
+                                return name.includes('cash') && !name.includes('jazz');
+                              } else if (newSplitPaymentMethod === 'bank_transfer') {
+                                // Show all non-cash accounts OR JazzCash for Bank option
+                                return !name.includes('cash') || name.includes('jazz');
+                              }
+                              return true;
+                            })
+                            .map((account) => (
+                              <option key={account.id} value={account.id}>
+                                {account.number ? `${account.number} - ` : ""}{account.name}
+                              </option>
+                            ))}
                         </select>
                         <button
                           disabled={!splitAmount || !splitAccountId}
