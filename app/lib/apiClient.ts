@@ -2191,6 +2191,9 @@ export interface CreateCustomerPaymentPayload {
   payment_date: string;
   reference_number?: string | null;
   notes?: string | null;
+  cheque_number?: string;
+  cheque_date?: string;
+  bank_name?: string;
 }
 
 export const customerPaymentsApi = {
@@ -2254,6 +2257,44 @@ export const customerPaymentsApi = {
       };
       message?: string;
     }>("/customer-payments", payload);
+  },
+};
+
+export const chequesApi = {
+  async clearCheque(id: number, payload: { deposit_account_id: number; cleared_date: string }): Promise<{
+    message: string;
+    data: {
+      payment: CustomerPayment;
+      cheque: unknown;
+      journal_entries: unknown[];
+    };
+  }> {
+    return await apiClient.post<{
+      message: string;
+      data: {
+        payment: CustomerPayment;
+        cheque: unknown;
+        journal_entries: unknown[];
+      };
+    }>(`/cheques/${id}/clear`, payload);
+  },
+
+  async bounceCheque(id: number, payload: { notes: string; bounced_date?: string }): Promise<{
+    message: string;
+    data: {
+      payment: CustomerPayment;
+      cheque: unknown;
+      message: string;
+    };
+  }> {
+    return await apiClient.post<{
+      message: string;
+      data: {
+        payment: CustomerPayment;
+        cheque: unknown;
+        message: string;
+      };
+    }>(`/cheques/${id}/bounce`, payload);
   },
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import CustomerDetailTabs from "./CustomerDetailTabs";
 import CustomerDetailsForm from "./CustomerDetailsForm";
 import CustomerRentals from "./CustomerRentals";
@@ -8,9 +8,9 @@ import CustomerDeliveryProfit from "./CustomerDeliveryProfit";
 import CustomerEarnings from "./CustomerEarnings";
 import CustomerStockProfit from "./CustomerStockProfit";
 import RecordPaymentModal from "./RecordPaymentModal";
-import { customerPaymentSummaryApi, customerPaymentsApi, invoicesApi, salesApi, itemsApi, ApiError } from "../../lib/apiClient";
+import { customerPaymentSummaryApi, customerPaymentsApi, chequesApi, accountsApi, invoicesApi, salesApi, itemsApi, ApiError } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
-import type { Customer, CustomerPaymentSummary, CustomerPayment, Invoice, Sale, SaleItem } from "../../lib/types";
+import type { Customer, CustomerPaymentSummary, CustomerPayment, Invoice, Sale, SaleItem, Account } from "../../lib/types";
 import { DollarSign, TrendingUp, CreditCard, FileText, Calendar, Plus, Eye, Download } from "lucide-react";
 
 interface CustomerDetailContentProps {
@@ -30,11 +30,11 @@ export default function CustomerDetailContent({
 }: CustomerDetailContentProps) {
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState("customer-details");
-  
+
   // Payment summary data
   const [paymentSummary, setPaymentSummary] = useState<CustomerPaymentSummary | null>(null);
   const [loadingPayments, setLoadingPayments] = useState(false);
-  
+
   // Customer payments list
   const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
   const [invoiceItemSummaries, setInvoiceItemSummaries] = useState<Record<number, string>>({});
@@ -42,38 +42,48 @@ export default function CustomerDetailContent({
   const itemNamesCache = useRef<Record<number, string>>({});
   const itemBrandsCache = useRef<Record<number, string | null>>({});
   const itemUnitsCache = useRef<Record<number, string>>({});
-  
+
   // Customer invoices
   const [customerInvoices, setCustomerInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
-  
+
   // Payment recording modal
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+  // Cheque Actions State
+  const [clearingChequeId, setClearingChequeId] = useState<number | null>(null);
+  const [bouncingChequeId, setBouncingChequeId] = useState<number | null>(null);
+  const [depositAccountId, setDepositAccountId] = useState<number | null>(null);
+  const [actionDate, setActionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [actionNote, setActionNote] = useState<string>("");
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+
 
   // Calculate effective payment summary (from API or calculated from invoices)
   const effectiveSummary = useMemo(() => {
     // Get opening due amount from customer or payment summary
-    const openingDueAmount = 
-      paymentSummary?.opening_due_amount ?? 
-      customer?.opening_due_amount ?? 
+    const openingDueAmount =
+      paymentSummary?.opening_due_amount ??
+      customer?.opening_due_amount ??
       0;
 
     if (paymentSummary) {
       // Normalize prepaid/advance fields in case backend omits one of them
       const receivedAdvance = Array.isArray(paymentSummary.advance_transactions)
         ? paymentSummary.advance_transactions
-            .filter(tx => tx.transaction_type === 'received')
-            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
+          .filter(tx => tx.transaction_type === 'received')
+          .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
         : 0;
       const usedAdvance = Array.isArray(paymentSummary.advance_transactions)
         ? paymentSummary.advance_transactions
-            .filter(tx => tx.transaction_type === 'used')
-            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
+          .filter(tx => tx.transaction_type === 'used')
+          .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
         : 0;
       const refundedAdvance = Array.isArray(paymentSummary.advance_transactions)
         ? paymentSummary.advance_transactions
-            .filter(tx => tx.transaction_type === 'refunded')
-            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
+          .filter(tx => tx.transaction_type === 'refunded')
+          .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
         : 0;
       const computedAdvance =
         receivedAdvance - usedAdvance - refundedAdvance;
@@ -89,7 +99,7 @@ export default function CustomerDetailContent({
       // So we should use due_amount as-is, and only add opening_due_amount if backend didn't include it
       // Check if backend provided opening_due_amount - if yes, due_amount already includes it
       const backendHasOpeningDue = paymentSummary.opening_due_amount !== undefined && paymentSummary.opening_due_amount !== null;
-      const totalDueAmount = backendHasOpeningDue 
+      const totalDueAmount = backendHasOpeningDue
         ? (paymentSummary.due_amount || 0)  // Backend already included it
         : (paymentSummary.due_amount || 0) + openingDueAmount;  // Backend didn't include it, add it
 
@@ -102,23 +112,23 @@ export default function CustomerDetailContent({
         advance_transactions: paymentSummary.advance_transactions || [],
       };
     }
-    
+
     // Calculate from invoices if API data is not available
     const totalSpent = customerInvoices
       .filter(inv => inv.status !== 'cancelled')
       .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
-    
+
     const invoiceDueAmount = customerInvoices
       .filter(inv => inv.status === 'issued')
       .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
-    
+
     // Add opening due amount to invoice due amount
     const totalDueAmount = invoiceDueAmount + openingDueAmount;
-    
+
     const paidAmount = customerInvoices
       .filter(inv => inv.status === 'paid')
       .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
-    
+
     return {
       customer_id: Number(customerId),
       due_amount: totalDueAmount,
@@ -248,17 +258,17 @@ export default function CustomerDetailContent({
     return saleItems
       .map((item) => {
         // Try to get item name from various sources
-        const name = item?.item?.name 
+        const name = item?.item?.name
           ?? itemNamesCache.current[item?.item_id ?? 0]
           ?? `Item #${item?.item_id ?? ""}`.trim();
         // Try to get brand from item object or cache
-        const brand = item?.item?.brand 
-          ?? itemBrandsCache.current[item?.item_id ?? 0] 
+        const brand = item?.item?.brand
+          ?? itemBrandsCache.current[item?.item_id ?? 0]
           ?? null;
         // Get unit - prioritize item.unit, then item.item.primary_unit, then cache
-        const unit = item?.unit 
-          || item?.item?.primary_unit 
-          || itemUnitsCache.current[item?.item_id ?? 0] 
+        const unit = item?.unit
+          || item?.item?.primary_unit
+          || itemUnitsCache.current[item?.item_id ?? 0]
           || "";
         const qty = item?.quantity ?? 0;
         // Format quantity without unnecessary decimals (1 instead of 1.0000)
@@ -302,7 +312,7 @@ export default function CustomerDetailContent({
         const itemIds = metaItems
           .filter(item => item?.item_id && (!item?.item?.name || item?.item?.brand === undefined))
           .map(item => item.item_id!);
-        
+
         if (itemIds.length > 0) {
           // Fetch missing item names and brands
           const fetchPromises = itemIds
@@ -325,10 +335,10 @@ export default function CustomerDetailContent({
                 console.warn(`Failed to fetch item ${itemId}:`, error);
               }
             });
-          
+
           await Promise.all(fetchPromises);
         }
-        
+
         const summary = formatSaleItems(metaItems);
         if (summary) {
           setInvoiceItemSummaries((prev) => ({
@@ -370,7 +380,7 @@ export default function CustomerDetailContent({
   // Fetch payment summary
   const fetchPaymentSummary = useCallback(async () => {
     if (!customerId || activeTab !== "customer-payments") return;
-    
+
     setLoadingPayments(true);
     try {
       const response = await customerPaymentSummaryApi.getCustomerPaymentSummary(Number(customerId));
@@ -391,7 +401,7 @@ export default function CustomerDetailContent({
   // Fetch customer payments list
   const fetchCustomerPayments = useCallback(async () => {
     if (!customerId || activeTab !== "customer-payments") return;
-    
+
     try {
       const response = await customerPaymentsApi.getCustomerPayments({
         customer_id: Number(customerId),
@@ -427,17 +437,17 @@ export default function CustomerDetailContent({
   // Fetch customer invoices
   const fetchCustomerInvoices = useCallback(async () => {
     if (!customerId) return;
-    
+
     // Only fetch if we're on a tab that needs invoices
     if (activeTab !== "transactions" && activeTab !== "customer-payments") return;
-    
+
     setLoadingInvoices(true);
     try {
       const response = await invoicesApi.getInvoices({
         invoice_type: 'sale',
         per_page: 50,
       });
-      
+
       // Filter invoices for this customer
       const customerIdNum = Number(customerId);
       const filtered = response.invoices.filter(invoice => {
@@ -464,6 +474,78 @@ export default function CustomerDetailContent({
       fetchCustomerPayments(); // Also fetch payments for transactions tab
     }
   }, [activeTab, fetchPaymentSummary, fetchCustomerPayments, fetchCustomerInvoices]);
+
+  // Fetch accounts for cheque clearing
+  const fetchAccounts = async () => {
+    if (accounts.length > 0) return;
+    setLoadingAccounts(true);
+    try {
+      // Assuming company_id 1 for now or from context if available
+      const response = await accountsApi.getAccounts({ company_id: 1, root_type: "asset", is_group: false });
+      setAccounts(response.data);
+    } catch (error) {
+      console.error("Failed to fetch accounts:", error);
+      addToast("Failed to load accounts", "error");
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
+
+  const handleClearCheque = (paymentId: number) => {
+    setClearingChequeId(paymentId);
+    setDepositAccountId(null);
+    setActionDate(new Date().toISOString().split('T')[0]);
+    fetchAccounts();
+  };
+
+  const handleBounceCheque = (paymentId: number) => {
+    setBouncingChequeId(paymentId);
+    setActionNote("");
+    setActionDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const confirmClearCheque = async () => {
+    if (!clearingChequeId) return;
+    if (!depositAccountId) {
+      addToast("Please select a deposit account", "error");
+      return;
+    }
+
+    try {
+      await chequesApi.clearCheque(clearingChequeId, {
+        deposit_account_id: depositAccountId,
+        cleared_date: actionDate,
+      });
+      addToast("Cheque cleared successfully", "success");
+      setClearingChequeId(null);
+      fetchCustomerPayments(); // Refresh payments
+      fetchPaymentSummary(); // Refresh summary (balance updates)
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Failed to clear cheque";
+      addToast(message, "error");
+    }
+  };
+
+  const confirmBounceCheque = async () => {
+    if (!bouncingChequeId) return;
+    if (!actionNote) {
+      addToast("Please provide a reason/note", "error");
+      return;
+    }
+
+    try {
+      await chequesApi.bounceCheque(bouncingChequeId, {
+        notes: actionNote,
+        bounced_date: actionDate,
+      });
+      addToast("Cheque marked as bounced", "success");
+      setBouncingChequeId(null);
+      fetchCustomerPayments(); // Refresh payments
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Failed to bounce cheque";
+      addToast(message, "error");
+    }
+  };
 
   // Fetch invoices when payment modal opens
   useEffect(() => {
@@ -566,6 +648,7 @@ export default function CustomerDetailContent({
                   </div>
                 </div>
 
+
                 {/* Outstanding Invoices */}
                 {effectiveSummary.outstanding_invoices && effectiveSummary.outstanding_invoices.length > 0 && (
                   <div className="border-t border-gray-200 pt-6">
@@ -631,37 +714,37 @@ export default function CustomerDetailContent({
                         // Get invoice information if available
                         const invoice = transaction.payment?.invoice;
                         const invoiceNumber = invoice?.invoice_number || transaction.payment?.invoice?.invoice_number;
-                        
+
                         // Get sale information if available
                         const sale = transaction.sale || (invoice?.metadata?.sale as Sale | undefined);
                         const saleItems = sale?.items || [];
-                        const saleDescription = saleItems.length > 0 
+                        const saleDescription = saleItems.length > 0
                           ? saleItems.map((item: SaleItem) => {
-                              const itemName = item.item?.name || 'item';
-                              const quantity = item.quantity || 1;
-                              const unit = item.unit || '';
-                              return `${quantity} ${unit} ${itemName}`.trim();
-                            }).join(', ')
+                            const itemName = item.item?.name || 'item';
+                            const quantity = item.quantity || 1;
+                            const unit = item.unit || '';
+                            return `${quantity} ${unit} ${itemName}`.trim();
+                          }).join(', ')
                           : null;
-                        
+
                         // Get description from notes or reference
-                        const description = transaction.notes || transaction.reference || 
-                          (transaction.transaction_type === 'used' && invoiceNumber 
+                        const description = transaction.notes || transaction.reference ||
+                          (transaction.transaction_type === 'used' && invoiceNumber
                             ? `Used to pay Invoice #${invoiceNumber}${saleDescription ? ` - ${saleDescription}` : ''}`
                             : null) ||
-                          (transaction.transaction_type === 'received' 
+                          (transaction.transaction_type === 'received'
                             ? 'Advance payment received'
                             : transaction.transaction_type === 'refunded'
-                            ? 'Advance refunded'
-                            : null);
+                              ? 'Advance refunded'
+                              : null);
 
                         return (
                           <div key={transaction.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <p className="text-sm font-medium text-gray-900">
-                                  {transaction.transaction_type === 'received' ? 'Received' : 
-                                   transaction.transaction_type === 'used' ? 'Used' : 'Refunded'}
+                                  {transaction.transaction_type === 'received' ? 'Received' :
+                                    transaction.transaction_type === 'used' ? 'Used' : 'Refunded'}
                                 </p>
                                 {invoiceNumber && transaction.transaction_type === 'used' && (
                                   <span className="text-xs px-2 py-0.5 bg-blue-50 border border-blue-100 text-blue-700 rounded">
@@ -675,18 +758,17 @@ export default function CustomerDetailContent({
                                 </p>
                               )}
                               <p className="text-xs text-gray-500">
-                                {new Date(transaction.transaction_date).toLocaleDateString('en-US', { 
-                                  year: 'numeric', 
-                                  month: 'short', 
-                                  day: 'numeric' 
+                                {new Date(transaction.transaction_date).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric'
                                 })}
                               </p>
                             </div>
                             <div className="text-right ml-4 flex-shrink-0">
-                              <p className={`text-sm font-semibold ${
-                                transaction.transaction_type === 'received' ? 'text-green-600' :
+                              <p className={`text-sm font-semibold ${transaction.transaction_type === 'received' ? 'text-green-600' :
                                 transaction.transaction_type === 'used' ? 'text-red-600' : 'text-blue-600'
-                              }`}>
+                                }`}>
                                 {transaction.transaction_type === 'received' ? '+' : '-'}
                                 PKR {Math.abs(transaction.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </p>
@@ -716,15 +798,14 @@ export default function CustomerDetailContent({
                             <div className="flex items-center gap-2">
                               <FileText className="w-4 h-4 text-gray-400" />
                               <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
-                              <span className={`text-xs px-2 py-0.5 rounded ${
-                                invoice.status === 'paid' 
-                                  ? 'bg-green-100 text-green-700'
-                                  : invoice.status === 'issued'
+                              <span className={`text-xs px-2 py-0.5 rounded ${invoice.status === 'paid'
+                                ? 'bg-green-100 text-green-700'
+                                : invoice.status === 'issued'
                                   ? 'bg-yellow-100 text-yellow-700'
                                   : invoice.status === 'cancelled'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-gray-100 text-gray-700'
-                              }`}>
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-gray-100 text-gray-700'
+                                }`}>
                                 {invoice.status}
                               </span>
                             </div>
@@ -745,7 +826,7 @@ export default function CustomerDetailContent({
                               PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale') 
+                              {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale')
                                 ? (invoice.metadata?.sale_type === 'walk-in' ? 'Walk-in' : 'Delivery')
                                 : invoice.invoice_type}
                             </p>
@@ -780,6 +861,95 @@ export default function CustomerDetailContent({
                     </div>
                   )}
                 </div>
+
+                {/* Cheques */}
+                <div className="border-t border-gray-200 pt-6">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Cheques</h3>
+                  {customerPayments.filter(p => p.payment_method === 'cheque').length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b border-gray-200">
+                            <th className="px-4 py-3 font-medium text-gray-500">Date</th>
+                            <th className="px-4 py-3 font-medium text-gray-500">Cheque Number</th>
+                            <th className="px-4 py-3 font-medium text-gray-500">Bank Name</th>
+                            <th className="px-4 py-3 font-medium text-gray-500 text-right">Amount</th>
+                            <th className="px-4 py-3 font-medium text-gray-500 text-right">Status</th>
+                            <th className="px-4 py-3 font-medium text-gray-500 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+                          {customerPayments
+                            .filter(p => p.payment_method === 'cheque')
+                            .map((payment) => (
+                              <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-4 py-3 text-gray-900">
+                                  {(payment.cheque?.cheque_date || payment.cheque_date)
+                                    ? new Date(payment.cheque?.cheque_date || payment.cheque_date!).toLocaleDateString()
+                                    : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-gray-900 font-medium">
+                                  {payment.cheque?.cheque_number || payment.cheque_number || '-'}
+                                </td>
+                                <td className="px-4 py-3 text-gray-600">
+                                  {payment.cheque?.bank_name || payment.bank_name || '-'}
+                                </td>
+                                <td className="px-4 py-3 text-right font-medium text-gray-900">
+                                  PKR {payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {(() => {
+                                    const rawStatus = payment.cheque?.status || payment.cheque_status || 'pending';
+                                    const status = rawStatus.toLowerCase();
+                                    return (
+                                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status === 'cleared'
+                                          ? 'bg-green-100 text-green-800'
+                                          : status === 'bounced'
+                                            ? 'bg-red-100 text-red-800'
+                                            : 'bg-yellow-100 text-yellow-800'
+                                        }`}>
+                                        {status === 'pending_clearance' ? 'Pending Clearance' : (status.charAt(0).toUpperCase() + status.slice(1))}
+                                      </span>
+                                    );
+                                  })()}
+                                </td>
+                                <td className="px-4 py-3 text-right space-x-2">
+                                  {(() => {
+                                    const rawStatus = payment.cheque?.status || payment.cheque_status || 'pending';
+                                    const status = rawStatus.toLowerCase();
+                                    if (status === 'pending' || status === 'pending_clearance') {
+                                      return (
+                                        <>
+                                          <button
+                                            onClick={() => handleClearCheque(payment.id)}
+                                            className="text-xs font-medium text-green-600 hover:text-green-800 underline"
+                                          >
+                                            Clear
+                                          </button>
+                                          <button
+                                            onClick={() => handleBounceCheque(payment.id)}
+                                            className="text-xs font-medium text-red-600 hover:text-red-800 underline"
+                                          >
+                                            Bounce
+                                          </button>
+                                        </>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                      <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">No cheques received from this customer.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="text-center py-12 text-gray-500">
@@ -795,7 +965,7 @@ export default function CustomerDetailContent({
         {activeTab === "transactions" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-6">Related Transactions</h2>
-            
+
             {loadingInvoices ? (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-sm">Loading transactions...</p>
@@ -816,15 +986,14 @@ export default function CustomerDetailContent({
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-gray-400" />
                         <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          invoice.status === 'paid' 
-                            ? 'bg-green-100 text-green-700'
-                            : invoice.status === 'issued'
+                        <span className={`text-xs px-2 py-0.5 rounded ${invoice.status === 'paid'
+                          ? 'bg-green-100 text-green-700'
+                          : invoice.status === 'issued'
                             ? 'bg-yellow-100 text-yellow-700'
                             : invoice.status === 'cancelled'
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}>
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
                           {invoice.status}
                         </span>
                       </div>
@@ -845,7 +1014,7 @@ export default function CustomerDetailContent({
                         PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale') 
+                        {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale')
                           ? (invoice.metadata?.sale_type === 'walk-in' ? 'Walk-in' : 'Delivery')
                           : invoice.invoice_type}
                       </p>
@@ -910,6 +1079,107 @@ export default function CustomerDetailContent({
           customerAdvanceBalance={effectiveSummary.advance_balance || 0}
           onPaymentRecorded={handlePaymentRecorded}
         />
+      )}
+      {/* Clear Cheque Modal */}
+      {clearingChequeId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 max-w-full">
+            <h3 className="text-lg font-semibold mb-4">Clear Cheque</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Deposit Account
+                </label>
+                <select
+                  value={depositAccountId || ""}
+                  onChange={(e) => setDepositAccountId(Number(e.target.value))}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  disabled={loadingAccounts}
+                >
+                  <option value="">Select Account</option>
+                  {accounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cleared Date
+                </label>
+                <input
+                  type="date"
+                  value={actionDate}
+                  onChange={(e) => setActionDate(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setClearingChequeId(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmClearCheque}
+                  className="px-4 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-md"
+                >
+                  Confirm Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bounce Cheque Modal */}
+      {bouncingChequeId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 max-w-full">
+            <h3 className="text-lg font-semibold mb-4">Bounce Cheque</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason / Notes
+                </label>
+                <textarea
+                  value={actionNote}
+                  onChange={(e) => setActionNote(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  placeholder="e.g. Insufficient funds"
+                  rows={3}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Bounced Date
+                </label>
+                <input
+                  type="date"
+                  value={actionDate}
+                  onChange={(e) => setActionDate(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setBouncingChequeId(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmBounceCheque}
+                  className="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-md"
+                >
+                  Confirm Bounce
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

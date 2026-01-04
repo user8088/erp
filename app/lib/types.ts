@@ -750,6 +750,17 @@ export interface CustomerPayment {
   payment_date: string;
   notes?: string | null;
   status: 'pending' | 'completed' | 'cancelled';
+  cheque_number?: string | null;
+  cheque_date?: string | null;
+  bank_name?: string | null;
+  cheque_status?: 'pending' | 'cleared' | 'bounced' | 'returned';
+  cheque?: {
+    id: number;
+    cheque_number: string;
+    bank_name: string;
+    cheque_date: string;
+    status: 'pending' | 'cleared' | 'bounced' | 'returned';
+  };
   created_at: string;
   updated_at: string;
 }
@@ -772,23 +783,23 @@ export interface CustomerAdvance {
   updated_at: string;
 }
 
-export type AccountMappingType = 
-  | 'pos_cash' 
-  | 'pos_bank' 
-  | 'pos_ar' 
-  | 'pos_advance' 
-  | 'pos_sales_revenue' 
-  | 'pos_delivery_revenue' 
-  | 'pos_discount' 
-  | 'staff_salary_expense' 
-  | 'staff_salary_payment' 
-  | 'staff_advance' 
-  | 'rental_cash' 
-  | 'rental_bank' 
-  | 'rental_ar' 
-  | 'rental_assets' 
-  | 'rental_security_deposits' 
-  | 'rental_income' 
+export type AccountMappingType =
+  | 'pos_cash'
+  | 'pos_bank'
+  | 'pos_ar'
+  | 'pos_advance'
+  | 'pos_sales_revenue'
+  | 'pos_delivery_revenue'
+  | 'pos_discount'
+  | 'staff_salary_expense'
+  | 'staff_salary_payment'
+  | 'staff_advance'
+  | 'rental_cash'
+  | 'rental_bank'
+  | 'rental_ar'
+  | 'rental_assets'
+  | 'rental_security_deposits'
+  | 'rental_income'
   | 'rental_damage_income';
 
 export interface AccountMapping {
@@ -960,11 +971,11 @@ export interface TrialBalanceReport {
   generated_at: string;
 }
 
-export type PnLSection = 
-  | "income" 
-  | "cogs" 
-  | "operating_expense" 
-  | "non_operating_income" 
+export type PnLSection =
+  | "income"
+  | "cogs"
+  | "operating_expense"
+  | "non_operating_income"
   | "non_operating_expense"
   | "tax"
   | "other";
@@ -1043,7 +1054,7 @@ export interface FinancialSummaryData {
   generated_at: string;
 }
 
-export type BalanceSheetSection = 
+export type BalanceSheetSection =
   | "current_assets"
   | "fixed_assets"
   | "intangible_assets"
