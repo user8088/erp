@@ -750,6 +750,17 @@ export interface CustomerPayment {
   payment_date: string;
   notes?: string | null;
   status: 'pending' | 'completed' | 'cancelled';
+  cheque_number?: string | null;
+  cheque_date?: string | null;
+  bank_name?: string | null;
+  cheque_status?: 'pending' | 'cleared' | 'bounced' | 'returned';
+  cheque?: {
+    id: number;
+    cheque_number: string;
+    bank_name: string;
+    cheque_date: string;
+    status: 'pending' | 'cleared' | 'bounced' | 'returned';
+  };
   created_at: string;
   updated_at: string;
 }
@@ -972,6 +983,11 @@ export type PnLSection =
   | "cogs"
   | "operating_expense"
   | "non_operating_income"
+export type PnLSection =
+  | "income"
+  | "cogs"
+  | "operating_expense"
+  | "non_operating_income"
   | "non_operating_expense"
   | "tax"
   | "other";
@@ -1051,6 +1067,7 @@ export interface FinancialSummaryData {
 }
 
 export type BalanceSheetSection =
+  export type BalanceSheetSection =
   | "current_assets"
   | "fixed_assets"
   | "intangible_assets"
