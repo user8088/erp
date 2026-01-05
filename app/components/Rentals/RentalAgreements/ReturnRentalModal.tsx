@@ -182,7 +182,8 @@ export default function ReturnRentalModal({
             errorMessage = errorData.message;
           }
           if (errorData.errors) {
-            const firstError = Object.values(errorData.errors)[0]?.[0];
+            const errors = errorData.errors as Record<string, string[]>;
+            const firstError = Object.values(errors)[0]?.[0];
             if (firstError) errorMessage = firstError;
           }
         }

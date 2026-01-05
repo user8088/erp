@@ -983,11 +983,6 @@ export type PnLSection =
   | "cogs"
   | "operating_expense"
   | "non_operating_income"
-export type PnLSection =
-  | "income"
-  | "cogs"
-  | "operating_expense"
-  | "non_operating_income"
   | "non_operating_expense"
   | "tax"
   | "other";
@@ -1067,7 +1062,6 @@ export interface FinancialSummaryData {
 }
 
 export type BalanceSheetSection =
-  export type BalanceSheetSection =
   | "current_assets"
   | "fixed_assets"
   | "intangible_assets"
