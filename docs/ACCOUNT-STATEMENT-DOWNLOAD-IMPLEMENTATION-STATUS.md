@@ -102,7 +102,7 @@ See `docs/ACCOUNT-STATEMENT-DOWNLOAD-BACKEND-REQUIREMENTS.md` for complete imple
 
 Once implemented, test with:
 ```bash
-curl -X GET "http://localhost:8000/api/accounts/37/statement" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/37/statement" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Accept: application/pdf" \
   --output statement.pdf
@@ -110,7 +110,7 @@ curl -X GET "http://localhost:8000/api/accounts/37/statement" \
 
 With date filters:
 ```bash
-curl -X GET "http://localhost:8000/api/accounts/37/statement?start_date=2024-01-01&end_date=2024-12-31" \
+curl -X GET "https://erp-server-main-xegmvt.laravel.cloud/api/accounts/37/statement?start_date=2024-01-01&end_date=2024-12-31" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Accept: application/pdf" \
   --output statement.pdf
