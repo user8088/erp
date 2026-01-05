@@ -50,13 +50,21 @@ export default function ReturnRentalModal({
         });
         
         // Filter out disabled accounts only
-        const allAssetAccounts = response.data.filter(acc => !acc.is_disabled);
+        let allAssetAccounts = response.data.filter(acc => !acc.is_disabled);
+        
+        // If the original security deposit account is not in the list (e.g. different root type),
+        // and we have the account object, add it to the list
+        if (agreement.security_deposit_payment_account && 
+            !allAssetAccounts.some(acc => acc.id === agreement.security_deposit_payment_account?.id)) {
+          allAssetAccounts.push(agreement.security_deposit_payment_account);
+        }
         
         // Sort: security deposit payment account first, then others
         const sortedAccounts = [...allAssetAccounts].sort((a, b) => {
-          if (agreement.security_deposit_payment_account_id) {
-            if (a.id === agreement.security_deposit_payment_account_id) return -1;
-            if (b.id === agreement.security_deposit_payment_account_id) return 1;
+          const depositAccountId = agreement.security_deposit_payment_account_id || agreement.security_deposit_payment_account?.id;
+          if (depositAccountId) {
+            if (a.id === depositAccountId) return -1;
+            if (b.id === depositAccountId) return 1;
           }
           return 0;
         });
@@ -73,14 +81,16 @@ export default function ReturnRentalModal({
     if (isOpen) {
       fetchRefundAccounts();
     }
-  }, [isOpen, agreement.security_deposit_payment_account_id, addToast]);
+  }, [isOpen, agreement.security_deposit_payment_account_id, agreement.security_deposit_payment_account, addToast]);
 
   useEffect(() => {
     if (isOpen && refundAccounts.length > 0) {
       // ALWAYS prioritize the security deposit payment account from the agreement
-      if (agreement.security_deposit_payment_account_id) {
+      const depositAccountId = agreement.security_deposit_payment_account_id || agreement.security_deposit_payment_account?.id;
+      
+      if (depositAccountId) {
         const depositAccount = refundAccounts.find(
-          acc => acc.id === agreement.security_deposit_payment_account_id
+          acc => acc.id === depositAccountId
         );
         if (depositAccount) {
           setRefundAccountId(depositAccount.id);
@@ -92,9 +102,9 @@ export default function ReturnRentalModal({
       }
       
       // Fallback to mapped accounts or first available
-      if (mappings.cashAccount && refundAccounts.find(a => a.id === mappings.cashAccount!.id)) {
+      if (mappings.cashAccount && refundAccounts.some(a => a.id === mappings.cashAccount!.id)) {
         setRefundAccountId(mappings.cashAccount.id);
-      } else if (mappings.bankAccount && refundAccounts.find(a => a.id === mappings.bankAccount!.id)) {
+      } else if (mappings.bankAccount && refundAccounts.some(a => a.id === mappings.bankAccount!.id)) {
         setRefundAccountId(mappings.bankAccount.id);
       } else if (refundAccounts.length > 0) {
         setRefundAccountId(refundAccounts[0].id);
@@ -104,26 +114,27 @@ export default function ReturnRentalModal({
       const defaultRefund = agreement.security_deposit_amount - parseFloat(damageChargeAmount || "0");
       setSecurityDepositRefunded(String(Math.max(0, defaultRefund)));
     }
-  }, [isOpen, agreement.security_deposit_payment_account_id, agreement.security_deposit_amount, mappings, refundAccounts, damageChargeAmount]);
+  }, [isOpen, agreement.security_deposit_payment_account_id, agreement.security_deposit_payment_account, agreement.security_deposit_amount, mappings, refundAccounts, damageChargeAmount]);
 
-  // Recalculate refund when damage charge changes
+  // Recalculate refund when damage charge or condition changes
   useEffect(() => {
-    const damageCharge = parseFloat(damageChargeAmount || "0");
-    const refund = agreement.security_deposit_amount - damageCharge;
-    setSecurityDepositRefunded(String(Math.max(0, refund)));
-  }, [damageChargeAmount, agreement.security_deposit_amount]);
+    if (returnCondition === "lost") {
+      setDamageChargeAmount(String(agreement.security_deposit_amount));
+      setSecurityDepositRefunded("0");
+    } else {
+      const damageCharge = parseFloat(damageChargeAmount || "0");
+      const refund = agreement.security_deposit_amount - damageCharge;
+      setSecurityDepositRefunded(String(Math.max(0, refund)));
+    }
+  }, [damageChargeAmount, agreement.security_deposit_amount, returnCondition]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
-    if (!refundAccountId) {
-      setErrors({ account: "Please select a refund account." });
-      return;
-    }
+    const refundAmount = parseFloat(securityDepositRefunded || "0");
 
-    // Check if refund account is selected
-    if (!refundAccountId) {
+    if (refundAmount > 0 && !refundAccountId) {
       setErrors({ account: "Please select a refund account." });
       return;
     }
@@ -136,6 +147,14 @@ export default function ReturnRentalModal({
       return;
     }
 
+    // Check for loss account if item is lost
+    if (returnCondition === "lost" && !isConfigured.loss) {
+      setErrors({
+        account: "Rental Asset Loss account is not configured. Please configure it in Rental Settings to process lost items."
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       await rentalApi.processReturn({
@@ -143,9 +162,9 @@ export default function ReturnRentalModal({
         return_date: returnDate,
         return_condition: returnCondition,
         damage_charge_amount: parseFloat(damageChargeAmount || "0"),
-        security_deposit_refunded: parseFloat(securityDepositRefunded || "0"),
+        security_deposit_refunded: refundAmount,
         damage_description: damageDescription.trim() || undefined,
-        refund_account_id: refundAccountId,
+        refund_account_id: refundAccountId || undefined,
         notes: notes.trim() || undefined,
       });
 
@@ -153,43 +172,25 @@ export default function ReturnRentalModal({
       onReturnProcessed();
       onClose();
     } catch (e: unknown) {
-      console.error(e);
+      console.error("Return error:", e);
+      let errorMessage = "Failed to process rental return.";
       
       if (e && typeof e === "object" && "data" in e) {
-        const errorData = (e as { data: unknown }).data;
+        const errorData = (e as any).data;
         if (errorData && typeof errorData === "object") {
-          // Check for specific error messages
-          if ("message" in errorData && typeof errorData.message === "string") {
-            const message = errorData.message.toLowerCase();
-            if (message.includes("account") || message.includes("mapping") || message.includes("security") || message.includes("income")) {
-              addToast(
-                `${errorData.message} Please configure accounts in Rental Settings.`,
-                "error"
-              );
-              return;
-            }
-            addToast(errorData.message, "error");
-            return;
+          if (errorData.message) {
+            errorMessage = errorData.message;
           }
-          if ("errors" in errorData) {
-          const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
-          const firstError = Object.values(backendErrors)[0]?.[0];
-          if (firstError) {
-              if (firstError.toLowerCase().includes("account") || firstError.toLowerCase().includes("mapping")) {
-                addToast(
-                  `${firstError} Please configure accounts in Rental Settings.`,
-                  "error"
-                );
-              } else {
-            addToast(firstError, "error");
-              }
-            return;
-            }
+          if (errorData.errors) {
+            const firstError = Object.values(errorData.errors)[0]?.[0];
+            if (firstError) errorMessage = firstError;
           }
         }
+      } else if (e instanceof Error) {
+        errorMessage = e.message;
       }
       
-      addToast("Failed to process rental return. Please check that all required account mappings are configured in Rental Settings.", "error");
+      addToast(errorMessage, "error");
     } finally {
       setSubmitting(false);
     }
@@ -226,6 +227,21 @@ export default function ReturnRentalModal({
             <p className="text-sm text-gray-900">{agreement.agreement_number}</p>
           </div>
 
+          <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-md">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase">
+                Outstanding
+              </label>
+              <p className="text-sm font-semibold text-red-600">{formatCurrency(agreement.outstanding_balance)}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase">
+                Advance
+              </label>
+              <p className="text-sm font-semibold text-blue-600">{formatCurrency(agreement.advance_balance)}</p>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Return Date <span className="text-red-500">*</span>
@@ -251,6 +267,11 @@ export default function ReturnRentalModal({
               <option value="damaged">Damaged</option>
               <option value="lost">Lost</option>
             </select>
+            {returnCondition === "lost" && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded text-xs text-red-800">
+                <strong>Note:</strong> Marking an item as lost will permanently decrement the total asset quantity in the system.
+              </div>
+            )}
           </div>
 
           {(returnCondition === "damaged" || returnCondition === "lost") && (
@@ -304,13 +325,13 @@ export default function ReturnRentalModal({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
             <p className="mt-1 text-xs text-gray-500">
-              Auto-calculated: {formatCurrency(agreement.security_deposit_amount)} - {formatCurrency(parseFloat(damageChargeAmount || "0"))} = {formatCurrency(parseFloat(securityDepositRefunded || "0"))}
+              Calculation: {formatCurrency(agreement.security_deposit_amount)} (Deposit) - {formatCurrency(parseFloat(damageChargeAmount || "0"))} (Charge) = {formatCurrency(parseFloat(securityDepositRefunded || "0"))} (Refund)
             </p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Refund Account <span className="text-red-500">*</span>
+              Refund Account {parseFloat(securityDepositRefunded || "0") > 0 && <span className="text-red-500">*</span>}
             </label>
             <select
               value={refundAccountId || ""}
@@ -330,12 +351,15 @@ export default function ReturnRentalModal({
                   No refund accounts available. Please configure cash or bank accounts in Chart of Accounts.
                 </option>
               ) : (
-                refundAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.number ? `${account.number} - ` : ""}{account.name}
-                  {agreement.security_deposit_payment_account_id === account.id ? " (Original deposit account)" : ""}
-                </option>
-                ))
+                refundAccounts.map((account) => {
+                  const depositAccountId = agreement.security_deposit_payment_account_id || agreement.security_deposit_payment_account?.id;
+                  return (
+                    <option key={account.id} value={account.id}>
+                      {account.number ? `${account.number} - ` : ""}{account.name}
+                      {depositAccountId === account.id ? " (Original deposit account)" : ""}
+                    </option>
+                  );
+                })
               )}
             </select>
             {errors.account && (

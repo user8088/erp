@@ -32,8 +32,22 @@ export default function RentalAgreementsTable({
     if (agreement.outstanding_balance === 0) {
       return "paid";
     }
+    
+    // If there's an advance balance and no outstanding, it's paid
+    if (agreement.advance_balance > 0 && agreement.outstanding_balance === 0) {
+      return "paid";
+    }
+
     // Calculate paid amount from payments
-    const paidAmount = agreement.payments?.reduce((sum, payment) => sum + payment.amount_paid, 0) || 0;
+    const paidAmount = agreement.payments?.reduce((sum, payment) => {
+      const amount = typeof payment.amount_paid === 'number' 
+        ? payment.amount_paid 
+        : typeof payment.amount_paid === 'string' 
+          ? parseFloat(payment.amount_paid) || 0
+          : 0;
+      return sum + amount;
+    }, 0) || 0;
+
     if (paidAmount > 0) {
       return "partially_paid";
     }
@@ -51,10 +65,12 @@ export default function RentalAgreementsTable({
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Agreement #</th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Customer</th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Rental Item</th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Quantity</th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Period Type</th>
+            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Qty</th>
+            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Rent Per Item</th>
+            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Period</th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Start Date</th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Outstanding Balance</th>
+            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Outstanding Rent</th>
+            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Advance Rent</th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Payment Status</th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Rental Status</th>
           </tr>
@@ -78,7 +94,10 @@ export default function RentalAgreementsTable({
                   {agreement.rental_item?.name || "—"}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
-                  {agreement.quantity_rented}
+                  {parseFloat(String(agreement.quantity_rented))}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                  {formatCurrency(agreement.rent_per_period || agreement.rent_amount || 0)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap capitalize">
                   {agreement.rental_period_type}
@@ -88,6 +107,9 @@ export default function RentalAgreementsTable({
                 </td>
                 <td className="px-4 py-3 text-sm text-red-600 whitespace-nowrap font-semibold">
                   {formatCurrency(agreement.outstanding_balance)}
+                </td>
+                <td className="px-4 py-3 text-sm text-blue-600 whitespace-nowrap font-semibold">
+                  {formatCurrency(agreement.advance_balance)}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <PaymentStatusBadge status={paymentStatus} />
@@ -101,7 +123,7 @@ export default function RentalAgreementsTable({
           {!loading && agreements.length === 0 && (
             <tr>
               <td
-                colSpan={9}
+                colSpan={11}
                 className="px-4 py-6 text-sm text-gray-500 text-center"
               >
                 No rental agreements found.

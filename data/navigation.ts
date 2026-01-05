@@ -220,16 +220,16 @@ export const navigationData: NavItem[] = [
         href: "/rental/items",
       },
       {
+        id: "rental-agreements",
+        label: "Rental Agreements",
+        icon: FileText,
+        href: "/rental/agreements",
+      },
+      {
         id: "rental-categories",
         label: "Rental Categories",
         icon: FolderOpen,
         href: "/rental/categories",
-      },
-      {
-        id: "rental-agreements",
-        label: "Active Rentals",
-        icon: FileText,
-        href: "/rental/agreements",
       },
       {
         id: "rental-payments",

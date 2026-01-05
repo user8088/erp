@@ -8,6 +8,7 @@ import { invalidateRentalAgreementsCache } from "../../../components/Rentals/Ren
 import { useRentalAccountMappings } from "../../../components/Rentals/Shared/useRentalAccountMappings";
 import RentalAccountingStatusBanner from "../../../components/Rentals/Shared/RentalAccountingStatusBanner";
 import type { Customer, RentalItem } from "../../../lib/types";
+import { Search, User, Package, ChevronDown, Loader2 } from "lucide-react";
 
 export default function NewRentalAgreementPage() {
   const router = useRouter();
@@ -20,6 +21,8 @@ export default function NewRentalAgreementPage() {
   const [loadingItems, setLoadingItems] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [showItemDropdown, setShowItemDropdown] = useState(false);
 
   const [formData, setFormData] = useState({
     customer_id: "",
@@ -32,6 +35,7 @@ export default function NewRentalAgreementPage() {
   });
 
   const [selectedItem, setSelectedItem] = useState<RentalItem | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [collectSecurityDeposit, setCollectSecurityDeposit] = useState(false);
@@ -80,9 +84,17 @@ export default function NewRentalAgreementPage() {
   useEffect(() => {
     if (formData.rental_item_id) {
       const item = availableItems.find(i => i.id === Number(formData.rental_item_id));
-      setSelectedItem(item || null);
+      if (item) setSelectedItem(item);
     }
   }, [formData.rental_item_id, availableItems]);
+
+  // Update selected customer when customer_id changes
+  useEffect(() => {
+    if (formData.customer_id) {
+      const customer = customers.find(c => c.id === Number(formData.customer_id));
+      if (customer) setSelectedCustomer(customer);
+    }
+  }, [formData.customer_id, customers]);
 
   // Set default payment account when available
   useEffect(() => {
@@ -240,37 +252,61 @@ export default function NewRentalAgreementPage() {
         {step === 1 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Step 1: Select Customer</h2>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search Customer
-              </label>
-              <input
-                type="text"
-                value={customerSearch}
-                onChange={(e) => setCustomerSearch(e.target.value)}
-                placeholder="Search by name, email, phone..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Customer <span className="text-red-500">*</span>
               </label>
-              <select
-                value={formData.customer_id}
-                onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                  errors.customer_id ? "border-red-500" : "border-gray-300"
-                }`}
-                disabled={loadingCustomers}
-              >
-                <option value="">Select a customer</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name} - {customer.email}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 z-10" />
+                <input
+                  type="text"
+                  value={formData.customer_id ? (selectedCustomer?.name || "") : customerSearch}
+                  onChange={(e) => {
+                    setCustomerSearch(e.target.value);
+                    setShowCustomerDropdown(true);
+                    if (formData.customer_id) {
+                      setFormData({ ...formData, customer_id: "" });
+                    }
+                  }}
+                  onFocus={() => setShowCustomerDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                  placeholder="Search by name, email, phone..."
+                  className={`w-full pl-10 pr-10 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                    errors.customer_id ? "border-red-500" : "border-gray-300"
+                  }`}
+                />
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+                  {loadingCustomers && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+
+              {showCustomerDropdown && (
+                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {loadingCustomers && customers.length === 0 ? (
+                    <div className="px-4 py-2 text-sm text-gray-500">Loading customers...</div>
+                  ) : customers.length > 0 ? (
+                    customers.map((customer) => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, customer_id: String(customer.id) });
+                          setSelectedCustomer(customer);
+                          setCustomerSearch("");
+                          setShowCustomerDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-orange-50 focus:bg-orange-50 focus:outline-none transition-colors"
+                      >
+                        <div className="font-medium text-gray-900">{customer.name}</div>
+                        <div className="text-xs text-gray-500">{customer.email} • {customer.phone || "No phone"}</div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-2 text-sm text-gray-500">No customers found</div>
+                  )}
+                </div>
+              )}
               {errors.customer_id && (
                 <p className="mt-1 text-sm text-red-600">{errors.customer_id}</p>
               )}
@@ -282,37 +318,61 @@ export default function NewRentalAgreementPage() {
         {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Step 2: Select Rental Item & Quantity</h2>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search Rental Item
-              </label>
-              <input
-                type="text"
-                value={itemSearch}
-                onChange={(e) => setItemSearch(e.target.value)}
-                placeholder="Search by name or SKU..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Rental Item <span className="text-red-500">*</span>
               </label>
-              <select
-                value={formData.rental_item_id}
-                onChange={(e) => setFormData({ ...formData, rental_item_id: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                  errors.rental_item_id ? "border-red-500" : "border-gray-300"
-                }`}
-                disabled={loadingItems}
-              >
-                <option value="">Select a rental item</option>
-                {availableItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} ({item.sku}) - Available: {item.quantity_available}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <Package className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 z-10" />
+                <input
+                  type="text"
+                  value={formData.rental_item_id ? (selectedItem?.name || "") : itemSearch}
+                  onChange={(e) => {
+                    setItemSearch(e.target.value);
+                    setShowItemDropdown(true);
+                    if (formData.rental_item_id) {
+                      setFormData({ ...formData, rental_item_id: "" });
+                    }
+                  }}
+                  onFocus={() => setShowItemDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowItemDropdown(false), 200)}
+                  placeholder="Search by name or SKU..."
+                  className={`w-full pl-10 pr-10 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                    errors.rental_item_id ? "border-red-500" : "border-gray-300"
+                  }`}
+                />
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+                  {loadingItems && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+
+              {showItemDropdown && (
+                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {loadingItems && availableItems.length === 0 ? (
+                    <div className="px-4 py-2 text-sm text-gray-500">Loading items...</div>
+                  ) : availableItems.length > 0 ? (
+                    availableItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, rental_item_id: String(item.id) });
+                          setSelectedItem(item);
+                          setItemSearch("");
+                          setShowItemDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-orange-50 focus:bg-orange-50 focus:outline-none transition-colors"
+                      >
+                        <div className="font-medium text-gray-900">{item.name}</div>
+                        <div className="text-xs text-gray-500">SKU: {item.sku} • Available: {item.quantity_available}</div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-2 text-sm text-gray-500">No items found</div>
+                  )}
+                </div>
+              )}
               {errors.rental_item_id && (
                 <p className="mt-1 text-sm text-red-600">{errors.rental_item_id}</p>
               )}
@@ -440,7 +500,7 @@ export default function NewRentalAgreementPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500">Customer</p>
-                  <p className="text-sm text-gray-900">{customers.find(c => c.id === Number(formData.customer_id))?.name}</p>
+                  <p className="text-sm text-gray-900">{selectedCustomer?.name}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">Rental Item</p>

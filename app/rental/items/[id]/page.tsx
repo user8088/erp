@@ -41,8 +41,8 @@ export default function RentalItemDetailPage() {
           sku: res.item.sku,
           quantity_total: String(res.item.quantity_total),
           quantity_available: String(res.item.quantity_available),
-          cost_price: res.item.cost_price ? String(res.item.cost_price) : "",
-          security_deposit_amount: res.item.security_deposit_amount ? String(res.item.security_deposit_amount) : "",
+          cost_price: (res.item.cost_price !== null && res.item.cost_price !== undefined) ? String(res.item.cost_price) : "",
+          security_deposit_amount: (res.item.security_deposit_amount !== null && res.item.security_deposit_amount !== undefined) ? String(res.item.security_deposit_amount) : "",
           status: res.item.status,
         });
       } catch (e) {
@@ -106,8 +106,8 @@ export default function RentalItemDetailPage() {
         sku: formData.sku.trim() || undefined,
         quantity_total: parseFloat(formData.quantity_total),
         quantity_available: formData.quantity_available ? parseFloat(formData.quantity_available) : undefined,
-        cost_price: formData.cost_price ? parseFloat(formData.cost_price) : undefined,
-        security_deposit_amount: formData.security_deposit_amount ? parseFloat(formData.security_deposit_amount) : undefined,
+        cost_price: formData.cost_price !== "" ? parseFloat(formData.cost_price) : undefined,
+        security_deposit_amount: formData.security_deposit_amount !== "" ? parseFloat(formData.security_deposit_amount) : undefined,
         status: formData.status,
       };
 
@@ -279,7 +279,7 @@ export default function RentalItemDetailPage() {
           </div>
 
           {/* Security Deposit Amount */}
-          <div>
+          {/* <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Security Deposit Amount (per unit)
             </label>
@@ -295,7 +295,7 @@ export default function RentalItemDetailPage() {
             <p className="mt-1 text-xs text-gray-500">
               Default security deposit amount per unit (optional)
             </p>
-          </div>
+          </div> */}
 
           {/* Status */}
           <div>

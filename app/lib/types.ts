@@ -772,24 +772,25 @@ export interface CustomerAdvance {
   updated_at: string;
 }
 
-export type AccountMappingType = 
-  | 'pos_cash' 
-  | 'pos_bank' 
-  | 'pos_ar' 
-  | 'pos_advance' 
-  | 'pos_sales_revenue' 
-  | 'pos_delivery_revenue' 
-  | 'pos_discount' 
-  | 'staff_salary_expense' 
-  | 'staff_salary_payment' 
-  | 'staff_advance' 
-  | 'rental_cash' 
-  | 'rental_bank' 
-  | 'rental_ar' 
-  | 'rental_assets' 
-  | 'rental_security_deposits' 
-  | 'rental_income' 
-  | 'rental_damage_income';
+export type AccountMappingType =
+  | 'pos_cash'
+  | 'pos_bank'
+  | 'pos_ar'
+  | 'pos_advance'
+  | 'pos_sales_revenue'
+  | 'pos_delivery_revenue'
+  | 'pos_discount'
+  | 'staff_salary_expense'
+  | 'staff_salary_payment'
+  | 'staff_advance'
+  | 'rental_cash'
+  | 'rental_bank'
+  | 'rental_ar'
+  | 'rental_assets'
+  | 'rental_security_deposits'
+  | 'rental_income'
+  | 'rental_damage_income'
+  | 'rental_asset_loss';
 
 export interface AccountMapping {
   id: number;
@@ -881,14 +882,20 @@ export interface RentalAgreement {
   rental_period_length: number;
   total_rent_amount: number;
   rent_per_period: number;
+  rent_amount?: number;
   security_deposit_amount: number;
   security_deposit_collected: number;
   security_deposit_payment_account_id?: number | null;
+  security_deposit_payment_account?: Account;
   security_deposit_collected_date?: string | null;
   payment_schedule: RentalPaymentScheduleItem[];
   rental_status: "active" | "completed" | "returned" | "overdue";
   outstanding_balance: number;
+  advance_balance: number;
+  total_accrued_rent: number;
+  last_accrual_date?: string | null;
   payments?: RentalPayment[];
+  returns?: RentalReturn[];
   created_at: string;
   updated_at: string;
 }
@@ -960,11 +967,11 @@ export interface TrialBalanceReport {
   generated_at: string;
 }
 
-export type PnLSection = 
-  | "income" 
-  | "cogs" 
-  | "operating_expense" 
-  | "non_operating_income" 
+export type PnLSection =
+  | "income"
+  | "cogs"
+  | "operating_expense"
+  | "non_operating_income"
   | "non_operating_expense"
   | "tax"
   | "other";
@@ -1043,7 +1050,7 @@ export interface FinancialSummaryData {
   generated_at: string;
 }
 
-export type BalanceSheetSection = 
+export type BalanceSheetSection =
   | "current_assets"
   | "fixed_assets"
   | "intangible_assets"

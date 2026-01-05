@@ -10,6 +10,7 @@ interface RentalAccountMappings {
   securityDepositsAccount: Account | null;
   incomeAccount: Account | null;
   damageIncomeAccount: Account | null;
+  lossAccount: Account | null;
 }
 
 interface UseRentalAccountMappingsResult {
@@ -24,6 +25,7 @@ interface UseRentalAccountMappingsResult {
     securityDeposits: boolean;
     income: boolean;
     damageIncome: boolean;
+    loss: boolean;
   };
   hasRequiredMappings: boolean;
   getPaymentAccounts: () => Account[];
@@ -39,6 +41,7 @@ export function useRentalAccountMappings(): UseRentalAccountMappingsResult {
     securityDepositsAccount: null,
     incomeAccount: null,
     damageIncomeAccount: null,
+    lossAccount: null,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +75,7 @@ export function useRentalAccountMappings(): UseRentalAccountMappingsResult {
           securityDepositsAccount: null,
           incomeAccount: null,
           damageIncomeAccount: null,
+          lossAccount: null,
         };
 
         rentalMappings.forEach((mapping: AccountMapping) => {
@@ -99,6 +103,9 @@ export function useRentalAccountMappings(): UseRentalAccountMappingsResult {
               case 'rental_damage_income':
                 mappedAccounts.damageIncomeAccount = account;
                 break;
+              case 'rental_asset_loss':
+                mappedAccounts.lossAccount = account;
+                break;
             }
           }
         });
@@ -123,6 +130,7 @@ export function useRentalAccountMappings(): UseRentalAccountMappingsResult {
     securityDeposits: mappings.securityDepositsAccount !== null,
     income: mappings.incomeAccount !== null,
     damageIncome: mappings.damageIncomeAccount !== null,
+    loss: mappings.lossAccount !== null,
   };
 
   const hasRequiredMappings =

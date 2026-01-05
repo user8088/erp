@@ -91,8 +91,8 @@ export default function NewRentalItemPage() {
         sku: formData.sku.trim() || undefined,
         quantity_total: parseFloat(formData.quantity_total),
         quantity_available: formData.quantity_available ? parseFloat(formData.quantity_available) : undefined,
-        cost_price: formData.cost_price ? parseFloat(formData.cost_price) : undefined,
-        security_deposit_amount: formData.security_deposit_amount ? parseFloat(formData.security_deposit_amount) : undefined,
+        cost_price: formData.cost_price !== "" ? parseFloat(formData.cost_price) : undefined,
+        security_deposit_amount: formData.security_deposit_amount !== "" ? parseFloat(formData.security_deposit_amount) : undefined,
         status: formData.status,
       };
 
@@ -253,7 +253,7 @@ export default function NewRentalItemPage() {
           </div>
 
           {/* Security Deposit Amount */}
-          <div>
+          {/* <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Security Deposit Amount (per unit)
             </label>
@@ -269,7 +269,7 @@ export default function NewRentalItemPage() {
             <p className="mt-1 text-xs text-gray-500">
               Default security deposit amount per unit (optional)
             </p>
-          </div>
+          </div> */}
 
           {/* Status */}
           <div>

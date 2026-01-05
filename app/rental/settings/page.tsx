@@ -57,6 +57,13 @@ const MAPPING_TYPES = [
     required: false,
     accountType: 'income'
   },
+  { 
+    type: 'rental_asset_loss', 
+    label: 'Rental Asset Loss', 
+    description: 'Account to debit when an item is lost (Expense account)',
+    required: false,
+    accountType: 'expense'
+  },
 ] as const;
 
 export default function RentalSettingsPage() {

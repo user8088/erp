@@ -246,7 +246,7 @@ export interface ProfitLossResponse {
 import axios from 'axios';
 import { ProfitLossResponse, ProfitLossFilters } from '../types/profitLoss';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://erp-server-main-xegmvt.laravel.cloud';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 export const profitLossService = {
   async getProfitLoss(filters: ProfitLossFilters): Promise<ProfitLossResponse> {
@@ -453,7 +453,7 @@ export const ProfitLossChart: React.FC<ProfitLossChartProps> = ({
 // services/profitLossService.js
 import axios from 'axios';
 
-const API_BASE_URL = process.env.VUE_APP_API_URL || 'https://erp-server-main-xegmvt.laravel.cloud';
+const API_BASE_URL = process.env.VUE_APP_API_URL || 'http://localhost:8000';
 
 export const profitLossService = {
   async getProfitLoss(filters) {

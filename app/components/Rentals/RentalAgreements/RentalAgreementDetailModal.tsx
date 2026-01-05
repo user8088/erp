@@ -6,6 +6,8 @@ import type { RentalAgreement } from "../../../lib/types";
 import { rentalApi } from "../../../lib/apiClient";
 import { useToast } from "../../ui/ToastProvider";
 import PaymentStatusBadge from "../Shared/PaymentStatusBadge";
+import WriteOffBadDebtModal from "./WriteOffBadDebtModal";
+import { Trash2 } from "lucide-react";
 
 interface RentalAgreementDetailModalProps {
   isOpen: boolean;
@@ -22,9 +24,11 @@ export default function RentalAgreementDetailModal({
   agreement,
   onRecordPayment,
   onReturnRental,
+  onRefresh,
 }: RentalAgreementDetailModalProps) {
   const { addToast } = useToast();
   const [downloading, setDownloading] = useState(false);
+  const [showWriteOffModal, setShowWriteOffModal] = useState(false);
 
   if (!isOpen) return null;
 
@@ -110,11 +114,11 @@ export default function RentalAgreementDetailModal({
             </div>
             <div>
               <label className="text-sm font-medium text-gray-500">Quantity Rented</label>
-              <p className="text-sm text-gray-900 mt-1">{agreement.quantity_rented}</p>
+              <p className="text-sm text-gray-900 mt-1">{parseFloat(String(agreement.quantity_rented))}</p>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-500">Period Type</label>
-              <p className="text-sm text-gray-900 mt-1 capitalize">{agreement.rental_period_type}</p>
+              <label className="text-sm font-medium text-gray-500">Rent Per Period</label>
+              <p className="text-sm text-gray-900 mt-1">{formatCurrency(agreement.rent_per_period || agreement.rent_amount || 0)} / {agreement.rental_period_type}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-500">Start Date</label>
@@ -126,6 +130,12 @@ export default function RentalAgreementDetailModal({
                 <p className="text-sm text-gray-900 mt-1">{formatDate(agreement.rental_end_date)}</p>
               </div>
             )}
+            {agreement.last_accrual_date && (
+              <div>
+                <label className="text-sm font-medium text-gray-500">Last Accrual Date</label>
+                <p className="text-sm text-gray-900 mt-1">{formatDate(agreement.last_accrual_date)}</p>
+              </div>
+            )}
           </div>
 
           {/* Financial Summary */}
@@ -133,13 +143,12 @@ export default function RentalAgreementDetailModal({
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Financial Summary</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <label className="text-sm font-medium text-gray-500">Total Accrued Rent</label>
+                <p className="text-sm text-gray-900 mt-1">{formatCurrency(agreement.total_accrued_rent)}</p>
+              </div>
+              <div>
                 <label className="text-sm font-medium text-gray-500">Security Deposit</label>
                 <p className="text-sm text-gray-900 mt-1">{formatCurrency(agreement.security_deposit_amount)}</p>
-                {agreement.security_deposit_collected_date && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Collected: {formatDate(agreement.security_deposit_collected_date)}
-                  </p>
-                )}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Total Paid</label>
@@ -148,6 +157,10 @@ export default function RentalAgreementDetailModal({
               <div>
                 <label className="text-sm font-medium text-gray-500">Outstanding Balance</label>
                 <p className="text-sm text-red-600 mt-1 font-semibold">{formatCurrency(agreement.outstanding_balance)}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Advance Balance</label>
+                <p className="text-sm text-blue-600 mt-1 font-semibold">{formatCurrency(agreement.advance_balance)}</p>
               </div>
             </div>
           </div>
@@ -258,6 +271,16 @@ export default function RentalAgreementDetailModal({
                 Return Rental
               </button>
             )}
+            {agreement.outstanding_balance > 0 && (agreement.rental_status === "active" || agreement.rental_status === "overdue" || agreement.rental_status === "completed") && (
+              <button
+                onClick={() => setShowWriteOffModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition-colors"
+                title="Write off outstanding balance as bad debt"
+              >
+                <Trash2 className="w-4 h-4" />
+                Write-off
+              </button>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -266,6 +289,16 @@ export default function RentalAgreementDetailModal({
             Close
           </button>
         </div>
+        
+        <WriteOffBadDebtModal
+          isOpen={showWriteOffModal}
+          onClose={() => setShowWriteOffModal(false)}
+          agreement={agreement}
+          onWriteOffComplete={() => {
+            setShowWriteOffModal(false);
+            onRefresh?.();
+          }}
+        />
       </div>
     </div>
   );
