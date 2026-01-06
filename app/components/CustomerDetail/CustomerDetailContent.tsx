@@ -825,7 +825,7 @@ export default function CustomerDetailContent({
                             <p className="text-sm font-semibold text-gray-900">
                               PKR {(() => {
                                 // If total_amount is 0 (refunded), try to show original amount from metadata
-                                if (invoice.total_amount === 0 && (invoice.status === 'refunded' || invoice.status === 'cancelled')) {
+                                if (invoice.total_amount === 0 && ((invoice.status as string) === 'refunded' || invoice.status === 'cancelled')) {
                                   const metadata = invoice.metadata as any;
                                   const metaSale = metadata?.sale;
                                   const metaItems = metadata?.items || metaSale?.items;
