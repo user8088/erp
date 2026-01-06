@@ -2186,7 +2186,8 @@ export interface CreateCustomerPaymentPayload {
   invoice_id?: number;
   amount: number;
   payment_method: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
-  payment_account_id?: number; // Optional when use_advance is true
+  payment_account_id?: number; // Optional when use_advance is true or for split refunds
+  loss_account_id?: number; // Optional: ID of the account to debit (e.g., Sales Return or Bad Debt)
   use_advance?: boolean; // Use customer advance balance for invoice payment
   payment_date: string;
   reference_number?: string | null;
@@ -2194,6 +2195,14 @@ export interface CreateCustomerPaymentPayload {
   cheque_number?: string;
   cheque_date?: string;
   bank_name?: string;
+  // For split refunds
+  payments?: Array<{
+    amount: number;
+    payment_account_id: number;
+    payment_method: 'cash' | 'bank_transfer' | 'cheque' | 'card' | 'other';
+    notes?: string;
+  }>;
+  restock_items?: boolean;
 }
 
 export const customerPaymentsApi = {

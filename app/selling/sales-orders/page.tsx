@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { salesApi, customersApi, ApiError } from "../../lib/apiClient";
 import type { Sale, Customer } from "../../lib/types";
 import { useToast } from "../../components/ui/ToastProvider";
-import { Search, Truck, CheckCircle2, Loader2, Trash2 } from "lucide-react";
+import { Search, Truck, CheckCircle2, Loader2, Trash2, Ban } from "lucide-react";
 
 // Simple date formatter
 const formatDate = (dateString: string) => {
@@ -76,6 +76,7 @@ export default function SalesOrdersPage() {
     search: '',
   });
   const [markingDelivered, setMarkingDelivered] = useState<number | null>(null);
+  const [cancellingSale, setCancellingSale] = useState<number | null>(null);
   const [deletingSale, setDeletingSale] = useState<number | null>(null);
 
   // Fetch customers for filter dropdown
@@ -245,6 +246,29 @@ export default function SalesOrdersPage() {
       }
     } finally {
       setMarkingDelivered(null);
+    }
+  };
+
+  // Cancel sale
+  const handleCancelSale = async (saleId: number) => {
+    if (!confirm("Are you sure you want to cancel this order? This will reverse any stock deductions and void the sale.")) {
+      return;
+    }
+
+    setCancellingSale(saleId);
+    try {
+      await salesApi.cancelSale(saleId);
+      addToast("Order cancelled successfully", "success");
+      await fetchSalesOrders(); // Refresh the list
+    } catch (error) {
+      console.error("Failed to cancel order:", error);
+      if (error instanceof ApiError) {
+        addToast(error.message || "Failed to cancel order", "error");
+      } else {
+        addToast("Failed to cancel order", "error");
+      }
+    } finally {
+      setCancellingSale(null);
     }
   };
 
@@ -465,6 +489,26 @@ export default function SalesOrdersPage() {
                           ) : (
                             <span className="text-xs text-gray-500">—</span>
                           )}
+                          
+                          {/* Cancel Button - Only for draft or unpaid orders that aren't already cancelled */}
+                          {(sale.status === 'draft' || (sale.status === 'completed' && sale.payment_status === 'unpaid')) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancelSale(sale.id);
+                              }}
+                              disabled={cancellingSale === sale.id || markingDelivered === sale.id || deletingSale === sale.id}
+                              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                              title="Cancel Order"
+                            >
+                              {cancellingSale === sale.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Ban className="w-4 h-4" />
+                              )}
+                            </button>
+                          )}
+
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

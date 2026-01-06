@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, DollarSign, CreditCard, Calendar, FileText, AlertCircle } from "lucide-react";
-import { customerPaymentsApi, accountsApi, ApiError } from "../../lib/apiClient";
+import { useState, useEffect, FormEvent } from "react";
+import { X, DollarSign, CreditCard, Calendar, FileText, AlertCircle, Plus } from "lucide-react";
+import { customerPaymentsApi, accountsApi, ApiError, CreateCustomerPaymentPayload } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
 import type { Customer, Account } from "../../lib/types";
 
@@ -16,6 +16,7 @@ interface RecordPaymentModalProps {
     amount: number;
     due_amount: number;
     invoice_date: string;
+    status: string;
   }>;
   customerAdvanceBalance?: number; // Customer's available advance balance
   onPaymentRecorded?: () => void;
@@ -37,6 +38,13 @@ export default function RecordPaymentModal({
   // Form state
   const [paymentType, setPaymentType] = useState<PaymentType>('invoice_payment');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
+  const [selectedRefundInvoiceId, setSelectedRefundInvoiceId] = useState<number | null>(null);
+  const [refundLines, setRefundLines] = useState<Array<{
+    amount: string;
+    payment_account_id: number | null;
+    payment_method: PaymentMethod;
+  }>>([{ amount: "", payment_account_id: null, payment_method: 'cash' }]);
+  const [restockItems, setRestockItems] = useState(false);
   const [amount, setAmount] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentAccountId, setPaymentAccountId] = useState<number | null>(null);
@@ -54,6 +62,8 @@ export default function RecordPaymentModal({
   const [submitting, setSubmitting] = useState(false);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([]);
+  const [lossAccounts, setLossAccounts] = useState<Account[]>([]);
+  const [lossAccountId, setLossAccountId] = useState<number | null>(null);
 
   // Payment response state (for showing advance payment summary)
   const [paymentResponse, setPaymentResponse] = useState<{
@@ -108,8 +118,28 @@ export default function RecordPaymentModal({
       }
     };
 
+    const fetchLossAccounts = async () => {
+      try {
+        // Fetch expense and income accounts for loss/return mapping
+        // We fetch all and filter client side or make two requests
+        // For simplicity, let's fetch all non-assets if possible, or just expense/income
+        // The API supports filtering by root_type, but only one at a time usually unless array supported
+        // Let's make two parallel requests for expense and income
+        const [expenseRes, incomeRes] = await Promise.all([
+          accountsApi.getAccounts({ company_id: 1, root_type: 'expense', is_group: false, per_page: 1000 }),
+          accountsApi.getAccounts({ company_id: 1, root_type: 'income', is_group: false, per_page: 1000 })
+        ]);
+
+        const combined = [...expenseRes.data, ...incomeRes.data];
+        setLossAccounts(combined);
+      } catch (error) {
+        console.error("Failed to fetch loss accounts:", error);
+      }
+    };
+
     if (isOpen) {
       fetchPaymentAccounts();
+      fetchLossAccounts();
     }
   }, [isOpen, paymentAccountId, addToast]);
 
@@ -118,6 +148,7 @@ export default function RecordPaymentModal({
     if (!isOpen) {
       setPaymentType('invoice_payment');
       setSelectedInvoiceId(null);
+      setSelectedRefundInvoiceId(null);
       setAmount("");
       setPaymentMethod('cash');
       setUseCustomerAdvance(false);
@@ -129,6 +160,9 @@ export default function RecordPaymentModal({
       setNotes("");
       setErrors({});
       setPaymentResponse(null);
+      setRefundLines([{ amount: "", payment_account_id: null, payment_method: 'cash' }]);
+      setRestockItems(false);
+      setLossAccountId(null);
     } else {
       // Auto-select first outstanding invoice if available
       if (outstandingInvoices.length > 0) {
@@ -145,8 +179,19 @@ export default function RecordPaymentModal({
       if (invoice) {
         setAmount(invoice.due_amount.toString());
       }
+    } else if (paymentType === 'refund' && selectedRefundInvoiceId) {
+      const invoice = outstandingInvoices.find(inv => inv.invoice_id === selectedRefundInvoiceId);
+      if (invoice) {
+        // For single line refund, set the amount. For split, we'll handle it in the UI.
+        if (refundLines.length === 1 && !refundLines[0].amount) {
+          const newLines = [...refundLines];
+          newLines[0].amount = invoice.amount.toString();
+          setRefundLines(newLines);
+        }
+        setAmount(invoice.amount.toString());
+      }
     }
-  }, [selectedInvoiceId, paymentType, outstandingInvoices]);
+  }, [selectedInvoiceId, selectedRefundInvoiceId, paymentType, outstandingInvoices]);
 
   // Validate form
   const validateForm = (): boolean => {
@@ -156,8 +201,33 @@ export default function RecordPaymentModal({
       newErrors.invoice = "Please select an invoice";
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
-      newErrors.amount = "Amount must be greater than 0";
+    if (paymentType === 'refund' && !selectedRefundInvoiceId) {
+      newErrors.refundInvoice = "Please select an invoice to refund against";
+    }
+
+    if (paymentType === 'refund') {
+      let totalRefund = 0;
+      refundLines.forEach((line, index) => {
+        const lineAmount = parseFloat(line.amount) || 0;
+        if (lineAmount <= 0) {
+          newErrors[`refund_amount_${index}`] = "Amount must be greater than 0";
+        }
+        if (!line.payment_account_id) {
+          newErrors[`refund_account_${index}`] = "Please select a payment account";
+        }
+        totalRefund += lineAmount;
+      });
+
+      if (selectedRefundInvoiceId) {
+        const invoice = outstandingInvoices.find(inv => inv.invoice_id === selectedRefundInvoiceId);
+        if (invoice && totalRefund > invoice.amount) {
+          newErrors.refundTotal = `Total refund (PKR ${totalRefund.toLocaleString()}) cannot exceed invoice amount (PKR ${invoice.amount.toLocaleString()})`;
+        }
+      }
+    } else {
+      if (!amount || parseFloat(amount) <= 0) {
+        newErrors.amount = "Amount must be greater than 0";
+      }
     }
 
     // Validate advance balance if using customer advance
@@ -168,8 +238,8 @@ export default function RecordPaymentModal({
       }
     }
 
-    // Payment account is required only if not using customer advance and not cheque
-    if (!useCustomerAdvance && paymentMethod !== 'cheque' && !paymentAccountId) {
+    // Payment account is required only if not using customer advance and not cheque (and not for refunds)
+    if (paymentType !== 'refund' && !useCustomerAdvance && paymentMethod !== 'cheque' && !paymentAccountId) {
       newErrors.account = "Please select a payment account";
     }
 
@@ -192,7 +262,7 @@ export default function RecordPaymentModal({
   };
 
   // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) {
@@ -201,16 +271,32 @@ export default function RecordPaymentModal({
 
     setSubmitting(true);
     try {
-      const payload = {
+      const calculatedAmount = paymentType === 'refund'
+        ? refundLines.reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0)
+        : parseFloat(amount);
+
+      const payload: CreateCustomerPaymentPayload = {
         customer_id: customer.id,
         payment_type: paymentType,
-        ...(paymentType === 'invoice_payment' && { invoice_id: selectedInvoiceId! }),
-        amount: parseFloat(amount),
+        amount: calculatedAmount,
         payment_method: paymentMethod,
-        ...(useCustomerAdvance ? { use_advance: true } : { payment_account_id: paymentAccountId! }),
         payment_date: paymentDate,
+        ...(paymentType === 'invoice_payment' && { invoice_id: selectedInvoiceId! }),
+        ...(paymentType === 'refund' && {
+          invoice_id: selectedRefundInvoiceId!,
+          payments: refundLines.map(line => ({
+            amount: parseFloat(line.amount),
+            payment_account_id: line.payment_account_id!,
+            payment_method: line.payment_method,
+          })),
+          restock_items: restockItems,
+          ...(lossAccountId && { loss_account_id: lossAccountId }),
+        }),
+        ...(useCustomerAdvance ? { use_advance: true } : {
+          ...(paymentType !== 'refund' && { payment_account_id: paymentAccountId! })
+        }),
         ...(referenceNumber && { reference_number: referenceNumber }),
-        ...(paymentMethod === 'cheque' && {
+        ...(paymentMethod === 'cheque' && paymentType !== 'refund' && {
           cheque_number: chequeNumber,
           cheque_date: chequeDate,
           bank_name: bankName
@@ -386,7 +472,16 @@ export default function RecordPaymentModal({
                       }`}
                   >
                     <option value="">Select an invoice</option>
-                    {outstandingInvoices.map((invoice) => (
+                    {outstandingInvoices
+                      .filter(inv => {
+                        // For payments: show only unpaid/partial invoices, hide refunded/cancelled
+                        // Also ensure due amount is positive
+                        return inv.due_amount > 0 && 
+                               inv.status !== 'refunded' && 
+                               inv.status !== 'cancelled' &&
+                               inv.status !== 'paid';
+                      })
+                      .map((invoice) => (
                       <option key={invoice.invoice_id} value={invoice.invoice_id}>
                         {invoice.invoice_number} - PKR {invoice.due_amount.toLocaleString()} due
                         ({new Date(invoice.invoice_date).toLocaleDateString()})
@@ -476,62 +571,244 @@ export default function RecordPaymentModal({
             )}
 
             {paymentType === 'refund' && (
-              <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-purple-900">Refund Payment</p>
-                    <p className="text-xs text-purple-700 mt-1">
-                      Recording a refund will deduct money from the selected account and update customer records.
-                    </p>
+              <div className="space-y-4">
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-purple-900">Refund Payment</p>
+                      <p className="text-xs text-purple-700 mt-1">
+                        Recording a refund will deduct money from the selected account and update customer records.
+                        Refunds should be recorded against a specific invoice.
+                      </p>
+                    </div>
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Invoice to Refund <span className="text-red-500">*</span>
+                  </label>
+                  {outstandingInvoices.length > 0 ? (
+                    <select
+                      value={selectedRefundInvoiceId || ""}
+                      onChange={(e) => setSelectedRefundInvoiceId(Number(e.target.value))}
+                      className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${errors.refundInvoice ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                    >
+                      <option value="">Select an invoice</option>
+                      {outstandingInvoices
+                        .filter(inv => {
+                          // For refunds: show only paid/partial invoices
+                          // Hide unpaid invoices (where due_amount equals total amount)
+                          // Also hide cancelled/refunded ones if they are already fully refunded
+                          const isFullyUnpaid = inv.due_amount === inv.amount;
+                          return !isFullyUnpaid && 
+                                 inv.status !== 'cancelled' && 
+                                 inv.status !== 'refunded';
+                        })
+                        .map((invoice) => (
+                        <option key={invoice.invoice_id} value={invoice.invoice_id}>
+                          {invoice.invoice_number} - PKR {invoice.amount.toLocaleString()}
+                          ({new Date(invoice.invoice_date).toLocaleDateString()})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-xs text-yellow-700">
+                        No invoices found for this customer.
+                      </p>
+                    </div>
+                  )}
+                  {errors.refundInvoice && (
+                    <p className="text-xs text-red-500 mt-1">{errors.refundInvoice}</p>
+                  )}
+                </div>
+
+                {/* Loss/Return Account Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Loss/Return Account <span className="text-gray-400 font-normal">(Optional)</span>
+                  </label>
+                  <select
+                    value={lossAccountId || ""}
+                    onChange={(e) => setLossAccountId(Number(e.target.value) || null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="">Default (Sales Return)</option>
+                    {lossAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.number ? `${account.number} - ` : ""}{account.name} ({account.root_type})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Select the account to debit (e.g., Sales Return or Bad Debt). If left blank, the default Sales Return account will be used.
+                  </p>
+                </div>
+
+                {/* Refund Lines (Split Refund) */}
+                {selectedRefundInvoiceId && (
+                  <div className="space-y-4 border-t border-gray-100 pt-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">Refund Breakdown</h3>
+                      <button
+                        type="button"
+                        onClick={() => setRefundLines([...refundLines, { amount: "", payment_account_id: paymentAccountId || (paymentAccounts[0]?.id || null), payment_method: 'cash' }])}
+                        className="text-xs font-medium text-purple-600 hover:text-purple-700 flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add Refund Line
+                      </button>
+                    </div>
+
+                    {refundLines.map((line, index) => (
+                      <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3 relative">
+                        {refundLines.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setRefundLines(refundLines.filter((_, i) => i !== index))}
+                            className="absolute top-2 right-2 p-1 text-gray-400 hover:text-red-500 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Amount */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Amount (PKR)</label>
+                            <input
+                              type="number"
+                              value={line.amount}
+                              onChange={(e) => {
+                                const newLines = [...refundLines];
+                                newLines[index].amount = e.target.value;
+                                setRefundLines(newLines);
+                              }}
+                              className={`w-full px-3 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-purple-500 ${errors[`refund_amount_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
+                              placeholder="0.00"
+                            />
+                            {errors[`refund_amount_${index}`] && (
+                              <p className="text-[10px] text-red-500 mt-0.5">{errors[`refund_amount_${index}`]}</p>
+                            )}
+                          </div>
+
+                          {/* Method */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Method</label>
+                            <select
+                              value={line.payment_method}
+                              onChange={(e) => {
+                                const newLines = [...refundLines];
+                                newLines[index].payment_method = e.target.value as PaymentMethod;
+                                setRefundLines(newLines);
+                              }}
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-purple-500"
+                            >
+                              <option value="cash">Cash</option>
+                              <option value="bank_transfer">Bank Transfer</option>
+                              <option value="cheque">Cheque</option>
+                              <option value="card">Card</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Account */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Refund From Account</label>
+                          <select
+                            value={line.payment_account_id || ""}
+                            onChange={(e) => {
+                              const newLines = [...refundLines];
+                              newLines[index].payment_account_id = Number(e.target.value);
+                              setRefundLines(newLines);
+                            }}
+                            className={`w-full px-3 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-purple-500 ${errors[`refund_account_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
+                          >
+                            <option value="">Select account</option>
+                            {paymentAccounts.map((acc) => (
+                              <option key={acc.id} value={acc.id}>{acc.name}</option>
+                            ))}
+                          </select>
+                          {errors[`refund_account_${index}`] && (
+                            <p className="text-[10px] text-red-500 mt-0.5">{errors[`refund_account_${index}`]}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {errors.refundTotal && (
+                      <p className="text-xs text-red-500 font-medium">{errors.refundTotal}</p>
+                    )}
+
+                    {/* Restock Items Checkbox */}
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="checkbox"
+                        id="restockItems"
+                        checked={restockItems}
+                        onChange={(e) => setRestockItems(e.target.checked)}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      <label htmlFor="restockItems" className="text-sm text-gray-700 cursor-pointer">
+                        Restock items from this invoice (Inventory Reversal)
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Amount */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Amount (PKR) <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">PKR</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className={`w-full pl-14 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.amount ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  placeholder="0.00"
-                />
+            {/* Amount (Hidden for refunds as it's handled in breakdown) */}
+            {paymentType !== 'refund' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount (PKR) <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">PKR</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className={`w-full pl-14 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.amount ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    placeholder="0.00"
+                  />
+                </div>
+                {errors.amount && (
+                  <p className="text-xs text-red-500 mt-1">{errors.amount}</p>
+                )}
               </div>
-              {errors.amount && (
-                <p className="text-xs text-red-500 mt-1">{errors.amount}</p>
-              )}
-            </div>
+            )}
 
-            {/* Payment Method */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Payment Method <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="cash">Cash</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="cheque">Cheque</option>
-                <option value="card">Card</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
+            {/* Payment Method (Hidden for refunds as it's handled in breakdown) */}
+            {paymentType !== 'refund' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Payment Method <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="card">Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            )}
 
-            {/* Payment Account (only if not using customer advance and not cheque) */}
-            {!(paymentType === 'invoice_payment' && useCustomerAdvance) && paymentMethod !== 'cheque' && (
+            {/* Payment Account (Hidden for refunds as it's handled in breakdown) */}
+            {paymentType !== 'refund' && !(paymentType === 'invoice_payment' && useCustomerAdvance) && paymentMethod !== 'cheque' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Payment Account <span className="text-red-500">*</span>

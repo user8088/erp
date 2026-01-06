@@ -823,7 +823,24 @@ export default function CustomerDetailContent({
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-semibold text-gray-900">
-                              PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              PKR {(() => {
+                                // If total_amount is 0 (refunded), try to show original amount from metadata
+                                if (invoice.total_amount === 0 && (invoice.status === 'refunded' || invoice.status === 'cancelled')) {
+                                  const metadata = invoice.metadata as any;
+                                  const metaSale = metadata?.sale;
+                                  const metaItems = metadata?.items || metaSale?.items;
+
+                                  if (metaSale?.total_amount > 0) return metaSale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                                  if (metaSale?.subtotal > 0) return metaSale.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                                  
+                                  // Calculate from items if sale totals are also 0
+                                  if (metaItems && Array.isArray(metaItems) && metaItems.length > 0) {
+                                    const total = metaItems.reduce((sum: number, item: any) => sum + (Number(item.total) || Number(item.subtotal) || 0), 0);
+                                    if (total > 0) return total.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                                  }
+                                }
+                                return invoice.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                              })()}
                             </p>
                             <p className="text-xs text-gray-500">
                               {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale')
@@ -1011,7 +1028,7 @@ export default function CustomerDetailContent({
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold text-gray-900">
-                        PKR {invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        PKR {invoice.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                       <p className="text-xs text-gray-500">
                         {(invoice.metadata?.sale_type === 'walk-in' || invoice.invoice_type === 'sale')
@@ -1075,7 +1092,14 @@ export default function CustomerDetailContent({
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
           customer={customer}
-          outstandingInvoices={effectiveSummary.outstanding_invoices}
+          outstandingInvoices={customerInvoices.map(inv => ({
+            invoice_id: inv.id,
+            invoice_number: inv.invoice_number,
+            amount: inv.total_amount,
+            due_amount: inv.status === 'issued' ? inv.total_amount : 0,
+            invoice_date: inv.invoice_date,
+            status: inv.status,
+          }))}
           customerAdvanceBalance={effectiveSummary.advance_balance || 0}
           onPaymentRecorded={handlePaymentRecorded}
         />
