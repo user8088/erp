@@ -1175,4 +1175,17 @@ export interface FinancialReportResponse<T> {
   };
 }
 
+export interface StoreDocument {
+  id: number;
+  name: string;
+  type: string;
+  category: string;
+  file_path: string;
+  file_name: string;
+  mime_type: string;
+  file_size: number;
+  upload_date: string;
+  created_by: number;
+}
+
 

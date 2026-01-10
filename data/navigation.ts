@@ -251,6 +251,13 @@ export const navigationData: NavItem[] = [
       },
     ],
     isExpanded: false
+  },
+  {
+    id: "store-settings",
+    label: "Store Settings",
+    icon: Settings2,
+    href: "/store-settings",
+    isExpanded: false
   }
 ];
 

@@ -155,6 +155,7 @@ import type {
   TrendAnalysis,
   ReportPeriod,
   FinancialAccountMapping,
+  StoreDocument,
 } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
@@ -3118,6 +3119,40 @@ export const financialAccountMappingsApi = {
 
   async deleteMapping(id: number): Promise<{ message: string }> {
     return await apiClient.delete<{ message: string }>(`/financial-account-mappings/${id}`);
+  },
+};
+
+export const storeDocumentsApi = {
+  async list(params?: { search?: string; page?: number; per_page?: number }): Promise<Paginated<StoreDocument>> {
+    const queryParams = new URLSearchParams();
+    if (params?.search) queryParams.append("search", params.search);
+    if (params?.page) queryParams.append("page", String(params.page));
+    if (params?.per_page) queryParams.append("per_page", String(params.per_page));
+
+    return await apiClient.get<Paginated<StoreDocument>>(`/store-documents?${queryParams.toString()}`);
+  },
+
+  async upload(payload: { file: File; name: string; type: string; category: string }): Promise<{ document: StoreDocument }> {
+    const formData = new FormData();
+    formData.append("file", payload.file);
+    formData.append("name", payload.name);
+    formData.append("type", payload.type);
+    formData.append("category", payload.category);
+
+    return await apiClient.post<{ document: StoreDocument }>("/store-documents", formData);
+  },
+
+  async delete(id: number | string): Promise<{ message: string }> {
+    return await apiClient.delete<{ message: string }>(`/store-documents/${id}`);
+  },
+
+  async download(id: number | string): Promise<Blob> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const response = await fetch(`${API_BASE_URL}/store-documents/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error("Download failed");
+    return await response.blob();
   },
 };
 

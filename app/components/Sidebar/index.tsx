@@ -14,7 +14,7 @@ export default function Sidebar() {
 
   const getActiveItemId = () => {
     if (pathname === "/") return "home";
-    
+
     // First check child items
     for (const item of navigationData) {
       if (item.children) {
@@ -29,7 +29,7 @@ export default function Sidebar() {
         }
       }
     }
-    
+
     // Then check top-level items
     const activeItem = navigationData.find(item => {
       if (item.href) {
@@ -37,7 +37,7 @@ export default function Sidebar() {
       }
       return false;
     });
-    
+
     return activeItem?.id || null;
   };
 
@@ -73,6 +73,9 @@ export default function Sidebar() {
       if (item.id === "supplier" && !hasAtLeast("module.supplier", "read")) {
         return null;
       }
+      if (item.id === "store-settings") {
+        return item; // Always show for now
+      }
 
       // Child-level checks (e.g. Tag Manager)
       const children =
@@ -89,9 +92,8 @@ export default function Sidebar() {
 
   return (
     <div
-      className={`bg-white border-r border-gray-200 h-screen fixed left-0 top-0 transition-all duration-300 z-20 overflow-x-hidden ${
-        isCollapsed ? "w-16" : "w-64"
-      }`}
+      className={`bg-white border-r border-gray-200 h-screen fixed left-0 top-0 transition-all duration-300 z-20 overflow-x-hidden ${isCollapsed ? "w-16" : "w-64"
+        }`}
     >
       <div className={`flex items-center ${isCollapsed ? "justify-center" : "gap-2"} px-3 h-14 border-b border-gray-200 overflow-x-hidden`}>
         <button
