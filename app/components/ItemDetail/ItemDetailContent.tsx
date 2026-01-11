@@ -3,10 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import ItemDetailTabs from "./ItemDetailTabs";
 import ItemDetailsForm from "./ItemDetailsForm";
-import { stockApi, stockMovementsApi } from "../../lib/apiClient";
+import SalesAnalyticsChart from "./SalesAnalyticsChart";
+import StockAnalyticsChart from "./StockAnalyticsChart";
+import { stockApi, stockMovementsApi, itemsApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
-import type { Item, ItemStock, StockMovement } from "../../lib/types";
-import { Package, TrendingUp, TrendingDown, RefreshCw, Calendar } from "lucide-react";
+import type { Item, ItemStock, StockMovement, ItemSale } from "../../lib/types";
+import { Package, TrendingUp, TrendingDown, RefreshCw, Calendar, ShoppingCart, User, DollarSign } from "lucide-react";
 
 interface ItemDetailContentProps {
   itemId: string;
@@ -27,12 +29,15 @@ export default function ItemDetailContent({
   const [activeTab, setActiveTab] = useState("item-details");
   const [stock, setStock] = useState<ItemStock | null>(null);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [itemSales, setItemSales] = useState<ItemSale[]>([]);
+  const [salesSummary, setSalesSummary] = useState<{ total_quantity_sold: number; total_sales_revenue: number } | null>(null);
   const [loadingStock, setLoadingStock] = useState(false);
   const [loadingMovements, setLoadingMovements] = useState(false);
+  const [loadingSales, setLoadingSales] = useState(false);
 
   const fetchStockInfo = useCallback(async () => {
     if (!itemId) return;
-    
+
     setLoadingStock(true);
     try {
       const response = await stockApi.getItemStock(Number(itemId));
@@ -47,7 +52,7 @@ export default function ItemDetailContent({
 
   const fetchStockMovements = useCallback(async () => {
     if (!itemId) return;
-    
+
     setLoadingMovements(true);
     try {
       const response = await stockMovementsApi.getStockMovements({
@@ -65,12 +70,34 @@ export default function ItemDetailContent({
     }
   }, [itemId]);
 
+  const fetchItemSales = useCallback(async () => {
+    if (!itemId) return;
+
+    setLoadingSales(true);
+    try {
+      const response = await itemsApi.getItemSales(Number(itemId), {
+        per_page: 50,
+      });
+      setItemSales(response.data);
+      if (response.summary) {
+        setSalesSummary(response.summary);
+      }
+    } catch (error) {
+      console.error("Failed to fetch item sales:", error);
+      setItemSales([]);
+    } finally {
+      setLoadingSales(false);
+    }
+  }, [itemId]);
+
   useEffect(() => {
     if (activeTab === "stock-info") {
       fetchStockInfo();
       fetchStockMovements();
+    } else if (activeTab === "sales-history") {
+      fetchItemSales();
     }
-  }, [activeTab, fetchStockInfo, fetchStockMovements]);
+  }, [activeTab, fetchStockInfo, fetchStockMovements, fetchItemSales]);
 
   return (
     <div className="flex-1">
@@ -90,7 +117,7 @@ export default function ItemDetailContent({
             {/* Price Summary Card */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h2 className="text-base font-semibold text-gray-900 mb-4">Pricing & Profit</h2>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Last Purchase Price */}
                 <div>
@@ -159,6 +186,41 @@ export default function ItemDetailContent({
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Highest price ever paid</p>
                 </div>
+
+                {/* Total Quantity Sold */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Total Quantity Sold
+                  </label>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {salesSummary?.total_quantity_sold !== undefined ? (
+                      <>{salesSummary.total_quantity_sold.toLocaleString()} {item?.primary_unit || 'units'}</>
+                    ) : item?.total_quantity_sold !== undefined ? (
+                      <>{item.total_quantity_sold.toLocaleString()} {item?.primary_unit || 'units'}</>
+                    ) : (
+                      <span className="text-gray-400">0 {item?.primary_unit || 'units'}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Total volume sold to date</p>
+                </div>
+
+                {/* Total Sales Revenue */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Total Sales Revenue
+                  </label>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {salesSummary?.total_sales_revenue !== undefined ? (
+                      <>PKR {salesSummary.total_sales_revenue.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}</>
+                    ) : (
+                      <span className="text-gray-400">PKR 0.00</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Gross revenue from this item</p>
+                </div>
               </div>
 
               {/* Price Range Analysis */}
@@ -185,15 +247,96 @@ export default function ItemDetailContent({
               )}
             </div>
 
+            {/* Sales Analytics Chart */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <SalesAnalyticsChart itemId={Number(itemId)} />
+            </div>
+
             {/* Sales Records */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h2 className="text-base font-semibold text-gray-900 mb-4">Sales Records</h2>
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-sm">No sales records found for this item.</p>
-                <p className="text-xs mt-1 text-gray-400">
-                  Sales records will appear here when available.
-                </p>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-base font-semibold text-gray-900">Sales History</h2>
+                <div className="text-xs text-gray-500 flex items-center gap-2">
+                  <Calendar className="w-3.5 h-3.5" />
+                  Showing all recorded sales
+                </div>
               </div>
+
+              {loadingSales ? (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <p className="text-sm">Loading sales records...</p>
+                </div>
+              ) : itemSales.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Sale #</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Customer</th>
+                        <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Qty</th>
+                        <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Unit Price</th>
+                        <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Discount</th>
+                        <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {itemSales.map((sale) => (
+                        <tr key={`${sale.sale_id}-${sale.id}`} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-gray-900">
+                                {new Date(sale.sale_date).toLocaleDateString()}
+                              </span>
+                              <span className="text-[10px] text-gray-400">
+                                {new Date(sale.sale_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-mono text-orange-600 whitespace-nowrap font-medium">
+                            {sale.sale_number}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
+                                <User className="w-3 h-3 text-gray-500" />
+                              </div>
+                              <span className="font-medium truncate max-w-[150px]">{sale.customer_name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-900 font-semibold">
+                            {sale.quantity.toLocaleString()} <span className="text-[10px] text-gray-400 font-normal uppercase">{sale.unit}</span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-600">
+                            PKR {sale.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right text-red-500">
+                            {sale.discount_amount > 0 ? (
+                              <>-PKR {sale.discount_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
+                            PKR {sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-16 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                    <ShoppingCart className="w-8 h-8 text-gray-300" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-900">No sales records found</h3>
+                  <p className="text-xs text-gray-500 mt-1 max-w-[200px] mx-auto">
+                    Sales records will appear here as soon as this item is included in a completed sale.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -202,7 +345,7 @@ export default function ItemDetailContent({
             {/* Stock Details Card */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h2 className="text-base font-semibold text-gray-900 mb-4">Stock Information</h2>
-              
+
               {loadingStock ? (
                 <div className="text-center py-8 text-gray-500">
                   <p className="text-sm">Loading stock information...</p>
@@ -317,10 +460,15 @@ export default function ItemDetailContent({
               )}
             </div>
 
+            {/* Stock Analytics Chart */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <StockAnalyticsChart itemId={Number(itemId)} />
+            </div>
+
             {/* Stock Movements */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h2 className="text-base font-semibold text-gray-900 mb-4">Recent Stock Movements</h2>
-              
+
               {loadingMovements ? (
                 <div className="text-center py-8 text-gray-500">
                   <p className="text-sm">Loading stock movements...</p>

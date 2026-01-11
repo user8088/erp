@@ -394,6 +394,7 @@ export interface Item {
   category?: Category | null;
   picture_url: string | null;
   total_profit: number;
+  total_quantity_sold?: number;
   // Purchase prices (from suppliers)
   last_purchase_price: number | null; // Last price purchased from supplier
   lowest_purchase_price: number | null; // Lowest price ever paid
@@ -685,6 +686,20 @@ export interface VehicleMaintenanceStatistics {
 
 export interface VehicleDeliveryOrder extends Sale {
   sale_type: "delivery"; // Narrow the type to only "delivery"
+}
+
+export interface ItemSale {
+  id: number;
+  sale_id: number;
+  sale_number: string;
+  sale_date: string;
+  customer_id: number;
+  customer_name: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  discount_amount: number;
+  total_amount: number;
 }
 
 export interface SaleItem {
@@ -1191,3 +1206,30 @@ export interface StoreDocument {
 }
 
 
+// Analytics Types
+export interface SalesAnalyticsResponse {
+  summary: {
+    total_revenue: number;
+    total_quantity: number;
+    revenue_growth?: number;
+    quantity_growth?: number;
+  };
+  chart_data: {
+    label: string;
+    revenue: number;
+    quantity: number;
+  }[];
+}
+
+export interface StockAnalyticsResponse {
+  summary: {
+    current_stock: number;
+    turnover_rate?: number;
+  };
+  chart_data: {
+    label: string;
+    incoming: number;
+    outgoing: number;
+    net_change: number;
+  }[];
+}

@@ -139,6 +139,7 @@ import type {
   VehicleMaintenance,
   VehicleMaintenanceStatistics,
   VehicleDeliveryOrder,
+  ItemSale,
   RentalCategory,
   RentalItem,
   RentalAgreement,
@@ -147,6 +148,8 @@ import type {
   ReportFilters,
   TrialBalanceReport,
   ProfitLossReport,
+  SalesAnalyticsResponse,
+  StockAnalyticsResponse,
   ProfitLossDiagnostics,
   FinancialSummaryData,
   BalanceSheetReport,
@@ -1074,6 +1077,53 @@ export const itemsApi = {
       failed_ids: number[];
     }>(`/items/bulk-delete`, { ids });
   },
+
+  async getItemSales(id: number, params: { page?: number; per_page?: number } = {}): Promise<Paginated<ItemSale> & { summary?: { total_quantity_sold: number; total_sales_revenue: number } }> {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    // Add timestamp to prevent caching
+    queryParams.append("_t", String(Date.now()));
+
+    const response = await apiClient.get<any>(`/items/${id}/sales?${queryParams.toString()}`);
+
+    // Check if the response matches our Paginated interface (some endpoints use 'meta', some use 'pagination')
+    const data = response.data || response.sales || [];
+    const meta = response.meta || response.pagination || {
+      current_page: 1,
+      per_page: 15,
+      total: data.length,
+      last_page: 1
+    };
+
+    return {
+      data,
+      meta: {
+        current_page: meta.current_page,
+        per_page: meta.per_page,
+        total: meta.total,
+        last_page: meta.last_page,
+      },
+      summary: response.summary
+    };
+  },
+
+  async getSalesAnalytics(
+    id: number,
+    params: {
+      period?: "daily" | "weekly" | "monthly" | "yearly";
+      start_date?: string;
+      end_date?: string;
+    } = {}
+  ): Promise<SalesAnalyticsResponse> {
+    const queryParams = new URLSearchParams();
+    if (params.period) queryParams.append("period", params.period);
+    if (params.start_date) queryParams.append("start_date", params.start_date);
+    if (params.end_date) queryParams.append("end_date", params.end_date);
+    queryParams.append("_t", String(Date.now()));
+
+    return apiClient.get<SalesAnalyticsResponse>(`/items/${id}/analytics/sales?${queryParams.toString()}`);
+  },
 };
 
 // Categories API - Using real backend endpoints
@@ -1316,6 +1366,19 @@ export const stockApi = {
       };
     }>(url);
   },
+
+  async getStockAnalytics(
+    id: number,
+    params: {
+      period?: "daily" | "weekly" | "monthly";
+    } = {}
+  ): Promise<StockAnalyticsResponse> {
+    const queryParams = new URLSearchParams();
+    if (params.period) queryParams.append("period", params.period);
+    queryParams.append("_t", String(Date.now()));
+
+    return apiClient.get<StockAnalyticsResponse>(`/items/${id}/analytics/stock?${queryParams.toString()}`);
+  }
 };
 
 // Purchase Orders API - Mock Implementation (Backend TBD)

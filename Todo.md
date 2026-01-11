@@ -1,38 +1,58 @@
-# Supplier Opening Balances Feature
+# Backend Requirements: Item Analytics & Visualizations
 
-## Scenario: Importing Legacy Data
-When onboarding a new supplier to the ERP, they often have a pre-existing financial history. 
-- **Outstanding Dues**: The business already owes money to the supplier from previous (non-ERP) transactions. This is recorded as an `opening_balance` (Liability/Accounts Payable).
-- **Advance/Credit**: The business has already prepaid the supplier for future orders. This is recorded as an `opening_advance_balance` (Asset/Supplier Advance).
+## 1. Item Sales Analytics
+**Endpoint**: `GET /api/items/{id}/analytics/sales`
 
-By providing these fields during supplier creation, the system can:
-1. Initialize the supplier's balance correctly.
-2. Generate accounting "Opening Balance" journal entries to ensure the General Ledger matches the reality.
+**Description**: Retrieve aggregated sales data for graphing and comparative analysis.
 
-## Suggested Frontend Changes
+**Query Parameters**:
+- `period`: `daily` | `weekly` | `monthly` | `yearly` (default: `monthly`)
+- `start_date` (optional): Filter start date
+- `end_date` (optional): Filter end date
 
-### 1. Supplier Creation/Edit Form
-Add the following fields to the `SupplierForm` component:
-- **Opening Balance (Payable)**:
-    - Label: `Opening Balance (Payable)`
-    - Type: `Number`
-    - Tooltip: `The amount you already owe this supplier at the time of system setup.`
-- **Opening Advance Balance**:
-    - Label: `Opening Advance Balance`
-    - Type: `Number`
-    - Tooltip: `The amount you have already prepaid to this supplier for future orders.`
-
-### 2. API Integration
-Update the `StoreSupplierRequest` payload in the frontend to include:
-```typescript
+**Response Structure**:
+```json
 {
-    // ... existing fields
-    opening_balance: number;
-    opening_advance_balance: number;
+  "summary": {
+    "total_revenue": 45000.00,
+    "total_quantity": 150,
+    "revenue_growth": 12.5, // Percentage change from previous equivalent period
+    "quantity_growth": 5.2
+  },
+  "chart_data": [
+    {
+      "label": "2026-01-01", // Date or Week/Month label
+      "revenue": 5000.00,
+      "quantity": 20
+    },
+    // ... more data points
+  ]
 }
 ```
 
-### 3. Display Logic
-- In the **Supplier List** and **Detail** views, ensure the `Outstanding Balance` reflects:
-  `(Opening Balance - Opening Advance) + (All Received POs - All Payments)`
-- Highlight if a supplier has an active advance balance (negative outstanding balance).
+## 2. Stock Movement Analytics
+**Endpoint**: `GET /api/items/{id}/analytics/stock`
+
+**Description**: Retrieve aggregated stock movement data (incoming vs outgoing) over time.
+
+**Query Parameters**:
+- `period`: `daily` | `weekly` | `monthly` (default: `monthly`)
+
+**Response Structure**:
+```json
+{
+  "summary": {
+    "current_stock": 450,
+    "turnover_rate": 0.8 // Optional: Stock turnover ratio
+  },
+  "chart_data": [
+    {
+      "label": "2026-01-01",
+      "incoming": 50, // Purchases, Returns, Adjustments (+)
+      "outgoing": 30, // Sales, Adjustments (-)
+      "net_change": 20
+    }
+    // ...
+  ]
+}
+```
