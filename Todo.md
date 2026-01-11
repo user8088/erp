@@ -1,48 +1,38 @@
-# Store Documents API - Backend Requirements
+# Supplier Opening Balances Feature
 
-Please implement the following API endpoints to support the Store Settings document management feature.
+## Scenario: Importing Legacy Data
+When onboarding a new supplier to the ERP, they often have a pre-existing financial history. 
+- **Outstanding Dues**: The business already owes money to the supplier from previous (non-ERP) transactions. This is recorded as an `opening_balance` (Liability/Accounts Payable).
+- **Advance/Credit**: The business has already prepaid the supplier for future orders. This is recorded as an `opening_advance_balance` (Asset/Supplier Advance).
 
-## 1. Document Schema
-Each document record should store:
-- `id` (Primary Key)
-- `name` (String, e.g., "Shop Lease Agreement")
-- `type` (String, e.g., "Agreement", "Permit")
-- `category` (String, e.g., "Legal", "Maintenance")
-- `file_path` (String, path to the file in storage)
-- `file_name` (String, original filename)
-- `mime_type` (String)
-- `file_size` (Integer, size in bytes)
-- `upload_date` (Timestamp)
-- `created_by` (Foreign Key to users)
+By providing these fields during supplier creation, the system can:
+1. Initialize the supplier's balance correctly.
+2. Generate accounting "Opening Balance" journal entries to ensure the General Ledger matches the reality.
 
-## 2. API Endpoints
+## Suggested Frontend Changes
 
-### `GET /api/store-documents`
-- **Description**: Returns a list of all store documents.
-- **Parameters**: 
-    - `search` (Optional): Filter by name, type, or category.
-    - `page`, `per_page` (Optional): Pagination.
-- **Response**: Paginated list of document objects.
+### 1. Supplier Creation/Edit Form
+Add the following fields to the `SupplierForm` component:
+- **Opening Balance (Payable)**:
+    - Label: `Opening Balance (Payable)`
+    - Type: `Number`
+    - Tooltip: `The amount you already owe this supplier at the time of system setup.`
+- **Opening Advance Balance**:
+    - Label: `Opening Advance Balance`
+    - Type: `Number`
+    - Tooltip: `The amount you have already prepaid to this supplier for future orders.`
 
-### `POST /api/store-documents`
-- **Description**: Upload a new document.
-- **Content-Type**: `multipart/form-data`
-- **Payload**:
-    - `file`: The file to upload (required).
-    - `name`: Custom name for the document (required).
-    - `type`: Document type (required).
-    - `category`: Document category (required).
-- **Behavior**: Store the file securely and create a record in the database.
+### 2. API Integration
+Update the `StoreSupplierRequest` payload in the frontend to include:
+```typescript
+{
+    // ... existing fields
+    opening_balance: number;
+    opening_advance_balance: number;
+}
+```
 
-### `DELETE /api/store-documents/{id}`
-- **Description**: Delete a document and its associated file from storage.
-
-### `GET /api/store-documents/{id}/download`
-- **Description**: Securely download the document file.
-
----
-
-# UI Implementation Progress
-- [x] Store Settings Page created with Mock Data.
-- [x] Date-based organization (Year/Month) implemented.
-- [x] Integration with `apiClient.ts` started.
+### 3. Display Logic
+- In the **Supplier List** and **Detail** views, ensure the `Outstanding Balance` reflects:
+  `(Opening Balance - Opening Advance) + (All Received POs - All Payments)`
+- Highlight if a supplier has an active advance balance (negative outstanding balance).

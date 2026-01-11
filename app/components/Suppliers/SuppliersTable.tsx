@@ -81,6 +81,7 @@ export default function SuppliersTable({ suppliers, loading, onDelete, onSelecti
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Email</th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Status</th>
             <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 whitespace-nowrap">Total Purchase</th>
+            <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 whitespace-nowrap">Outstanding Balance</th>
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">Actions</th>
           </tr>
         </thead>
@@ -151,6 +152,48 @@ export default function SuppliersTable({ suppliers, loading, onDelete, onSelecti
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
+                </td>
+                <td className="px-4 py-3 text-sm whitespace-nowrap text-right font-bold">
+                  {(() => {
+                    const effectiveBalance = supplier.outstanding_balance ?? 0;
+                    const absBalance = Math.abs(effectiveBalance);
+
+                    if (effectiveBalance < 0) {
+                      return (
+                        <div className="flex flex-col items-end">
+                          <span className="text-blue-600">
+                            PKR {absBalance.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-blue-500 mt-0.5">
+                            Advance Balance
+                          </span>
+                        </div>
+                      );
+                    } else if (effectiveBalance > 0) {
+                      return (
+                        <div className="flex flex-col items-end">
+                          <span className="text-red-600">
+                            PKR {absBalance.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-red-500 mt-0.5">
+                            Payable Amount
+                          </span>
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <span className="text-gray-400 font-medium italic">
+                          Clear
+                        </span>
+                      );
+                    }
+                  })()}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="flex items-center gap-2">

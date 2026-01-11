@@ -24,8 +24,10 @@ export default function NewSupplierPage() {
     customer_id: "",
     items_supplied: "",
     notes: "",
+    opening_balance: "0",
+    opening_advance_balance: "0",
   });
-  
+
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -54,16 +56,36 @@ export default function NewSupplierPage() {
 
   const handleChange =
     (field: keyof typeof formData) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      if (errors[field]) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors[field];
-          return newErrors;
-        });
-      }
-    };
+      (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const value = e.target.value;
+
+        // Mutually exclusive: If opening balance is entered, clear advance balance and vice versa
+        if (field === 'opening_balance' && value.trim() && parseFloat(value) > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            [field]: value,
+            opening_advance_balance: '0'
+          }));
+        } else if (field === 'opening_advance_balance' && value.trim() && parseFloat(value) > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            [field]: value,
+            opening_balance: '0'
+          }));
+        } else {
+          setFormData((prev) => ({ ...prev, [field]: value }));
+        }
+
+        if (errors[field]) {
+          setErrors((prev) => {
+            const newErrors = { ...prev };
+            delete newErrors[field];
+            delete newErrors.opening_balance;
+            delete newErrors.opening_advance_balance;
+            return newErrors;
+          });
+        }
+      };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -95,7 +117,7 @@ export default function NewSupplierPage() {
 
     const localErrors: Record<string, string[]> = {};
     if (!formData.name.trim()) localErrors.name = ["Supplier name is required."];
-    
+
     const rating = Number(formData.rating);
     if (isNaN(rating) || rating < 1 || rating > 10) {
       localErrors.rating = ["Rating must be between 1 and 10."];
@@ -103,6 +125,18 @@ export default function NewSupplierPage() {
 
     if (Object.keys(localErrors).length > 0) {
       setErrors(localErrors);
+      return;
+    }
+
+    // Validate opening balances: Cannot have both opening balance and advance balance
+    const openingBalance = parseFloat(formData.opening_balance) || 0;
+    const openingAdvance = parseFloat(formData.opening_advance_balance) || 0;
+
+    if (openingBalance > 0 && openingAdvance > 0) {
+      localErrors.opening_balance = ["Cannot have both opening balance and advance balance. They are mutually exclusive."];
+      localErrors.opening_advance_balance = ["Cannot have both opening balance and advance balance. They are mutually exclusive."];
+      setErrors(localErrors);
+      addToast("Opening balance and advance balance are mutually exclusive.", "error");
       return;
     }
 
@@ -120,23 +154,25 @@ export default function NewSupplierPage() {
         customer_id: formData.customer_id ? Number(formData.customer_id) : null,
         items_supplied: formData.items_supplied.trim() || null,
         notes: formData.notes.trim() || null,
+        opening_balance: Number(formData.opening_balance) || 0,
+        opening_advance_balance: Number(formData.opening_advance_balance) || 0,
       };
 
       await suppliersApi.createSupplier(payload);
       addToast("Supplier created successfully.", "success");
-      
+
       invalidateSuppliersCache();
-      
+
       router.push("/suppliers");
     } catch (e: unknown) {
       console.error(e);
-      
+
       if (e && typeof e === "object" && "data" in e) {
         const errorData = (e as { data: unknown }).data;
         if (errorData && typeof errorData === "object" && "errors" in errorData) {
           const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
           setErrors(backendErrors);
-          
+
           const firstError = Object.values(backendErrors)[0]?.[0];
           if (firstError) {
             addToast(firstError, "error");
@@ -146,7 +182,7 @@ export default function NewSupplierPage() {
           return;
         }
       }
-      
+
       addToast("Failed to create supplier.", "error");
     } finally {
       setSaving(false);
@@ -163,7 +199,7 @@ export default function NewSupplierPage() {
         {/* Basic Information */}
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-base font-semibold text-gray-900 mb-4">Basic Information</h2>
-          
+
           {/* Profile Picture Upload */}
           <div className="flex justify-center mb-6">
             <div className="relative">
@@ -333,7 +369,7 @@ export default function NewSupplierPage() {
         {/* Items & Services */}
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-base font-semibold text-gray-900 mb-4">Items & Services</h2>
-          
+
           <div className="space-y-4">
             {/* Items Supplied */}
             <div>
@@ -364,6 +400,66 @@ export default function NewSupplierPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
                 placeholder="Payment terms, delivery details, special conditions..."
               />
+            </div>
+          </div>
+        </div>
+
+        {/* Financial Information */}
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-4">Financial Information</h2>
+
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+            <p className="text-xs text-amber-800">
+              <strong>Note:</strong> Opening balance (Payable) and Opening advance balance cannot coexist.
+              Entering one will automatically clear the other.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Opening Balance (Payable) */}
+            <div className="relative group">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                Opening Balance (Payable)
+                <div className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] flex items-center justify-center cursor-help" title="The amount you already owe this supplier at the time of system setup.">?</div>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">PKR</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.opening_balance}
+                  onChange={handleChange("opening_balance")}
+                  className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  placeholder="0.00"
+                />
+              </div>
+              {errors.opening_balance && (
+                <p className="mt-1 text-xs text-red-600">{errors.opening_balance[0]}</p>
+              )}
+            </div>
+
+            {/* Opening Advance Balance */}
+            <div className="relative group">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                Opening Advance Balance
+                <div className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] flex items-center justify-center cursor-help" title="The amount you have already prepaid to this supplier for future orders.">?</div>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">PKR</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.opening_advance_balance}
+                  onChange={handleChange("opening_advance_balance")}
+                  className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  placeholder="0.00"
+                />
+              </div>
+              {errors.opening_advance_balance && (
+                <p className="mt-1 text-xs text-red-600">{errors.opening_advance_balance[0]}</p>
+              )}
             </div>
           </div>
         </div>

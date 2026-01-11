@@ -34,6 +34,8 @@ export default function SupplierDetailsForm({
     rating: "5",
     status: "active" as "active" | "inactive",
     customer_id: "",
+    opening_balance: "0",
+    opening_advance_balance: "0",
   });
 
   useEffect(() => {
@@ -47,6 +49,8 @@ export default function SupplierDetailsForm({
         rating: String(supplier.rating),
         status: supplier.status,
         customer_id: supplier.customer_id ? String(supplier.customer_id) : "",
+        opening_balance: String(supplier.opening_balance || 0),
+        opening_advance_balance: String(supplier.opening_advance_balance || 0),
       });
     }
   }, [supplier]);
@@ -80,6 +84,15 @@ export default function SupplierDetailsForm({
     if (!supplier) return;
     onSavingChange?.(true);
     try {
+      const openingBalance = Number(formData.opening_balance) || 0;
+      const openingAdvance = Number(formData.opening_advance_balance) || 0;
+
+      if (openingBalance > 0 && openingAdvance > 0) {
+        addToast("Opening balance and advance balance are mutually exclusive.", "error");
+        onSavingChange?.(false);
+        return;
+      }
+
       const payload = {
         name: formData.name,
         contact_person: formData.contact_person || null,
@@ -90,24 +103,26 @@ export default function SupplierDetailsForm({
         rating: Number(formData.rating),
         status: formData.status,
         customer_id: formData.customer_id ? Number(formData.customer_id) : null,
+        opening_balance: openingBalance,
+        opening_advance_balance: openingAdvance,
       };
 
       const response = await suppliersApi.updateSupplier(Number(supplierId), payload);
       onSupplierUpdated(response.supplier);
-      
+
       // Invalidate cache to show fresh data when navigating back
       invalidateSuppliersCache();
-      
+
       addToast("Supplier updated successfully.", "success");
     } catch (e: unknown) {
       console.error(e);
-      
+
       // Handle validation errors from backend
       if (e && typeof e === "object" && "data" in e) {
         const errorData = (e as { data: unknown }).data;
         if (errorData && typeof errorData === "object" && "errors" in errorData) {
           const backendErrors = (errorData as { errors: Record<string, string[]> }).errors;
-          
+
           // Show the first error message in toast
           const firstError = Object.values(backendErrors)[0]?.[0];
           if (firstError) {
@@ -118,7 +133,7 @@ export default function SupplierDetailsForm({
           return;
         }
       }
-      
+
       addToast("Failed to update supplier.", "error");
     } finally {
       onSavingChange?.(false);
@@ -128,7 +143,7 @@ export default function SupplierDetailsForm({
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
       <h2 className="text-base font-semibold text-gray-900">Basic Information</h2>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Serial Number - Read Only */}
         <div>
@@ -259,6 +274,71 @@ export default function SupplierDetailsForm({
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
           />
+        </div>
+      </div>
+
+      <h2 className="text-base font-semibold text-gray-900 pt-4 border-t border-gray-100">Financial Information</h2>
+
+      <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+        <p className="text-xs text-amber-800">
+          <strong>Note:</strong> Opening balance (Payable) and Opening advance balance cannot coexist.
+          Entering one will automatically clear the other.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Opening Balance (Payable) */}
+        <div className="relative group">
+          <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+            Opening Balance (Payable)
+            <div className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] flex items-center justify-center cursor-help" title="The amount you already owe this supplier at the time of system setup.">?</div>
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">PKR</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.opening_balance}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val.trim() && parseFloat(val) > 0) {
+                  setFormData({ ...formData, opening_balance: val, opening_advance_balance: "0" });
+                } else {
+                  setFormData({ ...formData, opening_balance: val });
+                }
+              }}
+              className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              placeholder="0.00"
+            />
+          </div>
+        </div>
+
+        {/* Opening Advance Balance */}
+        <div className="relative group">
+          <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+            Opening Advance Balance
+            <div className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] flex items-center justify-center cursor-help" title="The amount you have already prepaid to this supplier for future orders.">?</div>
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">PKR</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.opening_advance_balance}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val.trim() && parseFloat(val) > 0) {
+                  setFormData({ ...formData, opening_advance_balance: val, opening_balance: "0" });
+                } else {
+                  setFormData({ ...formData, opening_advance_balance: val });
+                }
+              }}
+              className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              placeholder="0.00"
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,6 @@
 "use client";
 
-import { User, Paperclip, Tag, Camera } from "lucide-react";
-import { Plus } from "lucide-react";
+import { User, Paperclip, Tag, Camera, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "../ui/ToastProvider";
 import type { Supplier, Attachment } from "../../lib/types";
@@ -21,6 +20,8 @@ export default function SupplierDetailSidebar({ supplier, onProfilePictureChange
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
+
+
 
   const getInitials = (name: string) =>
     name

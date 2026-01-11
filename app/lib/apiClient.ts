@@ -1581,6 +1581,8 @@ export interface CreateOrUpdateSupplierPayload {
   customer_id?: number | null;
   items_supplied?: string | null;
   notes?: string | null;
+  opening_balance?: number;
+  opening_advance_balance?: number;
 }
 
 export const suppliersApi = {

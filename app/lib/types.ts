@@ -522,6 +522,8 @@ export interface Supplier {
   total_purchase_amount: string; // Decimal as string - Lifetime total purchases from this supplier
   items_supplied: string | null; // Description of items/products this supplier provides
   notes: string | null;
+  opening_balance?: number;
+  opening_advance_balance?: number;
   outstanding_balance?: number;
   created_at: string;
   updated_at: string;

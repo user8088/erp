@@ -5,7 +5,7 @@ import SupplierDetailTabs from "./SupplierDetailTabs";
 import SupplierDetailsForm from "./SupplierDetailsForm";
 import SupplierPaymentModal, { type PaymentData } from "../Suppliers/SupplierPaymentModal";
 import type { Supplier, PurchaseOrder, Account, SupplierPayment } from "../../lib/types";
-import { Package, ShoppingCart, CreditCard, Receipt } from "lucide-react";
+import { Package, ShoppingCart, CreditCard, Receipt, DollarSign, TrendingUp } from "lucide-react";
 import { purchaseOrdersApi, accountsApi, suppliersApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
 
@@ -48,18 +48,18 @@ export default function SupplierDetailContent({
 
   const fetchPurchaseOrders = useCallback(async (force = false) => {
     if (!supplier) return;
-    
+
     // Reset loaded state if supplier changed
     if (currentSupplierIdRef.current !== supplier.id) {
       loadedTabsRef.current.clear();
       currentSupplierIdRef.current = supplier.id;
     }
-    
+
     // Only fetch if not already loaded or if forced
     if (!force && loadedTabsRef.current.has("purchase-orders")) {
       return;
     }
-    
+
     setLoadingPOs(true);
     try {
       const response = await purchaseOrdersApi.getPurchaseOrders({
@@ -88,15 +88,15 @@ export default function SupplierDetailContent({
         per_page: 1000,
       });
       // Filter to only show relevant payment accounts
-      const filtered = response.data.filter(acc => 
-        !acc.is_disabled && 
-        (acc.name.toLowerCase().includes('cash') || 
-         acc.name.toLowerCase().includes('bank') || 
-         acc.name.toLowerCase().includes('jazzcash') || 
-         acc.name.toLowerCase().includes('easypaisa') ||
-         acc.number?.startsWith('1'))
+      const filtered = response.data.filter(acc =>
+        !acc.is_disabled &&
+        (acc.name.toLowerCase().includes('cash') ||
+          acc.name.toLowerCase().includes('bank') ||
+          acc.name.toLowerCase().includes('jazzcash') ||
+          acc.name.toLowerCase().includes('easypaisa') ||
+          acc.number?.startsWith('1'))
       );
-      
+
       // Fetch balances for each account
       const accountsWithBalances = await Promise.all(
         filtered.map(async (account) => {
@@ -115,7 +115,7 @@ export default function SupplierDetailContent({
           }
         })
       );
-      
+
       setPaymentAccounts(accountsWithBalances);
     } catch (error) {
       console.error("Failed to fetch payment accounts:", error);
@@ -126,18 +126,18 @@ export default function SupplierDetailContent({
   // Fetch payment history and balance
   const fetchPayments = useCallback(async (force = false) => {
     if (!supplier) return;
-    
+
     // Reset loaded state if supplier changed
     if (currentSupplierIdRef.current !== supplier.id) {
       loadedTabsRef.current.clear();
       currentSupplierIdRef.current = supplier.id;
     }
-    
+
     // Only fetch if not already loaded or if forced
     if (!force && loadedTabsRef.current.has("payments")) {
       return;
     }
-    
+
     setLoadingPayments(true);
     try {
       // Fetch payments
@@ -146,7 +146,7 @@ export default function SupplierDetailContent({
         sort_by: 'payment_date',
         sort_order: 'desc'
       });
-      
+
       setPayments(paymentsResponse.payments);
       setTotalPaid(paymentsResponse.summary.total_paid);
       setTotalPurchased(paymentsResponse.summary.total_received);
@@ -156,7 +156,7 @@ export default function SupplierDetailContent({
       console.error("Failed to fetch payments:", error);
       addToast("Failed to load payment history", "error");
       setPayments([]);
-      
+
       // Try to at least get the balance
       try {
         const balanceResponse = await suppliersApi.getBalance(supplier.id);
@@ -192,7 +192,7 @@ export default function SupplierDetailContent({
   const suppliedItems = supplier ? purchaseOrders
     .reduce((itemsMap, po) => {
       if (!po.items) return itemsMap;
-      
+
       po.items.forEach(poItem => {
         const itemName = poItem.item?.name || `Item #${poItem.item_id}`;
         const primaryUnit = poItem.item?.primary_unit || 'units';
@@ -200,7 +200,7 @@ export default function SupplierDetailContent({
         const conversionRate = poItem.item?.conversion_rate;
         const existing = itemsMap.get(poItem.item_id);
         const quantity = Number(poItem.quantity_ordered) || 0;
-        
+
         if (existing) {
           existing.total_quantity += quantity;
           // Update last ordered date if this PO is more recent
@@ -219,19 +219,19 @@ export default function SupplierDetailContent({
           });
         }
       });
-      
+
       return itemsMap;
-    }, new Map<number, { 
-      item_id: number; 
-      item_name: string; 
-      total_quantity: number; 
+    }, new Map<number, {
+      item_id: number;
+      item_name: string;
+      total_quantity: number;
       primary_unit: string;
       secondary_unit?: string | null;
       conversion_rate?: number | null;
-      last_ordered: string 
+      last_ordered: string
     }>())
     .values() : [];
-  
+
   const suppliedItemsArray = Array.from(suppliedItems);
 
 
@@ -240,9 +240,9 @@ export default function SupplierDetailContent({
     if (!supplier) return;
     try {
       const response = await suppliersApi.createPayment(supplier.id, paymentData);
-      
+
       addToast(response.message || "Payment recorded successfully", "success");
-      
+
       // Force refresh data after payment (data has changed)
       loadedTabsRef.current.delete("payments");
       fetchPayments(true);
@@ -254,7 +254,7 @@ export default function SupplierDetailContent({
     } catch (error) {
       // Parse error to extract meaningful message
       let errorMessage = "Failed to record payment";
-      
+
       if (error && typeof error === "object") {
         // Check for backend error response structure
         if ("message" in error && typeof error.message === "string") {
@@ -276,19 +276,19 @@ export default function SupplierDetailContent({
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
-      
+
       // Show user-friendly error message
       const lowerMessage = errorMessage.toLowerCase();
-      
-      if (lowerMessage.includes("negative balance") || 
-          lowerMessage.includes("insufficient funds") ||
-          lowerMessage.includes("balance cannot go negative") ||
-          lowerMessage.includes("would result in negative balance")) {
+
+      if (lowerMessage.includes("negative balance") ||
+        lowerMessage.includes("insufficient funds") ||
+        lowerMessage.includes("balance cannot go negative") ||
+        lowerMessage.includes("would result in negative balance")) {
         // Extract account info if available
         const accountMatch = errorMessage.match(/account[:\s]+([^,\.]+)/i);
-        const balanceMatch = errorMessage.match(/PKR\s*([\d,]+\.?\d*)/i) || 
-                            errorMessage.match(/([\d,]+\.?\d*)\s*PKR/i);
-        
+        const balanceMatch = errorMessage.match(/PKR\s*([\d,]+\.?\d*)/i) ||
+          errorMessage.match(/([\d,]+\.?\d*)\s*PKR/i);
+
         if (accountMatch && balanceMatch) {
           const accountName = accountMatch[1].trim();
           const availableBalance = balanceMatch[1].replace(/,/g, '');
@@ -312,9 +312,9 @@ export default function SupplierDetailContent({
           addToast(errorMessage, "error");
         }
       } else {
-      addToast(errorMessage, "error");
+        addToast(errorMessage, "error");
       }
-      
+
       // Re-throw error so modal can handle it
       throw error;
     }
@@ -324,12 +324,12 @@ export default function SupplierDetailContent({
   const handleAutoDetectPaymentAccount = async (): Promise<number | null> => {
     try {
       const response = await suppliersApi.autoDetectPaymentAccount();
-      
+
       if (response.detected_account) {
         addToast(`Auto-detected: ${response.detected_account.name} (${response.confidence} confidence)`, "success");
         return response.detected_account.id;
       }
-      
+
       addToast(response.message || "No suitable payment account found", "info");
       return null;
     } catch (error) {
@@ -344,6 +344,9 @@ export default function SupplierDetailContent({
     fetchPaymentAccounts();
     setIsPaymentModalOpen(true);
   };
+
+  // Calculate effective outstanding balance (directly from backend)
+  const effectiveOutstandingBalance = outstandingBalance;
 
   return (
     <div className="flex-1">
@@ -362,7 +365,7 @@ export default function SupplierDetailContent({
         {activeTab === "purchase-orders" && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">Purchase Orders</h2>
-            
+
             {!supplier ? (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-sm">Loading supplier...</p>
@@ -391,13 +394,12 @@ export default function SupplierDetailContent({
                           {po.order_date ? formatDate(po.order_date) : '—'}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                            po.status === 'received' ? 'bg-green-100 text-green-800' :
+                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${po.status === 'received' ? 'bg-green-100 text-green-800' :
                             po.status === 'sent' || po.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
-                            po.status === 'partial' ? 'bg-blue-100 text-blue-800' :
-                            po.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
+                              po.status === 'partial' ? 'bg-blue-100 text-blue-800' :
+                                po.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'
+                            }`}>
                             {po.status}
                           </span>
                         </td>
@@ -430,96 +432,135 @@ export default function SupplierDetailContent({
               </div>
             ) : (
               <>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-gray-900">Payment History</h2>
-              <button
-                onClick={handleOpenPaymentModal}
-                disabled={outstandingBalance <= 0}
-                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              >
-                <CreditCard className="w-4 h-4" />
-                Make Payment
-              </button>
-            </div>
-
-            {/* Outstanding Balance Card */}
-            <div className="mb-6 p-4 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-orange-700 font-medium">Outstanding Balance</p>
-                  <p className="text-3xl font-bold text-orange-900 mt-1">
-                    PKR {outstandingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </p>
-                  <p className="text-xs text-orange-600 mt-1">
-                    Total Received: PKR {totalPurchased.toLocaleString(undefined, { minimumFractionDigits: 2 })} | Paid: PKR {totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </p>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold text-gray-900">Payment History</h2>
+                  <button
+                    onClick={handleOpenPaymentModal}
+                    disabled={outstandingBalance <= 0}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Make Payment
+                  </button>
                 </div>
-                <Receipt className="w-12 h-12 text-orange-300" />
-              </div>
-            </div>
 
-            {/* Payment History Table */}
-            {loadingPayments ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-sm">Loading payment history...</p>
-              </div>
-            ) : payments.length > 0 ? (
-              <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Payment #</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Invoice #</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Paid From</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Journal Entry</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {payments.map((payment) => (
-                      <tr key={payment.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                          {payment.payment_number}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {payment.payment_date ? formatDate(payment.payment_date) : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                          {payment.invoice_number || (
-                            <span className="text-gray-400 italic text-xs">No invoice</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {payment.payment_account?.name || payment.payment_account_name || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900 text-right font-semibold">
-                          PKR {Number(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          {payment.journal_entry?.entry_number ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                              <Receipt className="w-3 h-3" />
-                              {payment.journal_entry.entry_number}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 italic text-xs">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg text-gray-500">
-                <CreditCard className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-sm">No payments recorded yet.</p>
-                <p className="text-xs mt-1 text-gray-400">
-                  Payment history will appear here after you make payments.
-                </p>
-              </div>
-            )}
+                {/* Financial Summary Cards (Replica of Customer Profile) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  {/* Payable Amount (Outstanding Balance if > 0) */}
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-red-700 mb-1">Payable Amount</p>
+                        <p className="text-2xl font-bold text-red-900">
+                          PKR {Math.max(0, effectiveOutstandingBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-xs text-red-600 mt-1">Outstanding balance</p>
+                        {(Number(supplier?.opening_balance) > 0) && (
+                          <p className="text-[10px] text-red-500 mt-0.5 font-medium">
+                            (Opening: PKR {Number(supplier.opening_balance).toLocaleString()})
+                          </p>
+                        )}
+                      </div>
+                      <DollarSign className="w-8 h-8 text-red-400" />
+                    </div>
+                  </div>
+
+                  {/* Advance Balance (abs(Outstanding Balance) if < 0) */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-blue-700 mb-1">Advance Balance</p>
+                        <p className="text-2xl font-bold text-blue-900">
+                          PKR {Math.max(0, -effectiveOutstandingBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-xs text-blue-600 mt-1">Prepaid / Credit</p>
+                        {(Number(supplier?.opening_advance_balance) > 0) && (
+                          <p className="text-[10px] text-blue-500 mt-0.5 font-medium">
+                            (Opening: PKR {Number(supplier.opening_advance_balance).toLocaleString()})
+                          </p>
+                        )}
+                      </div>
+                      <CreditCard className="w-8 h-8 text-blue-400" />
+                    </div>
+                  </div>
+
+                  {/* Total Purchased */}
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-green-700 mb-1">Total Purchased</p>
+                        <p className="text-2xl font-bold text-green-900">
+                          PKR {totalPurchased.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">All-time received</p>
+                      </div>
+                      <TrendingUp className="w-8 h-8 text-green-400" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment History Table */}
+                {loadingPayments ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <p className="text-sm">Loading payment history...</p>
+                  </div>
+                ) : payments.length > 0 ? (
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Payment #</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Invoice #</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Paid From</th>
+                          <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Journal Entry</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {payments.map((payment) => (
+                          <tr key={payment.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+                              {payment.payment_number}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {payment.payment_date ? formatDate(payment.payment_date) : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+                              {payment.invoice_number || (
+                                <span className="text-gray-400 italic text-xs">No invoice</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {payment.payment_account?.name || payment.payment_account_name || '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right font-semibold">
+                              PKR {Number(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {payment.journal_entry?.entry_number ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                  <Receipt className="w-3 h-3" />
+                                  {payment.journal_entry.entry_number}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 italic text-xs">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg text-gray-500">
+                    <CreditCard className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-sm">No payments recorded yet.</p>
+                    <p className="text-xs mt-1 text-gray-400">
+                      Payment history will appear here after you make payments.
+                    </p>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -533,77 +574,77 @@ export default function SupplierDetailContent({
               </div>
             ) : (
               <>
-            <h2 className="text-base font-semibold text-gray-900 mb-4">Items & Products Supplied</h2>
-            
-            {supplier.items_supplied && (
-              <div className="prose prose-sm max-w-none mb-8">
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplier.items_supplied}</p>
-              </div>
-            )}
+                <h2 className="text-base font-semibold text-gray-900 mb-4">Items & Products Supplied</h2>
 
-            {/* Historical Items Table */}
-            <div className="mt-8">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Items Purchased From This Supplier</h3>
-              
-              {loadingPOs ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="text-sm">Loading items history...</p>
+                {supplier.items_supplied && (
+                  <div className="prose prose-sm max-w-none mb-8">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{supplier.items_supplied}</p>
+                  </div>
+                )}
+
+                {/* Historical Items Table */}
+                <div className="mt-8">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Items Purchased From This Supplier</h3>
+
+                  {loadingPOs ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="text-sm">Loading items history...</p>
+                    </div>
+                  ) : suppliedItemsArray.length > 0 ? (
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Item Name</th>
+                            <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Quantity</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Last Ordered</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {suppliedItemsArray.map((item) => (
+                            <tr key={item.item_id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.item_name}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600 text-right">
+                                <div className="font-semibold text-gray-900">
+                                  {Math.floor(item.total_quantity).toLocaleString()} {item.primary_unit}
+                                </div>
+                                {item.secondary_unit && item.conversion_rate && (
+                                  <div className="text-xs text-gray-500 mt-0.5">
+                                    ({Math.floor(item.total_quantity * item.conversion_rate).toLocaleString()} {item.secondary_unit})
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {item.last_ordered ? formatDate(item.last_ordered) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg text-gray-500">
+                      <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                      <p className="text-sm">No items history yet.</p>
+                      <p className="text-xs mt-1 text-gray-400">
+                        Items will show here once you receive purchase orders from this supplier.
+                      </p>
+                    </div>
+                  )}
                 </div>
-              ) : suppliedItemsArray.length > 0 ? (
-                <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Item Name</th>
-                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Quantity</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Last Ordered</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {suppliedItemsArray.map((item) => (
-                        <tr key={item.item_id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.item_name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 text-right">
-                            <div className="font-semibold text-gray-900">
-                              {Math.floor(item.total_quantity).toLocaleString()} {item.primary_unit}
-                            </div>
-                            {item.secondary_unit && item.conversion_rate && (
-                              <div className="text-xs text-gray-500 mt-0.5">
-                                ({Math.floor(item.total_quantity * item.conversion_rate).toLocaleString()} {item.secondary_unit})
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {item.last_ordered ? formatDate(item.last_ordered) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg text-gray-500">
-                  <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-sm">No items history yet.</p>
-                  <p className="text-xs mt-1 text-gray-400">
-                    Items will show here once you receive purchase orders from this supplier.
-                  </p>
-                </div>
-              )}
-            </div>
               </>
             )}
           </div>
         )}
 
         {activeTab === "more-information" && (
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">More Information</h2>
             <p className="text-sm text-gray-500">Additional supplier information will appear here.</p>
-            </div>
+          </div>
         )}
         {activeTab === "settings" && (
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">Supplier Settings</h2>
             <p className="text-sm text-gray-500">Supplier-specific settings will appear here.</p>
           </div>
@@ -612,16 +653,16 @@ export default function SupplierDetailContent({
 
       {/* Payment Modal */}
       {supplier && (
-      <SupplierPaymentModal
-        isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
-        supplierName={supplier.name}
-        supplierId={supplier.id}
-        outstandingBalance={outstandingBalance}
-        paymentAccounts={paymentAccounts}
-        onPaymentSubmit={handlePaymentSubmit}
-        onAutoDetectPaymentAccount={handleAutoDetectPaymentAccount}
-      />
+        <SupplierPaymentModal
+          isOpen={isPaymentModalOpen}
+          onClose={() => setIsPaymentModalOpen(false)}
+          supplierName={supplier.name}
+          supplierId={supplier.id}
+          outstandingBalance={outstandingBalance}
+          paymentAccounts={paymentAccounts}
+          onPaymentSubmit={handlePaymentSubmit}
+          onAutoDetectPaymentAccount={handleAutoDetectPaymentAccount}
+        />
       )}
     </div>
   );
