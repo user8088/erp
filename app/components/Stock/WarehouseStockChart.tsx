@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Filter, MoreVertical, RefreshCw } from "lucide-react";
 import { stockApi } from "../../lib/apiClient";
@@ -52,8 +52,10 @@ export default function CategoryStockChart() {
   const [error, setError] = useState<string | null>(null);
   const [totalValue, setTotalValue] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<'category' | 'item'>('category');
+  const [showFilter, setShowFilter] = useState(false);
 
-  const fetchData = async (showRefreshing = false) => {
+  const fetchData = useCallback(async (showRefreshing = false) => {
     try {
       if (showRefreshing) {
         setRefreshing(true);
@@ -62,18 +64,29 @@ export default function CategoryStockChart() {
       }
       setError(null);
 
-      const response = await stockApi.getCategoryStockValueSummary();
-      
-      // Map API response to chart data format
-      const chartData: ChartDataItem[] = response.data.map(item => ({
-        category: item.category_name,
-        value: item.stock_value,
-      }));
+      let chartData: ChartDataItem[] = [];
+      let total = 0;
+
+      if (viewMode === 'category') {
+        const response = await stockApi.getCategoryStockValueSummary();
+        chartData = response.data.map(item => ({
+          category: item.category_name,
+          value: item.stock_value,
+        }));
+        total = response.summary.total_value;
+      } else {
+        const response = await stockApi.getItemStockValueSummary({ limit: 10 });
+        chartData = response.data.map(item => ({
+          category: item.item_name,
+          value: item.stock_value,
+        }));
+        total = response.summary.total_value;
+      }
 
       setData(chartData);
-      setTotalValue(response.summary.total_value);
+      setTotalValue(total);
     } catch (err) {
-      console.error("Failed to fetch category stock value summary:", err);
+      console.error("Failed to fetch stock value summary:", err);
       setError("Failed to load chart data");
       setData([]);
       setTotalValue(0);
@@ -81,29 +94,36 @@ export default function CategoryStockChart() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [viewMode]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleRefresh = () => {
     fetchData(true);
   };
 
+  const toggleViewMode = (mode: 'category' | 'item') => {
+    setViewMode(mode);
+    setShowFilter(false);
+  };
+
   // Calculate dynamic Y-axis domain based on max value
   const maxValue = data.length > 0 ? Math.max(...data.map(item => item.value)) : 0;
   const yAxisMax = maxValue > 0 ? Math.ceil(maxValue * 1.1) : 1000000; // Add 10% padding
-  const yAxisTicks = maxValue > 0 
+  const yAxisTicks = maxValue > 0
     ? [0, yAxisMax * 0.25, yAxisMax * 0.5, yAxisMax * 0.75, yAxisMax]
     : [0, 250000, 500000, 750000, 1000000];
 
-  if (loading) {
+  if (loading && !refreshing && data.length === 0) {
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Category-wise Stock Value</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {viewMode === 'category' ? 'Category-wise Stock Value' : 'Top Items by Stock Value'}
+            </h2>
             <p className="text-xs text-gray-500 mt-1">Loading chart data...</p>
           </div>
         </div>
@@ -119,7 +139,9 @@ export default function CategoryStockChart() {
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Category-wise Stock Value</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {viewMode === 'category' ? 'Category-wise Stock Value' : 'Top Items by Stock Value'}
+            </h2>
             <p className="text-xs text-red-500 mt-1">{error}</p>
           </div>
           <button
@@ -145,33 +167,19 @@ export default function CategoryStockChart() {
     );
   }
 
-  if (data.length === 0) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Category-wise Stock Value</h2>
-            <p className="text-xs text-gray-500 mt-1">No stock data available</p>
-          </div>
-        </div>
-        <div className="flex items-center justify-center h-[300px] text-gray-500">
-          No categories with stock found
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+    <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 relative">
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Category-wise Stock Value</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            {viewMode === 'category' ? 'Category-wise Stock Value' : 'Top Items by Stock Value'}
+          </h2>
           <p className="text-xs text-gray-500 mt-1">
             Total Value: PKR {totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button 
+        <div className="flex items-center gap-2 relative">
+          <button
             onClick={handleRefresh}
             disabled={refreshing}
             className="p-2 hover:bg-gray-50 rounded transition-colors disabled:opacity-50"
@@ -179,49 +187,83 @@ export default function CategoryStockChart() {
           >
             <RefreshCw className={`w-4 h-4 text-gray-600 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
-          <button className="p-2 hover:bg-gray-50 rounded transition-colors" title="Filter">
-            <Filter className="w-4 h-4 text-gray-600" />
-          </button>
+
+          <div className="relative">
+            <button
+              onClick={() => setShowFilter(!showFilter)}
+              className={`p-2 hover:bg-gray-50 rounded transition-colors ${showFilter ? 'bg-gray-100' : ''}`}
+              title="Filter View"
+            >
+              <Filter className="w-4 h-4 text-gray-600" />
+            </button>
+            {showFilter && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200 py-1">
+                <button
+                  onClick={() => toggleViewMode('category')}
+                  className={`block w-full text-left px-4 py-2 text-sm ${viewMode === 'category' ? 'bg-orange-50 text-orange-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
+                >
+                  By Category
+                </button>
+                <button
+                  onClick={() => toggleViewMode('item')}
+                  className={`block w-full text-left px-4 py-2 text-sm ${viewMode === 'item' ? 'bg-orange-50 text-orange-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
+                >
+                  By Item (Top 10)
+                </button>
+              </div>
+            )}
+          </div>
+
           <button className="p-2 hover:bg-gray-50 rounded transition-colors" title="More options">
             <MoreVertical className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       </div>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-          <XAxis 
-            dataKey="category" 
-            stroke="#9ca3af"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis 
-            stroke="#9ca3af"
-            tick={{ fill: '#6b7280', fontSize: 12 }}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={(value) => {
-              if (value >= 100000) {
-                return `${(value / 100000).toFixed(1)} L`;
-              }
-              return `${(value / 1000).toFixed(0)}K`;
-            }}
-            domain={[0, yAxisMax]}
-            ticks={yAxisTicks}
-          />
-          <Tooltip 
-            content={<CustomTooltip />}
-            cursor={{ fill: 'transparent' }}
-          />
-          <Bar 
-            dataKey="value" 
-            fill="#f97316" 
-            radius={[4, 4, 0, 0]}
-          />
-        </BarChart>
-      </ResponsiveContainer>
+
+      {data.length === 0 ? (
+        <div className="flex items-center justify-center h-[300px] text-gray-500">
+          No {viewMode} stock data available
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+            <XAxis
+              dataKey="category"
+              stroke="#9ca3af"
+              tick={{ fill: '#6b7280', fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              interval={0}
+              tickFormatter={(val) => val.length > 15 ? val.substring(0, 15) + '...' : val}
+            />
+            <YAxis
+              stroke="#9ca3af"
+              tick={{ fill: '#6b7280', fontSize: 12 }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(value) => {
+                if (value >= 100000) {
+                  return `${(value / 100000).toFixed(1)} L`;
+                }
+                return `${(value / 1000).toFixed(0)}K`;
+              }}
+              domain={[0, yAxisMax]}
+              ticks={yAxisTicks}
+            />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ fill: 'transparent' }}
+            />
+            <Bar
+              dataKey="value"
+              fill={viewMode === 'category' ? "#f97316" : "#3b82f6"}
+              radius={[4, 4, 0, 0]}
+              barSize={viewMode === 'item' ? 40 : undefined}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }

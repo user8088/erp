@@ -18,11 +18,11 @@ export default function StockPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { addToast } = useToast();
-  
+
   // Get initial tab from URL params or default to "inventory"
   const initialTab = searchParams.get("tab") || "inventory";
   const [activeTab, setActiveTab] = useState(initialTab);
-  
+
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ItemStock | null>(null);
 
@@ -47,7 +47,7 @@ export default function StockPage() {
     if (!force && loadedTabsRef.current.has("inventory")) {
       return;
     }
-    
+
     setLoadingInventory(true);
     try {
       const response = await stockApi.getStock({ per_page: 20 });
@@ -68,7 +68,7 @@ export default function StockPage() {
     if (!force && loadedTabsRef.current.has("purchase-orders")) {
       return;
     }
-    
+
     setLoadingPOs(true);
     try {
       const response = await purchaseOrdersApi.getPurchaseOrders({ per_page: 20, sort_by: "order_date", sort_order: "desc" });
@@ -89,7 +89,7 @@ export default function StockPage() {
     if (!force && loadedTabsRef.current.has("movements")) {
       return;
     }
-    
+
     setLoadingMovements(true);
     try {
       const response = await stockMovementsApi.getStockMovements({ per_page: 20, sort_by: "created_at", sort_order: "desc" });
@@ -110,7 +110,7 @@ export default function StockPage() {
     if (!force && loadedTabsRef.current.has("alerts")) {
       return;
     }
-    
+
     setLoadingAlerts(true);
     try {
       const response = await stockApi.getStock({ status: 'low_stock', per_page: 100 });
@@ -304,14 +304,14 @@ export default function StockPage() {
         )}
 
         {activeTab === "movements" && (
-          <StockMovementsTable 
+          <StockMovementsTable
             movements={stockMovements}
             loading={loadingMovements}
           />
         )}
 
         {activeTab === "alerts" && (
-          <LowStockAlertsTable 
+          <LowStockAlertsTable
             stock={lowStockItems}
             loading={loadingAlerts}
           />

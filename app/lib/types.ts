@@ -1233,3 +1233,17 @@ export interface StockAnalyticsResponse {
     net_change: number;
   }[];
 }
+
+export interface ItemStockValueSummary {
+  data: {
+    item_id: number;
+    item_name: string;
+    stock_value: number;
+    quantity_on_hand: number;
+    unit: string;
+  }[];
+  summary: {
+    total_value: number;
+    total_items: number;
+  };
+}

@@ -150,6 +150,7 @@ import type {
   ProfitLossReport,
   SalesAnalyticsResponse,
   StockAnalyticsResponse,
+  ItemStockValueSummary,
   ProfitLossDiagnostics,
   FinancialSummaryData,
   BalanceSheetReport,
@@ -1378,6 +1379,14 @@ export const stockApi = {
     queryParams.append("_t", String(Date.now()));
 
     return apiClient.get<StockAnalyticsResponse>(`/items/${id}/analytics/stock?${queryParams.toString()}`);
+  },
+
+  async getItemStockValueSummary(params: { limit?: number } = {}): Promise<ItemStockValueSummary> {
+    const queryParams = new URLSearchParams();
+    if (params.limit) queryParams.append("limit", String(params.limit));
+    queryParams.append("_t", String(Date.now()));
+
+    return await apiClient.get<ItemStockValueSummary>(`/stock/analytics/value-by-item?${queryParams.toString()}`);
   }
 };
 
