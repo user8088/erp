@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Edit, Trash2 } from "lucide-react";
-import { vehiclesApi } from "../../lib/apiClient";
+import { vehiclesApi, accountsApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
-import type { Vehicle, VehicleMaintenance, VehicleMaintenanceStatistics } from "../../lib/types";
+import type { Vehicle, VehicleMaintenance, VehicleMaintenanceStatistics, Account } from "../../lib/types";
 
 interface VehicleMaintenanceProps {
   vehicleId: string;
@@ -24,7 +24,40 @@ export default function VehicleMaintenance({ vehicleId, vehicle }: VehicleMainte
     amount: "",
     maintenance_date: "",
     notes: "",
+    expense_account_id: "",
+    payment_account_id: "",
   });
+  const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([]);
+  const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([]);
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  const loadAccounts = async () => {
+    try {
+      // Fetch Expense Accounts
+      const expRes = await accountsApi.getAccounts({
+        company_id: 1, // Default company
+        root_type: 'expense',
+        is_group: false,
+        per_page: 1000,
+      });
+      setExpenseAccounts(expRes.data);
+
+      // Fetch Asset Accounts (for Payment)
+      const assetRes = await accountsApi.getAccounts({
+        company_id: 1,
+        root_type: 'asset',
+        is_group: false,
+        per_page: 1000,
+      });
+      // Allow any asset account, or filter for bank/cash if needed
+      setPaymentAccounts(assetRes.data);
+    } catch (e) {
+      console.error("Failed to load accounts", e);
+    }
+  };
 
   useEffect(() => {
     loadMaintenance();
@@ -64,6 +97,8 @@ export default function VehicleMaintenance({ vehicleId, vehicle }: VehicleMainte
       amount: "",
       maintenance_date: new Date().toISOString().split('T')[0],
       notes: "",
+      expense_account_id: "",
+      payment_account_id: "",
     });
     setShowModal(true);
   };
@@ -76,13 +111,15 @@ export default function VehicleMaintenance({ vehicleId, vehicle }: VehicleMainte
       amount: String(record.amount),
       maintenance_date: record.maintenance_date,
       notes: record.notes || "",
+      expense_account_id: record.expense_account_id ? String(record.expense_account_id) : "",
+      payment_account_id: record.payment_account_id ? String(record.payment_account_id) : "",
     });
     setShowModal(true);
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this maintenance record?")) return;
-    
+
     try {
       await vehiclesApi.deleteMaintenanceRecord(Number(vehicleId), id);
       addToast("Maintenance record deleted successfully.", "success");
@@ -102,6 +139,8 @@ export default function VehicleMaintenance({ vehicleId, vehicle }: VehicleMainte
         amount: Number(formData.amount),
         maintenance_date: formData.maintenance_date,
         notes: formData.notes || null,
+        expense_account_id: formData.expense_account_id ? Number(formData.expense_account_id) : null,
+        payment_account_id: formData.payment_account_id ? Number(formData.payment_account_id) : null,
       };
 
       if (editingRecord) {
@@ -273,6 +312,39 @@ export default function VehicleMaintenance({ vehicleId, vehicle }: VehicleMainte
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                   required
                 />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Expense Account <span className="text-gray-400 font-normal">(Category)</span>
+                  </label>
+                  <select
+                    value={formData.expense_account_id}
+                    onChange={(e) => setFormData({ ...formData, expense_account_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                  >
+                    <option value="">Select Expense Type...</option>
+                    {expenseAccounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Payment Account <span className="text-gray-400 font-normal">(Source)</span>
+                  </label>
+                  <select
+                    value={formData.payment_account_id}
+                    onChange={(e) => setFormData({ ...formData, payment_account_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                  >
+                    <option value="">Select Payment Source...</option>
+                    {paymentAccounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.number ? `${acc.number} - ` : ''}{acc.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

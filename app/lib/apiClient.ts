@@ -2100,6 +2100,7 @@ export interface CreateSalePayload {
   customer_id: number;
   is_guest?: boolean; // New field for guest sales
   vehicle_id?: number | null;
+  driver_id?: number | null;
   delivery_address?: string | null;
   expected_delivery_date?: string | null;
   // Optional maintenance cost for this delivery run (e.g., fuel cost).
@@ -2493,6 +2494,8 @@ export interface CreateOrUpdateMaintenancePayload {
   amount: number;
   maintenance_date: string; // YYYY-MM-DD
   notes?: string | null;
+  expense_account_id?: number | null;
+  payment_account_id?: number | null;
 }
 
 export interface GetVehicleMaintenanceParams {

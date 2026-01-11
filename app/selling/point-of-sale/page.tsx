@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, vehiclesApi, ApiError, type ProcessSalePayload } from "../../lib/apiClient";
+import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, vehiclesApi, staffApi, ApiError, type ProcessSalePayload } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
-import type { ItemStock, Customer, Account, Vehicle, Sale } from "../../lib/types";
+import type { ItemStock, Customer, Account, Vehicle, Sale, StaffMember } from "../../lib/types";
 import { Package, ShoppingCart, User, Search, Plus, Minus, Trash2, Truck, Loader2 } from "lucide-react";
 
 interface CartItem {
@@ -30,6 +30,8 @@ export default function PointOfSalePage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [drivers, setDrivers] = useState<StaffMember[]>([]);
+  const [selectedDriver, setSelectedDriver] = useState<StaffMember | null>(null);
   const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<number | null>(null);
@@ -110,6 +112,19 @@ export default function PointOfSalePage() {
     }
   }, []);
 
+  // Fetch drivers (staff)
+  const fetchDrivers = useCallback(async () => {
+    try {
+      const response = await staffApi.list({
+        status: "active",
+        per_page: 1000,
+      });
+      setDrivers(response.data);
+    } catch (error) {
+      console.error("Failed to fetch drivers:", error);
+    }
+  }, []);
+
   // Fetch payment accounts (Cash, Bank accounts)
   const fetchPaymentAccounts = useCallback(async () => {
     setLoadingAccounts(true);
@@ -156,8 +171,42 @@ export default function PointOfSalePage() {
     fetchStockItems();
     fetchCustomers();
     fetchVehicles();
+    fetchDrivers();
     fetchPaymentAccounts();
-  }, [fetchStockItems, fetchCustomers, fetchVehicles, fetchPaymentAccounts]);
+  }, [fetchStockItems, fetchCustomers, fetchVehicles, fetchDrivers, fetchPaymentAccounts]);
+
+  // Update selected driver when vehicle changes
+  useEffect(() => {
+    if (selectedVehicle && selectedVehicle.driver_id) {
+      const defaultDriver = drivers.find(d => d.id === selectedVehicle.driver_id);
+      if (defaultDriver) {
+        setSelectedDriver(defaultDriver);
+      }
+    } else {
+      // Keep existing selection or reset? 
+      // User might select vehicle then driver, or driver then vehicle.
+      // If vehicle has NO default driver, typically we don't force clear unless we want to reset.
+      // Let's reset only if switching to "no vehicle" or if the new vehicle implies a change.
+      // But user requested "rider can also be manually assigned or reassigned".
+      // So if I select a vehicle, I should set its default driver. If I manually change it, it stays.
+      // To implement this logic cleanly: usage of useEffect on selectedVehicle is tricky.
+    }
+  }, [selectedVehicle, drivers]);
+
+  const handleVehicleChange = (vehicleId: string) => {
+    const vehicle = vehicles.find((v) => v.id === Number(vehicleId));
+    setSelectedVehicle(vehicle || null);
+
+    // Auto-select driver associated with vehicle
+    if (vehicle && vehicle.driver_id) {
+      const driver = drivers.find(d => d.id === vehicle.driver_id);
+      if (driver) setSelectedDriver(driver);
+    } else {
+      // If no default driver, maybe clear the selection or leave it?
+      // Let's clear it to avoid confusion, user can re-select.
+      setSelectedDriver(null);
+    }
+  };
 
   // Get cart quantity for an item stock
   const getCartQuantity = (itemStockId: number): number => {
@@ -648,6 +697,7 @@ export default function PointOfSalePage() {
         customer_id: customerId,
         is_guest: isGuestMode,
         vehicle_id: saleType === "delivery" ? selectedVehicle?.id || null : null,
+        driver_id: saleType === "delivery" ? selectedDriver?.id || null : null,
         delivery_address: saleType === "delivery" && !isGuestMode && selectedCustomer ? selectedCustomer.address || null : null,
         // IMPORTANT: maintenance cost is defined on the vehicle profile, not per order in POS.
         // Backend should use the vehicle's configured maintenance cost when calculating profitability.
@@ -742,6 +792,7 @@ export default function PointOfSalePage() {
       setCart([]);
       setSelectedCustomer(null);
       setSelectedVehicle(null);
+      setSelectedDriver(null);
       setUseAdvance(false);
       setSearchQuery(""); // Clear search as well
       setCustomerSearchQuery(""); // Clear customer search
@@ -1123,10 +1174,7 @@ export default function PointOfSalePage() {
                     <Truck className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <select
                       value={selectedVehicle?.id || ""}
-                      onChange={(e) => {
-                        const vehicle = vehicles.find((v) => v.id === Number(e.target.value));
-                        setSelectedVehicle(vehicle || null);
-                      }}
+                      onChange={(e) => handleVehicleChange(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                     >
                       <option value="">Select Vehicle (Optional)</option>
@@ -1138,6 +1186,31 @@ export default function PointOfSalePage() {
                     </select>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">You can set this later if needed</p>
+                </div>
+
+                {/* Driver Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Rider / Driver <span className="text-gray-400 font-normal">(Optional)</span>
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <select
+                      value={selectedDriver?.id || ""}
+                      onChange={(e) => {
+                        const driver = drivers.find((d) => d.id === Number(e.target.value));
+                        setSelectedDriver(driver || null);
+                      }}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="">Select Driver (Optional)</option>
+                      {drivers.map((driver) => (
+                        <option key={driver.id} value={driver.id}>
+                          {driver.full_name} {driver.designation ? `(${driver.designation})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
               </div>

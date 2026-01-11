@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Vehicle } from "../../lib/types";
-import { vehiclesApi } from "../../lib/apiClient";
+import type { Vehicle, StaffMember } from "../../lib/types";
+import { vehiclesApi, staffApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
 import { invalidateVehiclesCache } from "../Vehicles/useVehiclesList";
 
@@ -29,7 +29,21 @@ export default function VehicleDetailsForm({
     notes: "",
     status: "active" as "active" | "inactive",
     maintenance_cost: "",
+    driver_id: null as number | null,
   });
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+
+  useEffect(() => {
+    const loadStaff = async () => {
+      try {
+        const res = await staffApi.list({ status: "active", per_page: 100 });
+        setStaffMembers(res.data);
+      } catch (e) {
+        console.error("Failed to load staff", e);
+      }
+    };
+    loadStaff();
+  }, []);
 
   useEffect(() => {
     if (vehicle) {
@@ -40,6 +54,7 @@ export default function VehicleDetailsForm({
         notes: vehicle.notes || "",
         status: vehicle.status,
         maintenance_cost: vehicle.maintenance_cost?.toString() || "",
+        driver_id: vehicle.driver_id || null,
       });
     }
   }, [vehicle]);
@@ -61,16 +76,17 @@ export default function VehicleDetailsForm({
         notes: formData.notes || null,
         status: formData.status,
         maintenance_cost: formData.maintenance_cost ? Number(formData.maintenance_cost) : undefined,
+        driver_id: formData.driver_id,
       };
       const res = await vehiclesApi.updateVehicle(Number(vehicleId), payload);
       onVehicleUpdated(res.vehicle);
-      
+
       invalidateVehiclesCache();
-      
+
       addToast("Vehicle updated successfully.", "success");
     } catch (e: unknown) {
       console.error(e);
-      
+
       if (e && typeof e === "object" && "data" in e) {
         const errorData = (e as { data: unknown }).data;
         if (errorData && typeof errorData === "object" && "errors" in errorData) {
@@ -84,7 +100,7 @@ export default function VehicleDetailsForm({
           return;
         }
       }
-      
+
       addToast("Failed to update vehicle.", "error");
     } finally {
       onSavingChange?.(false);
@@ -94,7 +110,7 @@ export default function VehicleDetailsForm({
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
       <h2 className="text-base font-semibold text-gray-900 mb-4">Basic Information</h2>
-      
+
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -166,6 +182,24 @@ export default function VehicleDetailsForm({
             <p className="text-xs text-gray-500 mt-1">
               This cost will be automatically applied to all delivery orders for this vehicle and included in profitability calculations.
             </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Default Driver
+            </label>
+            <select
+              value={formData.driver_id || ""}
+              onChange={(e) => setFormData({ ...formData, driver_id: e.target.value ? Number(e.target.value) : null })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="">Select a driver...</option>
+              {staffMembers.map((staff) => (
+                <option key={staff.id} value={staff.id}>
+                  {staff.full_name} ({staff.designation || "Staff"})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

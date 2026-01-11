@@ -644,6 +644,8 @@ export interface Vehicle {
   updated_at: string;
   profitability_stats?: VehicleProfitabilityStats;
   total_orders?: number;
+  driver_id?: number | null;
+  driver?: StaffMember | null;
 }
 
 export interface VehicleProfitabilityStats {
@@ -664,6 +666,8 @@ export interface VehicleMaintenance {
   amount: number;
   maintenance_date: string; // YYYY-MM-DD
   notes: string | null;
+  expense_account_id?: number | null;
+  payment_account_id?: number | null;
   created_by: number;
   creator?: {
     id: number;
