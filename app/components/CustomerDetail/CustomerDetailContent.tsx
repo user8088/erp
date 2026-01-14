@@ -826,16 +826,16 @@ export default function CustomerDetailContent({
                               PKR {(() => {
                                 // If total_amount is 0 (refunded), try to show original amount from metadata
                                 if (invoice.total_amount === 0 && ((invoice.status as string) === 'refunded' || invoice.status === 'cancelled')) {
-                                  const metadata = invoice.metadata as any;
-                                  const metaSale = metadata?.sale;
-                                  const metaItems = metadata?.items || metaSale?.items;
+                                  const metadata = invoice.metadata as (Record<string, unknown> & { sale?: Sale; items?: SaleItem[] }) | null;
+                                  const metaSale = metadata?.sale as Sale | undefined;
+                                  const metaItems = (metadata?.items as SaleItem[] | undefined) || (metaSale?.items as SaleItem[] | undefined);
 
-                                  if (metaSale?.total_amount > 0) return metaSale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 });
-                                  if (metaSale?.subtotal > 0) return metaSale.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                                  if (metaSale?.total_amount && metaSale.total_amount > 0) return metaSale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                                  if (metaSale?.subtotal && metaSale.subtotal > 0) return metaSale.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 });
                                   
                                   // Calculate from items if sale totals are also 0
                                   if (metaItems && Array.isArray(metaItems) && metaItems.length > 0) {
-                                    const total = metaItems.reduce((sum: number, item: any) => sum + (Number(item.total) || Number(item.subtotal) || 0), 0);
+                                    const total = metaItems.reduce((sum: number, item: SaleItem) => sum + (Number(item.total) || Number(item.subtotal) || 0), 0);
                                     if (total > 0) return total.toLocaleString(undefined, { minimumFractionDigits: 2 });
                                   }
                                 }
