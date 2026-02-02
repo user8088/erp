@@ -1,68 +1,18 @@
-# Vehicle System Enhancements
+## UI TODO: Supplier Profile → Purchase Orders “Items” column
 
-## 1. Add Driver Assignment
-**Objective**: Allow assigning a staff member as the default driver for a vehicle.
+Backend change: `PurchaseOrderResource` now returns:
+- `items_summary` (string|null): human readable purchased items summary
+  - Example: `1 bag of Fauji Cement`
+  - Built from each PO item: `quantity_ordered` + `item.primary_unit` + `item.brand` + `item.name`
+  - If there are many items, it returns first 2 then “and N more”
+- `items_count` (int|null): count of items (only present when `items` relation is loaded)
 
-**Database Changes**:
-- Add `driver_id` column to `vehicles` table.
-- Type: `unsigned big integer`, Nullable.
-- Foreign Key: References `id` on `staff` table.
+### What to change in UI
+- In Supplier Profile → Purchase Orders table, replace current “Items” display (`1 item(s)`) with:
+  1. Prefer showing `po.items_summary` if present (non-empty string)
+  2. Fallback to `po.items_count` if present: `${po.items_count} item(s)`
+  3. Final fallback (if UI still has `items` array): `${po.items?.length ?? 0} item(s)`
 
-**Backend Logic**:
-- **Model**: Update `Vehicle` model to include `driver_id` in `$fillable`.
-- **Relationship**: Add `driver()` method to `Vehicle` model (`belongsTo(Staff::class)`).
-- **Controller**:
-    - Update `store` and `update` methods in `VehicleController` to validate and save `driver_id`.
-    - Validation rule: `'driver_id' => 'nullable|exists:staff,id'`.
-- **Resource**: Update `VehicleResource` to include:
-    ```php
-    'driver_id' => $this->driver_id,
-    'driver' => $this->whenLoaded('driver', function() {
-        return [
-            'id' => $this->driver->id,
-            'full_name' => $this->driver->full_name,
-            'designation' => $this->driver->designation,
-        ];
-    }),
-    ```
-
-## 2. Add Driver to Sales (Delivery Orders)
-**Objective**: Allow assigning a driver to a delivery sale (overriding the default vehicle driver).
-
-**Database Changes**:
-- Add `driver_id` column to `sales` table.
-- Type: `unsigned big integer`, Nullable.
-- Foreign Key: References `id` on `staff` table.
-
-**Backend Logic**:
-- **Model**: Update `Sale` model to include `driver_id` in `$fillable`.
-- **Relationship**: Add `driver()` method to `Sale` model (`belongsTo(Staff::class)`).
-- **Controller**:
-    - Update `store` method in `SaleController` to validate and save `driver_id`.
-    - Validation rule: `'driver_id' => 'nullable|exists:staff,id'`.
-- **Resource**: Update `SaleResource` to include driver details.
-
-## 3. Vehicle Maintenance COA Integration
-**Objective**: Link vehicle maintenance records to the Chart of Accounts (COA) for proper financial tracking.
-
-**Database Changes**:
-- Add `payment_account_id` to `vehicle_maintenance` table (Source of funds).
-    - Type: `unsigned big integer`, Nullable.
-    - Foreign Key: `accounts` table.
-- Add `expense_account_id` to `vehicle_maintenance` table (Expense category).
-    - Type: `unsigned big integer`, Nullable.
-    - Foreign Key: `accounts` table.
-
-**Backend Logic**:
-- **Model**: Update `VehicleMaintenance` model fillables.
-- **Controller**:
-    - Update `store` and `update` logic to handle financial transactions.
-    - When a record is created:
-        - Decrease balance of `payment_account_id` (Asset/Credit).
-        - Increase balance of `expense_account_id` (Expense/Debit).
-        - Create a `JournalEntry` automatically? (Or just update balances directly if simple). *Recommendation: Use Journal Entries for auditability.*
-
-**Frontend Update**:
-- Update `VehicleMaintenance.tsx` form to include:
-    - **Expense Account**: Dropdown filtering for 'Expense' type accounts (e.g., "Vehicle Repairs", "Fuel Expense").
-    - **Payment Account**: Dropdown filtering for 'Asset' type accounts (e.g., "Cash", "Bank").
+### Notes
+- This is already included in the `/api/purchase-orders` responses (because the API loads `items.item`).
+- If the supplier profile uses a different endpoint, ensure that endpoint returns `PurchaseOrderResource` and loads `items.item`.

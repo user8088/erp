@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import SupplierDetailTabs from "./SupplierDetailTabs";
 import SupplierDetailsForm from "./SupplierDetailsForm";
 import SupplierPaymentModal, { type PaymentData } from "../Suppliers/SupplierPaymentModal";
@@ -8,6 +9,10 @@ import type { Supplier, PurchaseOrder, Account, SupplierPayment } from "../../li
 import { Package, ShoppingCart, CreditCard, Receipt, DollarSign, TrendingUp } from "lucide-react";
 import { purchaseOrdersApi, accountsApi, suppliersApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
+import {
+  checkStockAccountMappingsConfigured,
+  handleStockAccountMappingError,
+} from "../../lib/stockAccountMappingsClient";
 
 // Simple date formatter
 const formatDate = (dateString: string) => {
@@ -31,6 +36,7 @@ export default function SupplierDetailContent({
   onSavingChange,
 }: SupplierDetailContentProps) {
   const { addToast } = useToast();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("supplier-details");
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [loadingPOs, setLoadingPOs] = useState(false);
@@ -41,10 +47,22 @@ export default function SupplierDetailContent({
   const [outstandingBalance, setOutstandingBalance] = useState(0);
   const [totalPurchased, setTotalPurchased] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
+  const [checkingMappings, setCheckingMappings] = useState(false);
 
   // Track which tabs have been loaded to prevent unnecessary API calls
   const loadedTabsRef = useRef<Set<string>>(new Set());
   const currentSupplierIdRef = useRef<number | null>(null);
+
+  const getPurchaseOrderItemsDisplay = useCallback((po: PurchaseOrder) => {
+    const summary = typeof po.items_summary === "string" ? po.items_summary.trim() : "";
+    if (summary) return summary;
+
+    if (typeof po.items_count === "number") {
+      return `${po.items_count} item(s)`;
+    }
+
+    return `${po.items?.length ?? 0} item(s)`;
+  }, []);
 
   const fetchPurchaseOrders = useCallback(async (force = false) => {
     if (!supplier) return;
@@ -252,6 +270,12 @@ export default function SupplierDetailContent({
         fetchPurchaseOrders(true);
       }
     } catch (error) {
+      // Handle missing account mappings with a dedicated dialog + redirect
+      if (handleStockAccountMappingError(error, (path) => router.push(path))) {
+        setIsPaymentModalOpen(false);
+        return;
+      }
+
       // Parse error to extract meaningful message
       let errorMessage = "Failed to record payment";
 
@@ -340,9 +364,40 @@ export default function SupplierDetailContent({
   };
 
   // Open payment modal and fetch accounts
-  const handleOpenPaymentModal = () => {
-    fetchPaymentAccounts();
-    setIsPaymentModalOpen(true);
+  const handleOpenPaymentModal = async () => {
+    if (!supplier) return;
+
+    setCheckingMappings(true);
+    try {
+      const isConfigured = await checkStockAccountMappingsConfigured();
+      if (!isConfigured) {
+        const dialogTitle = "Account Mappings Required";
+        const dialogBody =
+          "Stock Account Mappings are not configured.\n\n" +
+          "To make supplier payments and track balances correctly, you need to configure:\n" +
+          "- Inventory Account (Asset)\n" +
+          "- Accounts Payable Account (Liability)\n\n" +
+          "Would you like to open Stock Account Mappings settings now?";
+
+        if (typeof window !== "undefined") {
+          const goToSettings = window.confirm(`${dialogTitle}\n\n${dialogBody}`);
+          if (goToSettings) {
+            router.push("/settings/stock-accounts");
+          }
+        } else {
+          router.push("/settings/stock-accounts");
+        }
+        return;
+      }
+
+      fetchPaymentAccounts();
+      setIsPaymentModalOpen(true);
+    } catch (error) {
+      console.error("Failed to check stock account mappings before supplier payment:", error);
+      addToast("Failed to verify Stock Account Mappings. Please try again.", "error");
+    } finally {
+      setCheckingMappings(false);
+    }
   };
 
   // Calculate effective outstanding balance (directly from backend)
@@ -403,7 +458,9 @@ export default function SupplierDetailContent({
                             {po.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{po.items?.length || 0} item(s)</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {getPurchaseOrderItemsDisplay(po)}
+                        </td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
                           PKR {po.total.toLocaleString()}
                         </td>

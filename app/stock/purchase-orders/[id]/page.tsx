@@ -7,6 +7,10 @@ import { useToast } from "../../../components/ui/ToastProvider";
 import { purchaseOrdersApi } from "../../../lib/apiClient";
 import type { PurchaseOrder, Invoice } from "../../../lib/types";
 import ReceiveStockModal from "../../../components/Stock/ReceiveStockModal";
+import {
+  checkStockAccountMappingsConfigured,
+  handleStockAccountMappingError,
+} from "../../../lib/stockAccountMappingsClient";
 
 export default function PurchaseOrderDetailPage() {
   const router = useRouter();
@@ -17,6 +21,7 @@ export default function PurchaseOrderDetailPage() {
   const [isReceiving, setIsReceiving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingPO, setLoadingPO] = useState(true);
+  const [checkingMappings, setCheckingMappings] = useState(false);
 
   // Fetch purchase order details
   useEffect(() => {
@@ -110,11 +115,51 @@ export default function PurchaseOrderDetailPage() {
         message: response.message || "Stock received successfully",
       };
     } catch (error) {
+      if (handleStockAccountMappingError(error, (path) => router.push(path))) {
+        // Mapping-related error already handled with dialog/redirect.
+        throw error;
+      }
+
       const errorMessage = error instanceof Error ? error.message : "Failed to receive stock";
       addToast(errorMessage, "error");
       throw error;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenReceiveModal = async () => {
+    if (!po) return;
+
+    setCheckingMappings(true);
+    try {
+      const isConfigured = await checkStockAccountMappingsConfigured();
+      if (!isConfigured) {
+        const dialogTitle = "Account Mappings Required";
+        const dialogBody =
+          "Stock Account Mappings are not configured.\n\n" +
+          "To receive stock and track supplier balances correctly, you need to configure:\n" +
+          "- Inventory Account (Asset)\n" +
+          "- Accounts Payable Account (Liability)\n\n" +
+          "Would you like to open Stock Account Mappings settings now?";
+
+        if (typeof window !== "undefined") {
+          const goToSettings = window.confirm(`${dialogTitle}\n\n${dialogBody}`);
+          if (goToSettings) {
+            router.push("/settings/stock-accounts");
+          }
+        } else {
+          router.push("/settings/stock-accounts");
+        }
+        return;
+      }
+
+      setIsReceiving(true);
+    } catch (error) {
+      console.error("Failed to check stock account mappings before receiving PO:", error);
+      addToast("Failed to verify Stock Account Mappings. Please try again.", "error");
+    } finally {
+      setCheckingMappings(false);
     }
   };
 
@@ -215,11 +260,12 @@ export default function PurchaseOrderDetailPage() {
             )}
             {(po.status === 'sent' || po.status === 'partial') && (
               <button
-                onClick={() => setIsReceiving(true)}
-                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors inline-flex items-center gap-2"
+                onClick={() => void handleOpenReceiveModal()}
+                disabled={checkingMappings || loading}
+                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors inline-flex items-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 <Package className="w-4 h-4" />
-                Receive Stock
+                {checkingMappings ? "Checking Mappings..." : "Receive Stock"}
               </button>
             )}
             {po.status !== 'cancelled' && po.status !== 'received' && (

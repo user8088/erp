@@ -10,6 +10,8 @@ import PurchaseOrdersTable from "../components/Stock/PurchaseOrdersTable";
 import StockMovementsTable from "../components/Stock/StockMovementsTable";
 import LowStockAlertsTable from "../components/Stock/LowStockAlertsTable";
 import StockAdjustmentModal from "../components/Stock/StockAdjustmentModal";
+import StockAccountMappingsBanner from "../components/Stock/StockAccountMappingsBanner";
+import { checkStockAccountMappingsConfigured } from "../lib/stockAccountMappingsClient";
 import { useToast } from "../components/ui/ToastProvider";
 import { stockApi, purchaseOrdersApi, stockMovementsApi } from "../lib/apiClient";
 import type { ItemStock, PurchaseOrder, StockMovement } from "../lib/types";
@@ -40,6 +42,19 @@ export default function StockPage() {
   const [loadingPOs, setLoadingPOs] = useState(false);
   const [loadingMovements, setLoadingMovements] = useState(false);
   const [loadingAlerts, setLoadingAlerts] = useState(false);
+
+  const [checkingPoGate, setCheckingPoGate] = useState(true);
+  const [poGateConfigured, setPoGateConfigured] = useState(false);
+
+  useEffect(() => {
+    const checkGate = async () => {
+      setCheckingPoGate(true);
+      const configured = await checkStockAccountMappingsConfigured();
+      setPoGateConfigured(configured);
+      setCheckingPoGate(false);
+    };
+    void checkGate();
+  }, []);
 
   // Fetch inventory data
   const fetchInventory = useCallback(async (force = false) => {
@@ -267,15 +282,27 @@ export default function StockPage() {
           </button>
           {activeTab === "purchase-orders" && (
             <button
-              onClick={() => router.push("/stock/purchase-orders/new")}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors inline-flex items-center gap-2"
+              onClick={() =>
+                router.push(
+                  poGateConfigured ? "/stock/purchase-orders/new" : "/settings/stock-accounts"
+                )
+              }
+              disabled={checkingPoGate || !poGateConfigured}
+              title={
+                poGateConfigured
+                  ? "Create a new purchase order"
+                  : "Configure COA (Stock Account Mappings) to create purchase orders"
+              }
+              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors inline-flex items-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               <Plus className="w-4 h-4" />
-              New Purchase Order
+              {poGateConfigured ? "New Purchase Order" : "Configure COA to Create PO"}
             </button>
           )}
         </div>
       </div>
+
+      <StockAccountMappingsBanner />
 
       {/* Chart */}
       <CategoryStockChart />

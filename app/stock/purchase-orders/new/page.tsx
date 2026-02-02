@@ -6,11 +6,15 @@ import { ArrowLeft, Trash2, Search } from "lucide-react";
 import { useToast } from "../../../components/ui/ToastProvider";
 import { itemsApi, purchaseOrdersApi, suppliersApi, type CreatePurchaseOrderPayload } from "../../../lib/apiClient";
 import type { Item, Supplier } from "../../../lib/types";
+import { checkStockAccountMappingsConfigured } from "../../../lib/stockAccountMappingsClient";
 
 export default function NewPurchaseOrderPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { addToast } = useToast();
+
+  const [checkingMappings, setCheckingMappings] = useState(true);
+  const [mappingsConfigured, setMappingsConfigured] = useState(false);
 
   const [formData, setFormData] = useState({
     supplier_name: "",
@@ -35,6 +39,31 @@ export default function NewPurchaseOrderPage() {
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   const [useSupplierDropdown, setUseSupplierDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Require stock account mappings before allowing PO creation
+  useEffect(() => {
+    const checkMappings = async () => {
+      setCheckingMappings(true);
+      try {
+        const configured = await checkStockAccountMappingsConfigured();
+        setMappingsConfigured(configured);
+
+        if (!configured) {
+          addToast(
+            "Please configure COA (Stock Account Mappings) before creating purchase orders.",
+            "error"
+          );
+        }
+      } catch (error) {
+        console.error("Failed to verify Stock Account Mappings:", error);
+        addToast("Failed to verify Stock Account Mappings. Please try again.", "error");
+      } finally {
+        setCheckingMappings(false);
+      }
+    };
+
+    void checkMappings();
+  }, [addToast, router]);
 
   // Fetch suppliers for dropdown
   useEffect(() => {
@@ -127,6 +156,17 @@ export default function NewPurchaseOrderPage() {
   const handleSubmit = async (e: React.FormEvent, status: 'draft' | 'sent') => {
     e.preventDefault();
 
+    if (checkingMappings) {
+      addToast("Checking Stock Account Mappings… please wait.", "info");
+      return;
+    }
+
+    if (!mappingsConfigured) {
+      addToast("Please configure Stock Account Mappings before creating purchase orders.", "error");
+      router.push("/settings/stock-accounts");
+      return;
+    }
+
     if (!formData.supplier_name.trim()) {
       addToast("Please enter supplier name", "error");
       return;
@@ -173,6 +213,28 @@ export default function NewPurchaseOrderPage() {
 
   return (
     <div className="max-w-5xl mx-auto">
+      {checkingMappings && (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6">
+          <p className="text-sm text-gray-600">Checking Stock Account Mappings…</p>
+        </div>
+      )}
+
+      {!checkingMappings && !mappingsConfigured && (
+        <div className="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-6">
+          <p className="text-sm font-semibold text-yellow-900">COA configuration required</p>
+          <p className="mt-1 text-xs text-yellow-800">
+            Configure Stock Account Mappings (Inventory: Asset, Accounts Payable: Liability) before creating a Purchase Order.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/settings/stock-accounts")}
+            className="mt-3 inline-flex items-center rounded-md border border-yellow-300 bg-white px-3 py-1.5 text-xs font-medium text-yellow-900 hover:bg-yellow-50"
+          >
+            Configure COA
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-6">
         <button
@@ -490,7 +552,7 @@ export default function NewPurchaseOrderPage() {
           <button
             type="button"
             onClick={(e) => handleSubmit(e, 'draft')}
-            disabled={loading}
+            disabled={loading || checkingMappings || !mappingsConfigured}
             className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
             Save as Draft
@@ -498,7 +560,7 @@ export default function NewPurchaseOrderPage() {
           <button
             type="button"
             onClick={(e) => handleSubmit(e, 'sent')}
-            disabled={loading}
+            disabled={loading || checkingMappings || !mappingsConfigured}
             className="px-6 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {loading ? "Creating..." : "Create & Send Order"}

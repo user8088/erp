@@ -444,6 +444,15 @@ export interface PurchaseOrder {
   created_by: number;
   created_at: string;
   updated_at: string;
+  /**
+   * Human-readable purchased items summary built by backend.
+   * Example: "1 bag of Fauji Cement" (may include "and N more").
+   */
+  items_summary?: string | null;
+  /**
+   * Count of items when backend loads `items` relation.
+   */
+  items_count?: number | null;
   items?: PurchaseOrderItem[];
   journal_entry_id?: number | null;
   journal_entry?: JournalEntry | null;
