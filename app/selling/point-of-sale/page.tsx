@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { stockApi, customersApi, salesApi, accountsApi, accountMappingsApi, vehiclesApi, staffApi, ApiError, type ProcessSalePayload } from "../../lib/apiClient";
 import { useToast } from "../../components/ui/ToastProvider";
-import type { ItemStock, Customer, Account, Vehicle, Sale, StaffMember } from "../../lib/types";
+import type { ItemStock, Customer, Account, Vehicle, Sale, StaffMember, ItemActiveBatchResponse } from "../../lib/types";
 import { Package, ShoppingCart, User, Search, Plus, Minus, Trash2, Truck, Loader2 } from "lucide-react";
 
 interface CartItem {
@@ -53,6 +53,10 @@ export default function PointOfSalePage() {
 
   const [editingSubtotal, setEditingSubtotal] = useState<number | null>(null); // itemStock.id being edited
 
+  // Cache of active batches per item (by item_id, not item_stock id)
+  const [itemActiveBatches, setItemActiveBatches] = useState<Record<number, ItemActiveBatchResponse | null>>({});
+  const [loadingItemBatches, setLoadingItemBatches] = useState<Record<number, boolean>>({});
+
   // Fetch stocked items
   const fetchStockItems = useCallback(async () => {
     setLoadingStock(true);
@@ -73,6 +77,35 @@ export default function PointOfSalePage() {
       setLoadingStock(false);
     }
   }, [addToast]);
+
+  // Fetch active batch for a specific item (by item_id) lazily (for display purposes)
+  const fetchActiveBatchForItem = useCallback(
+    async (itemId: number): Promise<void> => {
+      // Avoid refetching if we already have data (including null for legacy-only stock)
+      if (itemActiveBatches[itemId] !== undefined || loadingItemBatches[itemId]) {
+        return;
+      }
+
+      setLoadingItemBatches(prev => ({ ...prev, [itemId]: true }));
+      try {
+        const response = await stockApi.getItemActiveBatch(itemId);
+        setItemActiveBatches(prev => ({ ...prev, [itemId]: response }));
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          // No batch-based stock for this item yet (legacy aggregate stock only)
+          setItemActiveBatches(prev => ({ ...prev, [itemId]: null }));
+        } else {
+          console.error("Failed to fetch active batch for item:", itemId, error);
+        }
+      } finally {
+        setLoadingItemBatches(prev => {
+          const { [itemId]: _removed, ...rest } = prev;
+          return rest;
+        });
+      }
+    },
+    [itemActiveBatches, loadingItemBatches]
+  );
 
   // Fetch customers
   const fetchCustomers = useCallback(async () => {
@@ -175,6 +208,16 @@ export default function PointOfSalePage() {
     fetchPaymentAccounts();
   }, [fetchStockItems, fetchCustomers, fetchVehicles, fetchDrivers, fetchPaymentAccounts]);
 
+  // Once stock items are loaded, prefetch active-batch info for each item so POS
+  // cards and limits are driven by the current batch instead of total stock.
+  useEffect(() => {
+    stockItems.forEach((stock) => {
+      if (stock.item) {
+        void fetchActiveBatchForItem(stock.item.id);
+      }
+    });
+  }, [stockItems, fetchActiveBatchForItem]);
+
   // Update selected driver when vehicle changes
   useEffect(() => {
     if (selectedVehicle && selectedVehicle.driver_id) {
@@ -237,14 +280,18 @@ export default function PointOfSalePage() {
     );
   });
 
-  // Add item to cart
+  // Add item to cart – enforce current batch remaining when available
   const addToCart = (itemStock: ItemStock) => {
     const existingItem = cart.find((item) => item.itemStock.id === itemStock.id);
-    const quantityOnHand = Number(itemStock.quantity_on_hand);
     const cartQuantity = existingItem ? existingItem.quantity : 0;
-    const availableQuantity = quantityOnHand - cartQuantity;
 
-    // Check if there's available stock
+    const itemId = itemStock.item?.id;
+    const activeBatchInfo = itemId ? itemActiveBatches[itemId] : undefined;
+    const quantityOnHand = Number(itemStock.quantity_on_hand);
+    const baseQty = activeBatchInfo?.batch ? Number(activeBatchInfo.batch.remaining_qty) : quantityOnHand;
+    const availableQuantity = baseQty - cartQuantity;
+
+    // Check if there's available stock (respecting current batch when present)
     if (availableQuantity <= 0) {
       addToast("No stock available for this item", "error");
       return;
@@ -256,10 +303,10 @@ export default function PointOfSalePage() {
         cart.map((item) =>
           item.itemStock.id === itemStock.id
             ? {
-              ...item,
-              quantity: item.quantity + 1,
-              discountedPrice: calculateDiscountedPrice(item.unitPrice, item.discountAmount),
-            }
+                ...item,
+                quantity: item.quantity + 1,
+                discountedPrice: calculateDiscountedPrice(item.unitPrice, item.discountAmount),
+              }
             : item
         )
       );
@@ -279,6 +326,11 @@ export default function PointOfSalePage() {
       };
       setCart([...cart, newItem]);
     }
+
+    // Lazily fetch active batch info for this item (by item_id) for display
+    if (itemStock.item) {
+      void fetchActiveBatchForItem(itemStock.item.id);
+    }
   };
 
   // Calculate discounted price (unitPrice - discountAmount)
@@ -286,16 +338,19 @@ export default function PointOfSalePage() {
     return Math.max(0, unitPrice - discountAmount);
   };
 
-  // Update quantity
+  // Update quantity – enforce current batch remaining when available
   const updateQuantity = (itemId: number, delta: number) => {
     setCart(
       cart.map((item) => {
         if (item.itemStock.id === itemId) {
-          const quantityOnHand = Number(item.itemStock.quantity_on_hand);
+          const itemStock = item.itemStock;
+          const itemEntity = itemStock.item;
+          const quantityOnHand = Number(itemStock.quantity_on_hand);
+          const batchInfo = itemEntity ? itemActiveBatches[itemEntity.id] : undefined;
+          const maxAvailable = batchInfo?.batch ? Number(batchInfo.batch.remaining_qty) : quantityOnHand;
           const currentQuantity = item.quantity;
-          const maxAvailable = quantityOnHand;
 
-          // Calculate new quantity, but don't exceed available stock
+          // Calculate new quantity, but don't exceed available stock from current batch when present
           let newQuantity = Math.max(1, currentQuantity + delta);
           if (newQuantity > maxAvailable) {
             newQuantity = maxAvailable;
@@ -805,8 +860,9 @@ export default function PointOfSalePage() {
       setSplitAccountId(null);
 
 
-      // Refresh stock items to reflect updated quantities
+      // Refresh stock items to reflect updated quantities and clear cached batch info
       await fetchStockItems();
+      setItemActiveBatches({});
     } catch (error) {
       console.error("Failed to process sale:", error);
 
@@ -935,7 +991,16 @@ export default function PointOfSalePage() {
 
                   const quantityOnHand = Number(itemStock.quantity_on_hand);
                   const cartQuantity = getCartQuantity(itemStock.id);
-                  const availableQuantity = Math.max(0, quantityOnHand - cartQuantity);
+
+                  const activeBatchInfo = itemActiveBatches[item.id] || null;
+                  const currentBatchQty = activeBatchInfo?.batch
+                    ? Number(activeBatchInfo.batch.remaining_qty)
+                    : null;
+
+                  // What we SHOW as stock in POS cards: current batch remaining when available
+                  const displayBaseQty = currentBatchQty !== null ? currentBatchQty : quantityOnHand;
+                  const availableQuantity = Math.max(0, displayBaseQty - cartQuantity);
+
                   const stockValue = itemStock.stock_value;
                   const sellingPrice = item.selling_price ?? 0;
 
@@ -1009,6 +1074,24 @@ export default function PointOfSalePage() {
                           <p className="text-xs text-gray-500">
                             Value: PKR {stockValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </p>
+                          {activeBatchInfo && activeBatchInfo.batch && (
+                            <p className="text-[11px] text-indigo-600 mt-1">
+                              Current batch:{" "}
+                              {activeBatchInfo.batch.remaining_qty.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                              })}{" "}
+                              {item.primary_unit || "units"} left
+                              {activeBatchInfo.total_remaining_in_queue > 0 && (
+                                <span className="text-[10px] text-indigo-500 ml-1">
+                                  (queue:{" "}
+                                  {activeBatchInfo.total_remaining_in_queue.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                  )
+                                </span>
+                              )}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1405,6 +1488,11 @@ export default function PointOfSalePage() {
                     const item = cartItem.itemStock.item;
                     if (!item) return null;
 
+                    const batchInfo =
+                      itemActiveBatches[item.id] && itemActiveBatches[item.id]?.batch
+                        ? itemActiveBatches[item.id]
+                        : null;
+
                     return (
                       <div key={cartItem.itemStock.id} className="p-4">
                         <div className="flex items-start justify-between mb-2">
@@ -1583,6 +1671,17 @@ export default function PointOfSalePage() {
                                 })}
                               </span>
                             </div>
+                            {batchInfo && batchInfo.batch && (
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-600">Current batch remaining:</span>
+                                <span className="font-medium text-blue-600">
+                                  {batchInfo.batch.remaining_qty.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                  })}{" "}
+                                  {item.primary_unit || "units"}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex items-center justify-between text-sm pt-1 border-t border-gray-100">
                               <span className="text-gray-600">Discounted Price per Unit:</span>
                               <span className="font-semibold text-gray-900">

@@ -113,6 +113,9 @@ import type {
   ItemTag,
   CustomerTag,
   ItemStock,
+  ItemStockBatch,
+  ItemActiveBatchResponse,
+  ItemBatchQueueResponse,
   PurchaseOrder,
   StockMovement,
   Supplier,
@@ -1243,6 +1246,34 @@ export const stockApi = {
 
   async getItemStock(itemId: number): Promise<{ stock: ItemStock }> {
     return await apiClient.get<{ stock: ItemStock }>(`/stock/item/${itemId}`);
+  },
+
+  async getItemActiveBatch(itemId: number): Promise<ItemActiveBatchResponse> {
+    try {
+      return await apiClient.get<ItemActiveBatchResponse>(`/stock/item/${itemId}/active-batch`);
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        return {
+          batch: null,
+          total_remaining_in_queue: 0,
+        };
+      }
+      throw error;
+    }
+  },
+
+  async getItemBatches(itemId: number): Promise<ItemBatchQueueResponse> {
+    try {
+      return await apiClient.get<ItemBatchQueueResponse>(`/stock/item/${itemId}/batches`);
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        return {
+          batches: [],
+          total_remaining: 0,
+        };
+      }
+      throw error;
+    }
   },
 
   async adjustStock(payload: StockAdjustmentPayload): Promise<{ stock: ItemStock; movement: StockMovement; message: string }> {

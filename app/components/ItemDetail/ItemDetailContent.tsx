@@ -7,7 +7,7 @@ import SalesAnalyticsChart from "./SalesAnalyticsChart";
 import StockAnalyticsChart from "./StockAnalyticsChart";
 import { stockApi, stockMovementsApi, itemsApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
-import type { Item, ItemStock, StockMovement, ItemSale } from "../../lib/types";
+import type { Item, ItemStock, StockMovement, ItemSale, ItemStockBatch } from "../../lib/types";
 import { Package, TrendingUp, TrendingDown, RefreshCw, Calendar, ShoppingCart, User, DollarSign } from "lucide-react";
 
 interface ItemDetailContentProps {
@@ -34,6 +34,8 @@ export default function ItemDetailContent({
   const [loadingStock, setLoadingStock] = useState(false);
   const [loadingMovements, setLoadingMovements] = useState(false);
   const [loadingSales, setLoadingSales] = useState(false);
+  const [batches, setBatches] = useState<ItemStockBatch[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
 
   const fetchStockInfo = useCallback(async () => {
     if (!itemId) return;
@@ -70,6 +72,21 @@ export default function ItemDetailContent({
     }
   }, [itemId]);
 
+  const fetchStockBatches = useCallback(async () => {
+    if (!itemId) return;
+
+    setLoadingBatches(true);
+    try {
+      const response = await stockApi.getItemBatches(Number(itemId));
+      setBatches(response.batches);
+    } catch (error) {
+      console.error("Failed to fetch stock batches:", error);
+      setBatches([]);
+    } finally {
+      setLoadingBatches(false);
+    }
+  }, [itemId]);
+
   const fetchItemSales = useCallback(async () => {
     if (!itemId) return;
 
@@ -94,10 +111,11 @@ export default function ItemDetailContent({
     if (activeTab === "stock-info") {
       fetchStockInfo();
       fetchStockMovements();
+      fetchStockBatches();
     } else if (activeTab === "sales-history") {
       fetchItemSales();
     }
-  }, [activeTab, fetchStockInfo, fetchStockMovements, fetchItemSales]);
+  }, [activeTab, fetchStockInfo, fetchStockMovements, fetchStockBatches, fetchItemSales]);
 
   return (
     <div className="flex-1">
@@ -463,6 +481,118 @@ export default function ItemDetailContent({
             {/* Stock Analytics Chart */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <StockAnalyticsChart itemId={Number(itemId)} />
+            </div>
+
+            {/* Stock Batches Queue */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-4">Stock Batches Queue</h2>
+
+              {loadingBatches ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">Loading batch information...</p>
+                </div>
+              ) : batches.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Batch</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Received On</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Purchased Qty</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Remaining Qty</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Unit Cost</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Cost</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {batches.map((batch, index) => {
+                        const isCurrentActive = batch.status === "active" && index === 0;
+                        return (
+                          <tr key={batch.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                              #{batch.id}
+                              {isCurrentActive && (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-100 text-indigo-800">
+                                  Current batch
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                              {batch.received_at
+                                ? new Date(batch.received_at).toLocaleDateString("en-US", {
+                                    year: "numeric",
+                                    month: "short",
+                                    day: "numeric",
+                                  })
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">
+                              {batch.purchased_qty.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              {item?.primary_unit || "units"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">
+                              {batch.remaining_qty.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              {item?.primary_unit || "units"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">
+                              PKR{" "}
+                              {batch.unit_cost.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">
+                              PKR{" "}
+                              {batch.total_cost.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                                  batch.status === "active"
+                                    ? "bg-green-100 text-green-800"
+                                    : batch.status === "depleted"
+                                    ? "bg-gray-100 text-gray-700"
+                                    : "bg-red-100 text-red-800"
+                                }`}
+                              >
+                                {batch.status === "active"
+                                  ? "Active"
+                                  : batch.status === "depleted"
+                                  ? "Depleted"
+                                  : "Cancelled"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : stock && stock.quantity_on_hand > 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No batch-tracked lots found for this item.</p>
+                  <p className="text-xs mt-1 text-gray-400">
+                    This item currently has legacy aggregate stock only. New receipts will appear here as batches.
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No batches found for this item.</p>
+                  <p className="text-xs mt-1 text-gray-400">
+                    Batches will appear here once stock is received using the new batch-based system.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Stock Movements */}

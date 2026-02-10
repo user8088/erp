@@ -425,6 +425,27 @@ export interface ItemStock {
 
 export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock';
 
+export interface ItemStockBatch {
+  id: number;
+  item_id: number;
+  purchased_qty: number;
+  remaining_qty: number;
+  unit_cost: number;
+  total_cost: number;
+  received_at: string;
+  status: 'active' | 'depleted' | 'cancelled';
+}
+
+export interface ItemActiveBatchResponse {
+  batch: ItemStockBatch | null;
+  total_remaining_in_queue: number;
+}
+
+export interface ItemBatchQueueResponse {
+  batches: ItemStockBatch[];
+  total_remaining: number;
+}
+
 // Purchase Order
 export interface PurchaseOrder {
   id: number;
