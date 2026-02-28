@@ -189,7 +189,7 @@ export default function SellingChartsPanel({
   ];
 
   const rightElement = (
-    <TabSwitcher tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
+    <TabSwitcher tabs={tabs} activeId={activeTab} onChange={(id) => setActiveTab(id as SellingTab)} />
   );
 
   const minHeight = compact ? 260 : 320;
