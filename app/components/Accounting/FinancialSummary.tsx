@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import FinancialCard from "./FinancialCard";
 import { financialReportsApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
+import { DashboardPeriodState } from "../Dashboard/DashboardPeriodFilter";
 
 interface FinancialSummaryData {
   company_id: number;
@@ -33,7 +34,15 @@ const formatAmount = (amount: number): string => {
   return `Rs ${amount.toFixed(2)}`;
 };
 
-export default function FinancialSummary() {
+interface FinancialSummaryProps {
+  period?: DashboardPeriodState;
+  companyId?: number;
+}
+
+export default function FinancialSummary({
+  period,
+  companyId = 1,
+}: FinancialSummaryProps) {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<FinancialSummaryData | null>(null);
@@ -44,15 +53,38 @@ export default function FinancialSummary() {
       setLoading(true);
       setError(null);
       try {
-        const companyId = 1; // TODO: Get from user context when available
-        const summaryData = await financialReportsApi.getFinancialSummary({
+        const filters: {
+          company_id: number;
+          period?: "current_month" | "current_year" | "all_time";
+          start_date?: string;
+          end_date?: string;
+        } = {
           company_id: companyId,
-          period: "current_month", // Default to current month
-        });
+        };
+
+        if (period) {
+          if (period.period === "custom") {
+            if (period.start_date) {
+              filters.start_date = period.start_date;
+            }
+            if (period.end_date) {
+              filters.end_date = period.end_date;
+            }
+          } else {
+            filters.period = period.period;
+          }
+        } else {
+          filters.period = "current_month";
+        }
+
+        const summaryData = await financialReportsApi.getFinancialSummary(
+          filters
+        );
         setSummary(summaryData);
       } catch (e) {
         console.error("Failed to fetch financial summary:", e);
-        const errorMessage = e instanceof Error ? e.message : "Failed to load financial summary";
+        const errorMessage =
+          e instanceof Error ? e.message : "Failed to load financial summary";
         setError(errorMessage);
         // Don't show toast for initial load errors, just log
       } finally {
@@ -61,7 +93,7 @@ export default function FinancialSummary() {
     };
 
     fetchSummary();
-  }, []);
+  }, [companyId, period?.period, period?.start_date, period?.end_date]);
 
   const financialData = summary
     ? [

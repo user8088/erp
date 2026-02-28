@@ -9,15 +9,17 @@ interface StockKPICardProps {
 
 export default function StockKPICard({ title, value }: StockKPICardProps) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 relative">
-      <button className="absolute top-4 right-4 p-1 hover:bg-gray-50 rounded transition-colors">
-        <MoreVertical className="w-4 h-4 text-gray-600" />
+    <div className="bg-white border border-gray-200 rounded-lg p-5 sm:p-6 relative overflow-hidden min-w-0">
+      <button className="absolute top-3 right-3 p-1.5 hover:bg-gray-50 rounded transition-colors shrink-0">
+        <MoreVertical className="w-4 h-4 text-gray-500" />
       </button>
-      <div className="pr-8">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+      <div className="pr-10 min-w-0">
+        <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
           {title}
         </h3>
-        <p className="text-2xl font-semibold text-gray-900">{value}</p>
+        <p className="text-lg sm:text-xl font-semibold text-gray-900 tabular-nums truncate" title={value}>
+          {value}
+        </p>
       </div>
     </div>
   );
