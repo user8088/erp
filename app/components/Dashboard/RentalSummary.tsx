@@ -19,8 +19,8 @@ export default function RentalSummary() {
       setError(null);
       try {
         const [active, overdue] = await Promise.all([
-          rentalApi.getAgreements({ per_page: 1, rental_status: "active" }),
-          rentalApi.getAgreements({ per_page: 1, rental_status: "overdue" }),
+          rentalApi.getAgreements({ per_page: 1, status: "active" }),
+          rentalApi.getAgreements({ per_page: 1, status: "overdue" }),
         ]);
 
         setKpis([
