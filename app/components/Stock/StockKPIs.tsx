@@ -1,22 +1,12 @@
 import { useEffect, useState } from "react";
 import StockKPICard from "./StockKPICard";
 import { stockApi } from "../../lib/apiClient";
+import { formatCurrencyPkr } from "../../lib/format";
 
 interface StockKPI {
   title: string;
   value: string;
 }
-
-const formatCurrency = (amount: number): string => {
-  const absAmount = Math.abs(amount);
-  if (absAmount >= 100000) {
-    return `${(amount / 100000).toFixed(2)}L`;
-  }
-  if (absAmount >= 1000) {
-    return `${(amount / 1000).toFixed(2)}K`;
-  }
-  return amount.toFixed(2);
-};
 
 export default function StockKPIs() {
   const [kpis, setKpis] = useState<StockKPI[]>([]);
@@ -36,7 +26,7 @@ export default function StockKPIs() {
         setKpis([
           {
             title: "TOTAL STOCK VALUE",
-            value: formatCurrency(totalValue),
+            value: formatCurrencyPkr(totalValue),
           },
           {
             title: "TOTAL CATEGORIES",
@@ -67,7 +57,7 @@ export default function StockKPIs() {
       : [
           {
             title: "TOTAL STOCK VALUE",
-            value: loading ? "Loading..." : "0.00",
+            value: loading ? "Loading..." : formatCurrencyPkr(0),
           },
           {
             title: "TOTAL CATEGORIES",

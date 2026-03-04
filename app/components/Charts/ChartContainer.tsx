@@ -55,7 +55,7 @@ export default function ChartContainer({
       )}
 
       {!error && !loading && (
-        <div style={{ minHeight }} className="relative">
+        <div style={{ minHeight, height: minHeight }} className="relative">
           {children}
         </div>
       )}

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Filter, MoreVertical, RefreshCw } from "lucide-react";
 import { stockApi } from "../../lib/apiClient";
+import { formatCurrencyPkr } from "../../lib/format";
 
 interface ChartDataItem {
   category: string;
@@ -23,10 +24,6 @@ interface CustomTooltipProps {
 const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const value = payload[0].value;
-    const formattedValue = new Intl.NumberFormat('en-PK', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
 
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 relative">
@@ -34,7 +31,7 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
         <div className="flex items-center gap-2 mb-1">
           <div className="w-3 h-3 bg-orange-500 rounded-sm"></div>
           <span className="text-sm font-semibold text-gray-900">
-            PKR {formattedValue}
+            {formatCurrencyPkr(value)}
           </span>
         </div>
         <p className="text-xs text-gray-500">Total Stock Value</p>
@@ -175,7 +172,7 @@ export default function CategoryStockChart() {
             {viewMode === 'category' ? 'Category-wise Stock Value' : 'Top Items by Stock Value'}
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            Total Value: PKR {totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            Total Value: {formatCurrencyPkr(totalValue)}
           </p>
         </div>
         <div className="flex items-center gap-2 relative">
@@ -242,12 +239,9 @@ export default function CategoryStockChart() {
               tick={{ fill: '#6b7280', fontSize: 12 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(value) => {
-                if (value >= 100000) {
-                  return `${(value / 100000).toFixed(1)} L`;
-                }
-                return `${(value / 1000).toFixed(0)}K`;
-              }}
+              tickFormatter={(value) =>
+                formatCurrencyPkr(value).replace(/^\-?PKR /, "")
+              }
               domain={[0, yAxisMax]}
               ticks={yAxisTicks}
             />

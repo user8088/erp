@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { vehiclesApi } from "../../lib/apiClient";
+import { formatCurrencyPkr } from "../../lib/format";
 
 interface TransportKPI {
   label: string;
@@ -58,15 +59,15 @@ export default function TransportSummary() {
           },
           {
             label: "DELIVERY CHARGES",
-            value: formatCurrency(totalDeliveryCharges),
+            value: formatCurrencyPkr(totalDeliveryCharges),
           },
           {
             label: "MAINTENANCE COSTS",
-            value: formatCurrency(totalMaintenanceCosts),
+            value: formatCurrencyPkr(totalMaintenanceCosts),
           },
           {
             label: "NET TRANSPORT PROFIT",
-            value: formatCurrency(netProfit),
+            value: formatCurrencyPkr(netProfit),
           },
         ]);
       } catch (e) {

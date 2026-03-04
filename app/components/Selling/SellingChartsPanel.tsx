@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { salesApi } from "../../lib/apiClient";
+import { formatCurrencyPkr } from "../../lib/format";
 import type { Sale } from "../../lib/types";
 import ChartContainer from "../Charts/ChartContainer";
 import TabSwitcher from "../Charts/TabSwitcher";
@@ -37,16 +38,25 @@ interface TopItemPoint {
   revenue: number;
 }
 
-const formatCurrency = (amount: number): string => {
-  const absAmount = Math.abs(amount);
-  if (absAmount >= 100000) {
-    return `Rs ${(amount / 100000).toFixed(2)} L`;
-  }
-  if (absAmount >= 1000) {
-    return `Rs ${(amount / 1000).toFixed(2)} K`;
-  }
-  return `Rs ${amount.toFixed(2)}`;
-};
+function TopItemsTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: TopItemPoint; value: number; name: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length || !label) return null;
+  const point = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm text-xs">
+      <p className="font-medium text-gray-900 mb-1.5">{label}</p>
+      <p className="text-gray-600">Revenue: {formatCurrencyPkr(point.revenue)}</p>
+      <p className="text-gray-600">Quantity: {point.quantity.toLocaleString()}</p>
+    </div>
+  );
+}
 
 function getDateRangeFromPeriod(period?: DashboardPeriodState): {
   startDate: string;
@@ -89,15 +99,14 @@ export default function SellingChartsPanel({
   const [trendsData, setTrendsData] = useState<TrendsPoint[]>([]);
   const [topItemsData, setTopItemsData] = useState<TopItemPoint[]>([]);
 
-  const dateRange = useMemo(
-    () => getDateRangeFromPeriod(period),
-    [period?.period, period?.start_date, period?.end_date]
-  );
+  const dateRange = useMemo(() => getDateRangeFromPeriod(period), [period]);
 
+  // Fetch both trends and top-items on mount and when date range changes
+  // so comparative sales (Trends) and most sold items both have data when switching tabs
   useEffect(() => {
+    let cancelled = false;
+
     const fetchTrends = async () => {
-      setLoading(true);
-      setError(null);
       try {
         const trends = await salesApi.getSalesTrends({
           company_id: 1,
@@ -105,6 +114,7 @@ export default function SellingChartsPanel({
           start_date: dateRange.startDate,
           end_date: dateRange.endDate,
         });
+        if (cancelled) return;
         const mapped: TrendsPoint[] = trends.data.map((d) => ({
           label: d.period,
           value: d.value,
@@ -112,25 +122,13 @@ export default function SellingChartsPanel({
         }));
         setTrendsData(mapped);
       } catch (e) {
+        if (cancelled) return;
         console.error("Failed to load sales trends:", e);
-        const message =
-          e instanceof Error ? e.message : "Failed to load sales trends";
-        setError(message);
         setTrendsData([]);
-      } finally {
-        setLoading(false);
       }
     };
 
-    if (activeTab === "trends") {
-      void fetchTrends();
-    }
-  }, [activeTab, dateRange.startDate, dateRange.endDate]);
-
-  useEffect(() => {
     const fetchTopItems = async () => {
-      setLoading(true);
-      setError(null);
       try {
         const sales = await salesApi.getSales({
           per_page: 100,
@@ -138,6 +136,7 @@ export default function SellingChartsPanel({
           start_date: dateRange.startDate,
           end_date: dateRange.endDate,
         });
+        if (cancelled) return;
 
         const totals = new Map<
           string,
@@ -168,20 +167,33 @@ export default function SellingChartsPanel({
 
         setTopItemsData(sorted);
       } catch (e) {
+        if (cancelled) return;
         console.error("Failed to load top items:", e);
-        const message =
-          e instanceof Error ? e.message : "Failed to load top items";
-        setError(message);
         setTopItemsData([]);
-      } finally {
-        setLoading(false);
       }
     };
 
-    if (activeTab === "top-items") {
-      void fetchTopItems();
-    }
-  }, [activeTab, dateRange.startDate, dateRange.endDate]);
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        await Promise.all([fetchTrends(), fetchTopItems()]);
+        if (!cancelled) setError(null);
+      } catch (e) {
+        if (!cancelled) {
+          const message =
+            e instanceof Error ? e.message : "Failed to load sales analytics";
+          setError(message);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dateRange.startDate, dateRange.endDate]);
 
   const tabs = [
     { id: "trends", label: "Trends" },
@@ -228,15 +240,12 @@ export default function SellingChartsPanel({
             />
             <YAxis
               tick={{ fontSize: 11, fill: "#6B7280" }}
-              tickFormatter={(value: number) => formatCurrency(value).replace(
-                "Rs ",
-                ""
-              )}
+              tickFormatter={(value: number) => formatCurrencyPkr(value).replace(/^\-?PKR /, "")}
               axisLine={false}
               tickLine={false}
             />
             <Tooltip
-              formatter={(value: number) => formatCurrency(value)}
+              formatter={(value: number) => formatCurrencyPkr(value)}
               labelClassName="text-xs font-medium text-gray-700"
               contentStyle={{
                 borderRadius: 8,
@@ -271,6 +280,7 @@ export default function SellingChartsPanel({
             <XAxis
               type="number"
               tick={{ fontSize: 11, fill: "#6B7280" }}
+              tickFormatter={(value: number) => value.toLocaleString()}
               axisLine={false}
               tickLine={false}
             />
@@ -280,19 +290,7 @@ export default function SellingChartsPanel({
               tick={{ fontSize: 11, fill: "#6B7280" }}
               width={compact ? 110 : 140}
             />
-            <Tooltip
-              formatter={(value: number, name) =>
-                name === "quantity"
-                  ? [value.toLocaleString(), "Quantity"]
-                  : [formatCurrency(value), "Revenue"]
-              }
-              labelClassName="text-xs font-medium text-gray-700"
-              contentStyle={{
-                borderRadius: 8,
-                borderColor: "#E5E7EB",
-                fontSize: 12,
-              }}
-            />
+            <Tooltip content={<TopItemsTooltip />} cursor={{ fill: "#F9FAFB" }} />
             <Bar
               dataKey="quantity"
               name="Quantity"

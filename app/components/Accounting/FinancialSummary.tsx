@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import FinancialCard from "./FinancialCard";
 import { financialReportsApi } from "../../lib/apiClient";
+import { formatCurrencyPkr } from "../../lib/format";
 import { useToast } from "../ui/ToastProvider";
 import { DashboardPeriodState } from "../Dashboard/DashboardPeriodFilter";
 
@@ -23,16 +24,6 @@ interface FinancialSummaryData {
   };
   generated_at: string;
 }
-
-const formatAmount = (amount: number): string => {
-  const absAmount = Math.abs(amount);
-  if (absAmount >= 100000) {
-    return `Rs ${(amount / 100000).toFixed(2)} L`;
-  } else if (absAmount >= 1000) {
-    return `Rs ${(amount / 1000).toFixed(2)} K`;
-  }
-  return `Rs ${amount.toFixed(2)}`;
-};
 
 interface FinancialSummaryProps {
   period?: DashboardPeriodState;
@@ -99,37 +90,37 @@ export default function FinancialSummary({
     ? [
         {
           title: "TOTAL INCOME",
-          value: formatAmount(summary.summary.total_income),
+          value: formatCurrencyPkr(summary.summary.total_income),
         },
         {
           title: "TOTAL EXPENSES",
-          value: formatAmount(summary.summary.total_expenses),
+          value: formatCurrencyPkr(summary.summary.total_expenses),
         },
         {
           title: "ACCOUNTS RECEIVABLE",
-          value: formatAmount(summary.summary.accounts_receivable),
+          value: formatCurrencyPkr(summary.summary.accounts_receivable),
         },
         {
           title: "ACCOUNTS PAYABLE",
-          value: formatAmount(summary.summary.accounts_payable),
+          value: formatCurrencyPkr(summary.summary.accounts_payable),
         },
       ]
     : [
         {
           title: "TOTAL INCOME",
-          value: loading ? "Loading..." : "Rs 0.00",
+          value: loading ? "Loading..." : formatCurrencyPkr(0),
         },
         {
           title: "TOTAL EXPENSES",
-          value: loading ? "Loading..." : "Rs 0.00",
+          value: loading ? "Loading..." : formatCurrencyPkr(0),
         },
         {
           title: "ACCOUNTS RECEIVABLE",
-          value: loading ? "Loading..." : "Rs 0.00",
+          value: loading ? "Loading..." : formatCurrencyPkr(0),
         },
         {
           title: "ACCOUNTS PAYABLE",
-          value: loading ? "Loading..." : "Rs 0.00",
+          value: loading ? "Loading..." : formatCurrencyPkr(0),
         },
       ];
 

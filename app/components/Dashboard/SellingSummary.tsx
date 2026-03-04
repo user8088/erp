@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { salesApi } from "../../lib/apiClient";
+import { formatCurrencyPkr } from "../../lib/format";
 import { DashboardPeriodState } from "./DashboardPeriodFilter";
 
 interface SellingSummaryProps {
@@ -12,17 +13,6 @@ interface SellingKPI {
   label: string;
   value: string;
 }
-
-const formatCurrency = (amount: number): string => {
-  const absAmount = Math.abs(amount);
-  if (absAmount >= 100000) {
-    return `Rs ${(amount / 100000).toFixed(2)} L`;
-  }
-  if (absAmount >= 1000) {
-    return `Rs ${(amount / 1000).toFixed(2)} K`;
-  }
-  return `Rs ${amount.toFixed(2)}`;
-};
 
 export default function SellingSummary({ period }: SellingSummaryProps) {
   const [loading, setLoading] = useState(false);
@@ -69,7 +59,7 @@ export default function SellingSummary({ period }: SellingSummaryProps) {
         const kpiData: SellingKPI[] = [
           {
             label: "TOTAL SALES AMOUNT",
-            value: formatCurrency(totalSalesAmount),
+            value: formatCurrencyPkr(totalSalesAmount),
           },
           {
             label: "TOTAL INVOICES",
@@ -77,7 +67,7 @@ export default function SellingSummary({ period }: SellingSummaryProps) {
           },
           {
             label: "AVERAGE INVOICE VALUE",
-            value: formatCurrency(averageSaleValue),
+            value: formatCurrencyPkr(averageSaleValue),
           },
         ];
 
@@ -102,7 +92,7 @@ export default function SellingSummary({ period }: SellingSummaryProps) {
       : [
           {
             label: "TOTAL SALES AMOUNT",
-            value: loading ? "Loading..." : "Rs 0.00",
+            value: loading ? "Loading..." : formatCurrencyPkr(0),
           },
           {
             label: "TOTAL INVOICES",
@@ -110,7 +100,7 @@ export default function SellingSummary({ period }: SellingSummaryProps) {
           },
           {
             label: "AVERAGE INVOICE VALUE",
-            value: loading ? "Loading..." : "Rs 0.00",
+            value: loading ? "Loading..." : formatCurrencyPkr(0),
           },
         ];
 
