@@ -1,14 +1,25 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import SupplierDetailTabs from "./SupplierDetailTabs";
 import SupplierDetailsForm from "./SupplierDetailsForm";
 import SupplierPaymentModal, { type PaymentData } from "../Suppliers/SupplierPaymentModal";
-import type { Supplier, PurchaseOrder, Account, SupplierPayment } from "../../lib/types";
-import { Package, ShoppingCart, CreditCard, Receipt, DollarSign, TrendingUp } from "lucide-react";
-import { purchaseOrdersApi, accountsApi, suppliersApi } from "../../lib/apiClient";
+import type { Supplier, PurchaseOrder, Account, SupplierPayment, SupplierDailyTotalsEntry } from "../../lib/types";
+import { Package, ShoppingCart, CreditCard, Receipt, DollarSign, TrendingUp, Eye, Download } from "lucide-react";
+import { purchaseOrdersApi, accountsApi, suppliersApi, invoicesApi } from "../../lib/apiClient";
 import { useToast } from "../ui/ToastProvider";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Line,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from "recharts";
 import {
   checkStockAccountMappingsConfigured,
   handleStockAccountMappingError,
@@ -47,6 +58,8 @@ export default function SupplierDetailContent({
   const [outstandingBalance, setOutstandingBalance] = useState(0);
   const [totalPurchased, setTotalPurchased] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
+  const [dailyTotals, setDailyTotals] = useState<SupplierDailyTotalsEntry[]>([]);
+  const [loadingDailyTotals, setLoadingDailyTotals] = useState(false);
   const [checkingMappings, setCheckingMappings] = useState(false);
 
   // Track which tabs have been loaded to prevent unnecessary API calls
@@ -189,14 +202,49 @@ export default function SupplierDetailContent({
     }
   }, [supplier, addToast]);
 
+  const fetchDailyTotals = useCallback(async (force = false) => {
+    if (!supplier) return;
+
+    if (currentSupplierIdRef.current !== supplier.id) {
+      loadedTabsRef.current.clear();
+      currentSupplierIdRef.current = supplier.id;
+    }
+
+    if (!force && loadedTabsRef.current.has("daily-totals")) {
+      return;
+    }
+
+    setLoadingDailyTotals(true);
+    try {
+      const response = await suppliersApi.getDailyTotals(supplier.id);
+      setDailyTotals(response.data);
+      // Use backend summary values (authoritative)
+      setTotalPurchased(response.summary.total_purchased);
+      setTotalPaid(response.summary.total_paid);
+      setOutstandingBalance(response.summary.outstanding_balance);
+      loadedTabsRef.current.add("daily-totals");
+    } catch (error: unknown) {
+      // Silently ignore 404 - endpoint not implemented yet on backend
+      // Chart will fall back to derived data from POs/payments
+      const status = (error as { status?: number }).status;
+      if (status !== 404) {
+        console.error("Failed to fetch daily totals:", error);
+      }
+    } finally {
+      setLoadingDailyTotals(false);
+    }
+  }, [supplier]);
+
   // Fetch purchase orders when tab is active - only fetch once per tab
   useEffect(() => {
     if (activeTab === "purchase-orders" || activeTab === "items-supplied") {
       fetchPurchaseOrders();
     } else if (activeTab === "payments") {
       fetchPayments();
+      fetchDailyTotals();
+      fetchPurchaseOrders();
     }
-  }, [activeTab, fetchPurchaseOrders, fetchPayments]);
+  }, [activeTab, fetchPurchaseOrders, fetchPayments, fetchDailyTotals]);
 
   // Reset loaded state when supplier changes
   useEffect(() => {
@@ -206,7 +254,62 @@ export default function SupplierDetailContent({
     }
   }, [supplier]);
 
-  // Extract unique items from purchase orders and aggregate quantities
+  const handleDownloadInvoice = useCallback(async (invoiceId?: number, poId?: number) => {
+    try {
+      let blob: Blob | null = null;
+      let filename = "supplier-invoice";
+
+      if (invoiceId) {
+        blob = await invoicesApi.downloadInvoice(invoiceId);
+        filename = `supplier-invoice-${invoiceId}`;
+      } else if (poId) {
+        blob = await purchaseOrdersApi.downloadSupplierInvoiceAttachment(poId);
+        filename = `supplier-invoice-attachment-${poId}`;
+      }
+
+      if (!blob) {
+        addToast("No invoice available for download", "error");
+        return;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${filename}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Failed to download supplier invoice:", error);
+      addToast("Failed to download supplier invoice", "error");
+    }
+  }, [addToast]);
+
+  const handlePreviewInvoice = useCallback(async (invoiceId?: number, poId?: number) => {
+    try {
+      let blob: Blob | null = null;
+
+      if (invoiceId) {
+        blob = await invoicesApi.downloadInvoice(invoiceId);
+      } else if (poId) {
+        blob = await purchaseOrdersApi.downloadSupplierInvoiceAttachment(poId);
+      }
+
+      if (!blob) {
+        addToast("No invoice available for preview", "error");
+        return;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (error) {
+      console.error("Failed to preview supplier invoice:", error);
+      addToast("Failed to preview supplier invoice", "error");
+    }
+  }, [addToast]);
+
+  // Extract unique items from purchase orders and aggregate quantities + costs + invoice references
   const suppliedItems = supplier ? purchaseOrders
     .reduce((itemsMap, po) => {
       if (!po.items) return itemsMap;
@@ -218,22 +321,54 @@ export default function SupplierDetailContent({
         const conversionRate = poItem.item?.conversion_rate;
         const existing = itemsMap.get(poItem.item_id);
         const quantity = Number(poItem.quantity_ordered) || 0;
+        const lineCost = Number(poItem.total ?? (Number(poItem.unit_price) || 0) * quantity);
+        const hasInvoice = Boolean(
+          po.supplier_invoice?.id ||
+          po.supplier_invoice_id ||
+          po.supplier_invoice_number ||
+          po.supplier_invoice_pdf_path ||
+          po.supplier_invoice?.pdf_path ||
+          po.supplier_invoice_path
+        );
+        const invoiceNumber =
+          po.supplier_invoice_number ||
+          po.supplier_invoice?.invoice_number ||
+          null;
+        const invoiceId = po.supplier_invoice_id || po.supplier_invoice?.id || undefined;
 
         if (existing) {
           existing.total_quantity += quantity;
+          existing.total_cost += lineCost;
+          if (hasInvoice) {
+            existing.invoice_count += 1;
+          }
           // Update last ordered date if this PO is more recent
           if (new Date(po.order_date) > new Date(existing.last_ordered)) {
             existing.last_ordered = po.order_date;
+            existing.latest_invoice_number = invoiceNumber;
+            existing.latest_invoice_id = invoiceId;
+            existing.latest_po_id = po.id;
+            existing.has_invoice_attachment = Boolean(po.supplier_invoice_path);
           }
         } else {
           itemsMap.set(poItem.item_id, {
             item_id: poItem.item_id,
             item_name: itemName,
             total_quantity: quantity,
+            total_cost: lineCost,
             primary_unit: primaryUnit,
             secondary_unit: secondaryUnit,
             conversion_rate: conversionRate,
             last_ordered: po.order_date,
+            latest_invoice_number: invoiceNumber,
+            latest_invoice_id: invoiceId,
+            latest_po_id: po.id,
+            has_invoice_attachment: Boolean(
+              po.supplier_invoice_pdf_path ||
+              po.supplier_invoice?.pdf_path ||
+              po.supplier_invoice_path
+            ),
+            invoice_count: hasInvoice ? 1 : 0,
           });
         }
       });
@@ -243,14 +378,38 @@ export default function SupplierDetailContent({
       item_id: number;
       item_name: string;
       total_quantity: number;
+      total_cost: number;
       primary_unit: string;
       secondary_unit?: string | null;
       conversion_rate?: number | null;
-      last_ordered: string
+      last_ordered: string;
+      latest_invoice_number: string | null;
+      latest_invoice_id?: number;
+      latest_po_id: number;
+      has_invoice_attachment: boolean;
+      invoice_count: number;
     }>())
     .values() : [];
 
   const suppliedItemsArray = Array.from(suppliedItems);
+  const sharedInvoiceCountByNumber = suppliedItemsArray.reduce((acc, item) => {
+    const invoiceNo = item.latest_invoice_number?.trim();
+    if (!invoiceNo) return acc;
+    acc.set(invoiceNo, (acc.get(invoiceNo) ?? 0) + 1);
+    return acc;
+  }, new Map<string, number>());
+  const sharedInvoicePalette = [
+    "bg-blue-100",
+    "bg-emerald-100",
+    "bg-violet-100",
+    "bg-amber-100",
+    "bg-cyan-100",
+    "bg-rose-100",
+  ];
+  const sharedInvoiceColorByNumber = Array.from(sharedInvoiceCountByNumber.entries()).reduce((acc, [invoiceNo], idx) => {
+    acc.set(invoiceNo, sharedInvoicePalette[idx % sharedInvoicePalette.length]);
+    return acc;
+  }, new Map<string, string>());
 
 
   // Handle payment submission
@@ -402,6 +561,81 @@ export default function SupplierDetailContent({
 
   // Calculate effective outstanding balance (directly from backend)
   const effectiveOutstandingBalance = outstandingBalance;
+
+  // Transform backend daily totals for chart display
+  const paymentTrendData = useMemo(() => {
+    // Use backend daily totals if available (authoritative source)
+    if (dailyTotals.length > 0) {
+      return dailyTotals.map((d) => ({
+        label: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" }),
+        purchased: d.purchased,
+        paid: d.paid,
+        cumPurchased: d.cumulative_purchased,
+        cumPaid: d.cumulative_paid,
+        outstanding: d.outstanding,
+      }));
+    }
+
+    // Fallback: derive from PO/payment data (will not match summary cards exactly)
+    const events: { date: string; purchased: number; paid: number }[] = [];
+
+    purchaseOrders
+      .filter((po) => (po.status === "received" || po.status === "partial") && !!po.order_date)
+      .forEach((po) => {
+        const receivedCost = (po.items || []).reduce((sum, item) => {
+          const price = Number(item.final_unit_price ?? item.unit_price) || 0;
+          const qty = Number(item.quantity_received ?? 0);
+          return sum + price * qty;
+        }, 0);
+        if (receivedCost > 0) {
+          events.push({ date: (po.received_date ?? po.order_date).slice(0, 10), purchased: receivedCost, paid: 0 });
+        }
+      });
+
+    payments
+      .filter((p) => !!p.payment_date)
+      .forEach((p) => {
+        events.push({ date: p.payment_date.slice(0, 10), purchased: 0, paid: Number(p.amount) || 0 });
+      });
+
+    events.sort((a, b) => a.date.localeCompare(b.date));
+
+    let cumPurchased = 0;
+    let cumPaid = 0;
+
+    const byDate = new Map<string, { purchased: number; paid: number; cumPurchased: number; cumPaid: number; outstanding: number }>();
+
+    for (const ev of events) {
+      cumPurchased += ev.purchased;
+      cumPaid += ev.paid;
+
+      const existing = byDate.get(ev.date);
+      if (existing) {
+        existing.purchased += ev.purchased;
+        existing.paid += ev.paid;
+        existing.cumPurchased = cumPurchased;
+        existing.cumPaid = cumPaid;
+        existing.outstanding = cumPurchased - cumPaid;
+      } else {
+        byDate.set(ev.date, {
+          purchased: ev.purchased,
+          paid: ev.paid,
+          cumPurchased,
+          cumPaid,
+          outstanding: cumPurchased - cumPaid,
+        });
+      }
+    }
+
+    return Array.from(byDate.entries()).map(([date, d]) => ({
+      label: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" }),
+      purchased: d.purchased,
+      paid: d.paid,
+      cumPurchased: d.cumPurchased,
+      cumPaid: d.cumPaid,
+      outstanding: d.outstanding,
+    }));
+  }, [dailyTotals, purchaseOrders, payments]);
 
   return (
     <div className="flex-1">
@@ -556,6 +790,126 @@ export default function SupplierDetailContent({
                   </div>
                 </div>
 
+                {/* Supplier Financial Trend */}
+                {paymentTrendData.length > 0 && (
+                  <div className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-semibold text-gray-900">Supplier Financial Trend</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Green = total purchased over time &middot; Blue = total paid &middot; Gap between them = what you owe
+                      </p>
+                    </div>
+
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={paymentTrendData} margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="purchaseGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#22c55e" stopOpacity={0.15} />
+                              <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
+                            </linearGradient>
+                            <linearGradient id="paidGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15} />
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#6B7280", fontSize: 11 }}
+                            dy={8}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#6B7280", fontSize: 11 }}
+                            tickFormatter={(v: number) => {
+                              if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+                              if (v >= 1_000) return `${(v / 1_000).toFixed(0)}k`;
+                              return String(v);
+                            }}
+                          />
+                          <Tooltip
+                            content={({ active, payload, label }) => {
+                              if (!active || !payload?.length) return null;
+                              const fmt = (n: number) => `PKR ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                              const d = payload[0]?.payload as typeof paymentTrendData[number] | undefined;
+                              return (
+                                <div className="bg-white p-3 border border-gray-200 shadow-lg rounded-lg text-xs min-w-[220px]">
+                                  <p className="font-semibold text-gray-800 mb-2 border-b pb-1.5">{label}</p>
+                                  {d?.purchased ? (
+                                    <div className="flex justify-between mb-0.5">
+                                      <span className="text-green-700">Purchased (day)</span>
+                                      <span className="font-medium text-green-800">{fmt(d.purchased)}</span>
+                                    </div>
+                                  ) : null}
+                                  {d?.paid ? (
+                                    <div className="flex justify-between mb-0.5">
+                                      <span className="text-blue-700">Paid (day)</span>
+                                      <span className="font-medium text-blue-800">{fmt(d.paid)}</span>
+                                    </div>
+                                  ) : null}
+                                  <div className="border-t mt-1.5 pt-1.5 space-y-0.5">
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Total Purchased</span>
+                                      <span className="font-semibold text-gray-900">{fmt(d?.cumPurchased ?? 0)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Total Paid</span>
+                                      <span className="font-semibold text-gray-900">{fmt(d?.cumPaid ?? 0)}</span>
+                                    </div>
+                                    <div className="flex justify-between border-t pt-1 mt-1">
+                                      <span className="text-red-700 font-medium">Outstanding</span>
+                                      <span className="font-bold text-red-700">{fmt(d?.outstanding ?? 0)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }}
+                            cursor={{ fill: "#F9FAFB" }}
+                          />
+                          <Legend wrapperStyle={{ paddingTop: "12px", fontSize: "11px" }} />
+
+                          <Line
+                            type="monotone"
+                            dataKey="cumPurchased"
+                            name="Total Purchased"
+                            stroke="#16a34a"
+                            strokeWidth={2.5}
+                            fill="url(#purchaseGrad)"
+                            dot={{ r: 3.5, fill: "#16a34a", stroke: "#fff", strokeWidth: 2 }}
+                            activeDot={{ r: 5 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="cumPaid"
+                            name="Total Paid"
+                            stroke="#2563eb"
+                            strokeWidth={2.5}
+                            fill="url(#paidGrad)"
+                            dot={{ r: 3.5, fill: "#2563eb", stroke: "#fff", strokeWidth: 2 }}
+                            activeDot={{ r: 5 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="outstanding"
+                            name="Outstanding"
+                            stroke="#ef4444"
+                            strokeWidth={2}
+                            strokeDasharray="6 3"
+                            dot={{ r: 3, fill: "#ef4444", stroke: "#fff", strokeWidth: 1.5 }}
+                          />
+
+                          <Bar dataKey="purchased" name="Day Purchase" fill="#22c55e" opacity={0.3} radius={[3, 3, 0, 0]} barSize={16} />
+                          <Bar dataKey="paid" name="Day Payment" fill="#3b82f6" opacity={0.3} radius={[3, 3, 0, 0]} barSize={16} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
                 {/* Payment History Table */}
                 {loadingPayments ? (
                   <div className="text-center py-12 text-gray-500">
@@ -654,12 +1008,24 @@ export default function SupplierDetailContent({
                           <tr>
                             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Item Name</th>
                             <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Quantity</th>
+                            <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Cost</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Invoice #</th>
                             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Last Ordered</th>
+                            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Invoice</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                          {suppliedItemsArray.map((item) => (
-                            <tr key={item.item_id} className="hover:bg-gray-50">
+                          {suppliedItemsArray.map((item) => {
+                            const invoiceNo = item.latest_invoice_number?.trim();
+                            const isSharedInvoice = Boolean(
+                              invoiceNo && (sharedInvoiceCountByNumber.get(invoiceNo) ?? 0) > 1
+                            );
+                            const sharedRowTint = isSharedInvoice
+                              ? (sharedInvoiceColorByNumber.get(invoiceNo!) ?? "bg-blue-50/40")
+                              : "";
+
+                            return (
+                            <tr key={item.item_id} className={`${sharedRowTint} hover:brightness-95`}>
                               <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.item_name}</td>
                               <td className="px-4 py-3 text-sm text-gray-600 text-right">
                                 <div className="font-semibold text-gray-900">
@@ -671,11 +1037,48 @@ export default function SupplierDetailContent({
                                   </div>
                                 )}
                               </td>
+                              <td className="px-4 py-3 text-sm text-gray-900 text-right font-semibold">
+                                PKR {item.total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{item.latest_invoice_number || "—"}</span>
+                                  {!item.latest_invoice_number && item.invoice_count > 1 && (
+                                    <span className="text-xs text-gray-500">Multiple invoices linked</span>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-4 py-3 text-sm text-gray-600">
                                 {item.last_ordered ? formatDate(item.last_ordered) : '—'}
                               </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  {(item.latest_invoice_id || item.has_invoice_attachment) ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handlePreviewInvoice(item.latest_invoice_id, item.latest_po_id)}
+                                        className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                                        title="Preview invoice"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleDownloadInvoice(item.latest_invoice_id, item.latest_po_id)}
+                                        className="p-1.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                                        title="Download invoice"
+                                      >
+                                        <Download className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-gray-400 italic">No file</span>
+                                  )}
+                                </div>
+                              </td>
                             </tr>
-                          ))}
+                          )})}
                         </tbody>
                       </table>
                     </div>

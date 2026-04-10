@@ -446,6 +446,84 @@ export interface ItemBatchQueueResponse {
   total_remaining: number;
 }
 
+export interface ItemBatchHistoryPurchaseOrderSupplier {
+  id: number;
+  serial_number: string;
+  name: string;
+}
+
+export interface ItemBatchHistoryPurchaseOrder {
+  id: number;
+  po_number: string;
+  order_date: string | null;
+  received_date: string | null;
+  supplier_name: string | null;
+  supplier: ItemBatchHistoryPurchaseOrderSupplier | null;
+}
+
+export interface ItemBatchHistorySupplierInvoice {
+  id: number;
+  invoice_number: string;
+  invoice_type: string;
+  invoice_date: string | null;
+  status: string;
+  total_amount: number;
+  pdf_path: string | null;
+}
+
+export interface ItemBatchHistoryPurchaseOrderItem {
+  id: number;
+  quantity_ordered: number;
+  quantity_received: number;
+  quantity_received_final: number | null;
+  unit_price: number;
+  final_unit_price: number | null;
+}
+
+export interface ItemBatchHistoryQuantities {
+  purchased_qty: number;
+  remaining_qty: number;
+  consumed_qty: number;
+  sold_qty: number;
+  returned_qty: number;
+  net_sold_qty: number;
+}
+
+export interface ItemBatchHistoryCosting {
+  unit_cost: number;
+  total_cost: number;
+}
+
+export interface ItemBatchHistoryRevenue {
+  total_revenue: number;
+  total_cost_of_sold: number;
+  profit: number;
+  margin_pct: number;
+}
+
+export interface ItemBatchHistoryEntry {
+  batch_id: number;
+  status: 'active' | 'depleted' | 'cancelled';
+  received_at: string | null;
+  costing: ItemBatchHistoryCosting;
+  quantities: ItemBatchHistoryQuantities;
+  purchase_order: ItemBatchHistoryPurchaseOrder | null;
+  supplier_invoice: ItemBatchHistorySupplierInvoice | null;
+  purchase_order_item: ItemBatchHistoryPurchaseOrderItem | null;
+  revenue?: ItemBatchHistoryRevenue | null;
+}
+
+export interface ItemBatchHistoryResponse {
+  item: Pick<Item, "id" | "serial_number" | "name" | "primary_unit">;
+  data: ItemBatchHistoryEntry[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}
+
 // Purchase Order
 export interface PurchaseOrder {
   id: number;
@@ -482,6 +560,9 @@ export interface PurchaseOrder {
   delivery_charge?: number; // Delivery charge from supplier (increases amount owed)
   final_total?: number; // Final amount after adjustments
   supplier_invoice_id?: number | null; // ID of created supplier invoice
+  supplier_invoice_number?: string | null; // Flattened supplier invoice number for list/table usage
+  supplier_invoice_date?: string | null; // Flattened supplier invoice date for list/table usage
+  supplier_invoice_pdf_path?: string | null; // Flattened supplier invoice pdf path for list/table usage
   supplier_invoice?: Invoice | null; // Created supplier invoice
 }
 
@@ -591,6 +672,26 @@ export interface SupplierBalanceResponse {
     payments_count: number;
     last_payment_date: string | null;
     last_payment_amount: number | null;
+  };
+}
+
+export interface SupplierDailyTotalsEntry {
+  date: string;
+  purchased: number;
+  paid: number;
+  cumulative_purchased: number;
+  cumulative_paid: number;
+  outstanding: number;
+}
+
+export interface SupplierDailyTotalsResponse {
+  supplier_id: number;
+  currency: string;
+  data: SupplierDailyTotalsEntry[];
+  summary: {
+    total_purchased: number;
+    total_paid: number;
+    outstanding_balance: number;
   };
 }
 
@@ -734,6 +835,8 @@ export interface ItemSale {
   unit_price: number;
   discount_amount: number;
   total_amount: number;
+  batch_id?: number | null;
+  batch_unit_cost?: number | null;
 }
 
 export interface SaleItem {

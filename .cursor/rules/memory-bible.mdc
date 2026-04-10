@@ -1,0 +1,31 @@
+---
+description: Keep .cursor/memory as the living source of truth for architecture and module behavior
+alwaysApply: true
+---
+
+# Memory Bible Rule
+
+Treat `.cursor/memory/README.md` and all files in `.cursor/memory/` as the project source of truth ("bible") for architecture, modules, flows, and API behavior.
+
+## Mandatory behavior
+
+- Before substantial implementation, consult relevant docs in `.cursor/memory/`.
+- Align code changes with the documented architecture and module boundaries.
+- If code changes alter behavior, APIs, flows, or structure, update the corresponding `.cursor/memory/*.md` docs in the same task.
+- If a new feature/module/pattern is introduced, add or extend docs in `.cursor/memory/` and link it from `.cursor/memory/README.md`.
+- Do not consider a feature/refactor complete until documentation is updated.
+
+## Minimum doc updates required when applicable
+
+- Architecture changes -> `01-architecture-overview.md` and/or `02-frontend-structure.md`
+- New/changed API contracts -> `03-api-client.md` and `15-api-endpoint-mapping.md`
+- Data model changes -> `04-type-system.md`
+- Auth/permission changes -> `05-authentication-permissions.md`
+- Module behavior changes -> corresponding `06-12` module docs
+- Cross-module flow changes -> `14-module-relationships.md`
+- New reusable UI conventions -> `13-component-patterns.md`
+
+## Quality bar
+
+- Keep docs accurate, concise, and immediately actionable for future agents.
+- Prefer updating existing memory docs over creating duplicate files.

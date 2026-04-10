@@ -13,6 +13,7 @@ export default function ItemDetailTabs({
     { id: "item-details", label: "Item Details" },
     { id: "sales-history", label: "Sales History" },
     { id: "stock-info", label: "Stock Information" },
+    { id: "supplier-costs", label: "Supplier Costs" },
     { id: "settings", label: "Settings" },
   ];
 

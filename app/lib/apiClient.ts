@@ -116,6 +116,7 @@ import type {
   ItemStockBatch,
   ItemActiveBatchResponse,
   ItemBatchQueueResponse,
+  ItemBatchHistoryResponse,
   PurchaseOrder,
   StockMovement,
   Supplier,
@@ -1112,6 +1113,27 @@ export const itemsApi = {
     };
   },
 
+  async getItemBatches(id: number, params: { page?: number; per_page?: number } = {}): Promise<ItemBatchHistoryResponse> {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", String(params.page));
+    if (params.per_page) queryParams.append("per_page", String(params.per_page));
+    queryParams.append("_t", String(Date.now()));
+
+    const queryString = queryParams.toString();
+    const response = await apiClient.get<ItemBatchHistoryResponse>(`/items/${id}/batches${queryString ? `?${queryString}` : ""}`);
+
+    return {
+      item: response.item,
+      data: response.data ?? [],
+      meta: response.meta ?? {
+        current_page: 1,
+        last_page: 1,
+        per_page: params.per_page ?? 20,
+        total: response.data?.length ?? 0,
+      },
+    };
+  },
+
   async getSalesAnalytics(
     id: number,
     params: {
@@ -1805,6 +1827,19 @@ export const suppliersApi = {
 
   async getBalance(supplierId: number): Promise<SupplierBalanceResponse> {
     return await apiClient.get<SupplierBalanceResponse>(`/suppliers/${supplierId}/balance`);
+  },
+
+  async getDailyTotals(
+    supplierId: number,
+    params?: { from_date?: string; to_date?: string }
+  ): Promise<SupplierDailyTotalsResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.from_date) queryParams.append("from_date", params.from_date);
+    if (params?.to_date) queryParams.append("to_date", params.to_date);
+    const queryString = queryParams.toString();
+    return await apiClient.get<SupplierDailyTotalsResponse>(
+      `/suppliers/${supplierId}/daily-totals${queryString ? `?${queryString}` : ""}`
+    );
   },
 
   async autoDetectPaymentAccount(): Promise<{

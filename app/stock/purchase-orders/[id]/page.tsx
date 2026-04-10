@@ -179,6 +179,31 @@ export default function PurchaseOrderDetailPage() {
     }
   };
 
+  const handleCompletePartialOrder = async () => {
+    if (!po) return;
+
+    const unreceivedItems = po.items?.filter(item => item.quantity_received < item.quantity_ordered) || [];
+    const unreceivedCount = unreceivedItems.length;
+    const unreceivedQty = unreceivedItems.reduce((sum, item) => sum + (item.quantity_ordered - item.quantity_received), 0);
+
+    const message = unreceivedCount > 0
+      ? `This order is partially received.\n\n${unreceivedCount} item(s) still have ${unreceivedQty} units pending.\n\nBy completing this order, you confirm that:\n• No more stock will be received for this PO\n• The pending quantities will be forfeited\n• The PO will be marked as "Received"\n\nDo you want to proceed?`
+      : `Mark this order as complete?\n\nThis will change the status to "Received" and you won't be able to receive more stock.`;
+
+    if (!confirm(message)) return;
+
+    setLoading(true);
+    try {
+      const response = await purchaseOrdersApi.updateStatus(po.id, 'received');
+      setPo(response.purchase_order);
+      addToast(response.message || "Order marked as complete", "success");
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : "Failed to complete order", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loadingPO) {
     return (
       <div className="max-w-6xl mx-auto">
@@ -266,6 +291,16 @@ export default function PurchaseOrderDetailPage() {
               >
                 <Package className="w-4 h-4" />
                 {checkingMappings ? "Checking Mappings..." : "Receive Stock"}
+              </button>
+            )}
+            {po.status === 'partial' && (
+              <button
+                onClick={() => handleCompletePartialOrder()}
+                disabled={loading}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors inline-flex items-center gap-2 disabled:bg-gray-300"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Complete Order
               </button>
             )}
             {po.status !== 'cancelled' && po.status !== 'received' && (
