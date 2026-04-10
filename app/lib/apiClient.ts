@@ -164,6 +164,7 @@ import type {
   ReportPeriod,
   FinancialAccountMapping,
   StoreDocument,
+  SupplierDailyTotalsEntry,
 } from "./types";
 import { cachedGet, invalidateCachedGet } from "./apiCache";
 
@@ -1090,25 +1091,12 @@ export const itemsApi = {
     // Add timestamp to prevent caching
     queryParams.append("_t", String(Date.now()));
 
-    const response = await apiClient.get<any>(`/items/${id}/sales?${queryParams.toString()}`);
+    const response = await apiClient.get<{ data: ItemSale[]; meta: { current_page: number; per_page: number; total: number; last_page: number }; summary?: { total_quantity_sold: number; total_sales_revenue: number } }>(`/items/${id}/sales?${queryParams.toString()}`);
 
     // Check if the response matches our Paginated interface (some endpoints use 'meta', some use 'pagination')
-    const data = response.data || response.sales || [];
-    const meta = response.meta || response.pagination || {
-      current_page: 1,
-      per_page: 15,
-      total: data.length,
-      last_page: 1
-    };
-
     return {
-      data,
-      meta: {
-        current_page: meta.current_page,
-        per_page: meta.per_page,
-        total: meta.total,
-        last_page: meta.last_page,
-      },
+      data: response.data,
+      meta: response.meta,
       summary: response.summary
     };
   },
@@ -1832,12 +1820,12 @@ export const suppliersApi = {
   async getDailyTotals(
     supplierId: number,
     params?: { from_date?: string; to_date?: string }
-  ): Promise<SupplierDailyTotalsResponse> {
+  ): Promise<{ data: SupplierDailyTotalsEntry[]; summary: { total_purchased: number; total_paid: number; outstanding_balance: number } }> {
     const queryParams = new URLSearchParams();
     if (params?.from_date) queryParams.append("from_date", params.from_date);
     if (params?.to_date) queryParams.append("to_date", params.to_date);
     const queryString = queryParams.toString();
-    return await apiClient.get<SupplierDailyTotalsResponse>(
+    return await apiClient.get<{ data: SupplierDailyTotalsEntry[]; summary: { total_purchased: number; total_paid: number; outstanding_balance: number } }>(
       `/suppliers/${supplierId}/daily-totals${queryString ? `?${queryString}` : ""}`
     );
   },
